@@ -518,13 +518,15 @@ export default function ReportsPage() {
         >
           🏆 5. Vật tư dùng nhiều nhất
         </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === 'payback' ? 'active' : ''}`}
-          onClick={() => setActiveTab('payback')}
-        >
-          🔄 6. Hoàn vốn đồ tái sử dụng
-        </button>
+        {isManagerOrAdmin && (
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === 'payback' ? 'active' : ''}`}
+            onClick={() => setActiveTab('payback')}
+          >
+            🔄 6. Hoàn vốn đồ tái sử dụng
+          </button>
+        )}
         <button
           type="button"
           className={`tab-btn ${activeTab === 'forecast' ? 'active' : ''}`}

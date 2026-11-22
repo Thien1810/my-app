@@ -662,7 +662,7 @@ export default function ProjectDetailPage() {
 
       {/* Thanh Tabs */}
       <div className="tabs-bar" style={{ marginBottom: 20 }}>
-        {!isStaff && (
+        {isManagerOrAdmin && (
           <button
             type="button"
             className={`tab-btn ${activeTab === 'quote' ? 'active' : ''}`}
@@ -723,8 +723,8 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
-      {/* TAB BÁO GIÁ TỪ HÌNH ẢNH SET TRANG TRÍ */}
-      {activeTab === 'quote' && !isStaff && (
+      {/* TAB BÁO GIÁ TỪ HÌNH ẢNH SET TRANG TRÍ (Chỉ Quản trị / Quản lý) */}
+      {activeTab === 'quote' && isManagerOrAdmin && (
         <ProjectQuoteTab
           project={project}
           templates={templates}
