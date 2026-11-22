@@ -11,6 +11,7 @@ import {
   parseContentToSeoStructure,
 } from '../lib/seoPostHelper'
 import {
+  generateAiWeddingImage,
   generateSeoArticleWithGemini,
   getSavedGeminiKey,
   optimizeExistingArticleWithGemini,
@@ -147,6 +148,7 @@ export default function WebsiteAdminPage() {
   const [aiWriting, setAiWriting] = useState(false)
   const [aiBatchBusy, setAiBatchBusy] = useState(false)
   const [aiHomeBusy, setAiHomeBusy] = useState(false)
+  const [aiImgBusy, setAiImgBusy] = useState(false)
 
   // Settings state
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -607,6 +609,25 @@ export default function WebsiteAdminPage() {
       setErrorMsg(`Đã tối ưu ${okCount} bài, gặp lỗi: ${err.message}`)
     } finally {
       setAiBatchBusy(false)
+    }
+  }
+
+  const handleAiGenerateImageFor = async ({ defaultPrompt, onSuccess }) => {
+    const prompt = window.prompt(
+      'Nhập mô tả cảnh tiệc cưới muốn AI vẽ (tiếng Việt hoặc tiếng Anh đều được):',
+      defaultPrompt || 'Không gian lễ gia tiên tông trắng kem và xanh rêu sang trọng'
+    )
+    if (!prompt || !prompt.trim()) return
+    setAiImgBusy(true)
+    setErrorMsg('')
+    try {
+      const dataUrl = await generateAiWeddingImage({ prompt })
+      onSuccess(dataUrl, prompt.trim())
+      showToast('🎨 AI đã tạo xong ảnh minh họa! Nhớ bấm Lưu/Đăng để cập nhật lên Web.')
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setAiImgBusy(false)
     }
   }
 
@@ -1706,6 +1727,26 @@ export default function WebsiteAdminPage() {
                                         onChange={(e) => handleSectionImageUpload(idx, e)}
                                       />
                                     </label>
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline btn-sm"
+                                      disabled={aiImgBusy}
+                                      onClick={() =>
+                                        handleAiGenerateImageFor({
+                                          defaultPrompt: sec.heading || postForm.title,
+                                          onSuccess: (dataUrl, usedPrompt) => {
+                                            const next = seoStruct.sections.map((s, i) =>
+                                              i === idx
+                                                ? { ...s, imageUrl: dataUrl, imageAlt: s.imageAlt || usedPrompt }
+                                                : s
+                                            )
+                                            syncStructToContent({ ...seoStruct, sections: next })
+                                          },
+                                        })
+                                      }
+                                    >
+                                      🎨 AI Tạo ảnh
+                                    </button>
                                     {sec.imageUrl && (
                                       <>
                                         <input
@@ -1881,6 +1922,20 @@ export default function WebsiteAdminPage() {
                                   onChange={handlePostCoverUpload}
                                 />
                               </label>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                disabled={aiImgBusy}
+                                onClick={() =>
+                                  handleAiGenerateImageFor({
+                                    defaultPrompt: postForm.title || 'Trang trí lễ gia tiên trắng kem sang trọng',
+                                    onSuccess: (dataUrl) =>
+                                      setPostForm((p) => ({ ...p, cover_image_url: dataUrl })),
+                                  })
+                                }
+                              >
+                                {aiImgBusy ? '⏳ Đang vẽ...' : '🎨 AI Tạo ảnh bìa'}
+                              </button>
                               {postForm.cover_image_url && (
                                 <button
                                   type="button"
@@ -1905,6 +1960,11 @@ export default function WebsiteAdminPage() {
                                 }}
                               />
                             )}
+                            <AiLoadingBanner
+                              active={aiImgBusy}
+                              label="AI Studio đang vẽ ảnh minh họa cưới hỏi..."
+                              estimatedSeconds={12}
+                            />
                           </div>
 
                           <label
@@ -2282,6 +2342,24 @@ export default function WebsiteAdminPage() {
                       />
                     </label>
                   )}
+                  {isManagerOrAdmin && (
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      disabled={aiImgBusy}
+                      onClick={() =>
+                        handleAiGenerateImageFor({
+                          defaultPrompt: 'Không gian lễ gia tiên và cổng hoa cưới sang trọng ánh nắng nhẹ',
+                          onSuccess: (dataUrl) => {
+                            setSettings((prev) => ({ ...prev, hero_image_url: dataUrl }))
+                            setBannerInfo('✓ Đã tạo ảnh Banner bằng AI Studio')
+                          },
+                        })
+                      }
+                    >
+                      {aiImgBusy ? '⏳ Đang vẽ...' : '🎨 AI Tạo ảnh Banner'}
+                    </button>
+                  )}
                   {settings.hero_image_url && isManagerOrAdmin && (
                     <button
                       type="button"
@@ -2296,6 +2374,11 @@ export default function WebsiteAdminPage() {
                   )}
                   {bannerInfo && <span className="text-xs text-green">{bannerInfo}</span>}
                 </div>
+                <AiLoadingBanner
+                  active={aiImgBusy}
+                  label="AI Studio đang vẽ ảnh Banner trang chủ..."
+                  estimatedSeconds={12}
+                />
 
                 {settings.hero_image_url && (
                   <div style={{ marginTop: 12 }}>

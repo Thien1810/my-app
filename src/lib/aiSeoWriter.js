@@ -180,3 +180,57 @@ export async function generateFacebookCaptionWithAi({ apiKey, fbContext }) {
   )
   return data?.caption || ''
 }
+
+function compressDataUrl(dataUrl, maxWidth = 1000, quality = 0.82) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const ratio = Math.min(1, maxWidth / Math.max(img.width, img.height))
+      const w = Math.max(1, Math.round(img.width * ratio))
+      const h = Math.max(1, Math.round(img.height * ratio))
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+      ctx.drawImage(img, 0, 0, w, h)
+      let out = canvas.toDataURL('image/webp', quality)
+      if (!out.startsWith('data:image/webp')) {
+        out = canvas.toDataURL('image/jpeg', quality)
+      }
+      resolve(out)
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
+export async function generateAiWeddingImage({ prompt, style = 'luxury' }) {
+  if (!prompt || !prompt.trim()) {
+    throw new Error('Vui lòng nhập mô tả ảnh muốn tạo.')
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 32000)
+  try {
+    const res = await fetch('/api/ai-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({ prompt, style }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data?.dataUrl) {
+      throw new Error(data?.error || `Lỗi tạo ảnh HTTP ${res.status}`)
+    }
+    const compressed = await compressDataUrl(data.dataUrl)
+    return compressed
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('AI tạo ảnh mất quá nhiều thời gian (>32s). Anh thử lại nhé.')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
