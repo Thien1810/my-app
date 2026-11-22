@@ -9,6 +9,7 @@ import {
   ITEM_CATEGORY_PRESETS,
   ITEM_COLOR_PRESETS,
   getColorSwatch,
+  formatColorWithIcon,
   extractItemColor,
   extractItemCleanNote,
   packNoteWithColorFallback,
@@ -474,7 +475,7 @@ export default function ItemsPage() {
             <option value="all">Tất cả màu sắc</option>
             {colors.map((c) => (
               <option key={c} value={c}>
-                🎨 {c}
+                {formatColorWithIcon(c)}
               </option>
             ))}
           </select>
@@ -835,38 +836,54 @@ export default function ItemsPage() {
                 <div className="form-group">
                   <label>Màu sắc</label>
                   {!isCustomColor ? (
-                    <select
-                      value={form.color}
-                      onChange={(e) => {
-                        if (e.target.value === '__NEW_COLOR__') {
-                          setIsCustomColor(true)
-                          setForm({ ...form, color: '' })
-                        } else {
-                          setForm({ ...form, color: e.target.value })
-                        }
-                      }}
-                    >
-                      <option value="">-- Chọn màu sắc --</option>
-                      {colors.length > 0 && (
-                        <optgroup label="Màu đã có trong kho">
-                          {colors.map((c) => (
-                            <option key={`exist-color-${c}`} value={c}>
-                              {c}
-                            </option>
-                          ))}
-                        </optgroup>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {form.color && (
+                        <span
+                          title={form.color}
+                          style={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: '50%',
+                            backgroundColor: getColorSwatch(form.color)?.hex || '#e2e8f0',
+                            border: `2px solid ${getColorSwatch(form.color)?.border || '#94a3b8'}`,
+                            flexShrink: 0,
+                          }}
+                        />
                       )}
-                      <optgroup label="Màu gợi ý ngành cưới">
-                        {selectableColors
-                          .filter((c) => !c.isExisting)
-                          .map((c) => (
-                            <option key={`preset-color-${c.name}`} value={c.name}>
-                              {c.name}
-                            </option>
-                          ))}
-                      </optgroup>
-                      <option value="__NEW_COLOR__">+ Tạo màu mới khác...</option>
-                    </select>
+                      <select
+                        style={{ flex: 1 }}
+                        value={form.color}
+                        onChange={(e) => {
+                          if (e.target.value === '__NEW_COLOR__') {
+                            setIsCustomColor(true)
+                            setForm({ ...form, color: '' })
+                          } else {
+                            setForm({ ...form, color: e.target.value })
+                          }
+                        }}
+                      >
+                        <option value="">-- Chọn màu sắc --</option>
+                        {colors.length > 0 && (
+                          <optgroup label="Màu đã có trong kho">
+                            {colors.map((c) => (
+                              <option key={`exist-color-${c}`} value={c}>
+                                {formatColorWithIcon(c)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup label="Màu gợi ý ngành cưới">
+                          {selectableColors
+                            .filter((c) => !c.isExisting)
+                            .map((c) => (
+                              <option key={`preset-color-${c.name}`} value={c.name}>
+                                {formatColorWithIcon(c.name)}
+                              </option>
+                            ))}
+                        </optgroup>
+                        <option value="__NEW_COLOR__">+ Tạo màu mới khác...</option>
+                      </select>
+                    </div>
                   ) : (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <input

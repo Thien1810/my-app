@@ -231,22 +231,22 @@ export function translateAuthError(message = '') {
 
 // ---------- MÀU SẮC VẬT TƯ NGÀNH CƯỚI ----------
 export const ITEM_COLOR_PRESETS = [
-  { name: 'Trắng', hex: '#ffffff', border: '#cbd5e1' },
-  { name: 'Trắng kem', hex: '#fef3c7', border: '#fcd34d' },
-  { name: 'Hồng Pastel', hex: '#fce7f3', border: '#f9a8d4' },
-  { name: 'Hồng phấn', hex: '#f472b6', border: '#ec4899' },
-  { name: 'Đỏ tươi', hex: '#ef4444', border: '#dc2626' },
-  { name: 'Đỏ rượu (Burgundy)', hex: '#881337', border: '#881337' },
-  { name: 'Vàng đồng (Gold)', hex: '#eab308', border: '#ca8a04' },
-  { name: 'Vàng Champagne', hex: '#fde68a', border: '#f59e0b' },
-  { name: 'Xanh lá', hex: '#22c55e', border: '#16a34a' },
-  { name: 'Xanh dương Pastel', hex: '#bae6fd', border: '#38bdf8' },
-  { name: 'Tím Pastel', hex: '#e9d5ff', border: '#c084fc' },
-  { name: 'Nâu gỗ', hex: '#92400e', border: '#78350f' },
-  { name: 'Bạc (Silver)', hex: '#cbd5e1', border: '#94a3b8' },
-  { name: 'Đen', hex: '#1e293b', border: '#0f172a' },
-  { name: 'Trong suốt', hex: '#f8fafc', border: '#94a3b8' },
-  { name: 'Nhiều màu', hex: '#16a34a', border: '#16a34a' },
+  { name: 'Trắng', icon: '⚪', hex: '#ffffff', border: '#cbd5e1' },
+  { name: 'Trắng kem', icon: '🌕', hex: '#fef3c7', border: '#fcd34d' },
+  { name: 'Hồng Pastel', icon: '🩷', hex: '#fce7f3', border: '#f9a8d4' },
+  { name: 'Hồng phấn', icon: '🌸', hex: '#f472b6', border: '#ec4899' },
+  { name: 'Đỏ tươi', icon: '🔴', hex: '#ef4444', border: '#dc2626' },
+  { name: 'Đỏ rượu (Burgundy)', icon: '🍷', hex: '#881337', border: '#881337' },
+  { name: 'Vàng đồng (Gold)', icon: '🟡', hex: '#eab308', border: '#ca8a04' },
+  { name: 'Vàng Champagne', icon: '🥂', hex: '#fde68a', border: '#f59e0b' },
+  { name: 'Xanh lá', icon: '🟢', hex: '#22c55e', border: '#16a34a' },
+  { name: 'Xanh dương Pastel', icon: '🔵', hex: '#bae6fd', border: '#38bdf8' },
+  { name: 'Tím Pastel', icon: '🟣', hex: '#e9d5ff', border: '#c084fc' },
+  { name: 'Nâu gỗ', icon: '🟤', hex: '#92400e', border: '#78350f' },
+  { name: 'Bạc (Silver)', icon: '💿', hex: '#cbd5e1', border: '#94a3b8' },
+  { name: 'Đen', icon: '⚫', hex: '#1e293b', border: '#0f172a' },
+  { name: 'Trong suốt', icon: '🫧', hex: '#f8fafc', border: '#94a3b8' },
+  { name: 'Nhiều màu', icon: '🌈', hex: '#16a34a', border: '#16a34a' },
 ]
 
 export function getColorSwatch(colorName = '') {
@@ -265,7 +265,15 @@ export function getColorSwatch(colorName = '') {
   if (clean.includes('nâu') || clean.includes('gỗ')) return ITEM_COLOR_PRESETS[11]
   if (clean.includes('bạc')) return ITEM_COLOR_PRESETS[12]
   if (clean.includes('đen')) return ITEM_COLOR_PRESETS[13]
-  return { name: colorName, hex: '#e2e8f0', border: '#94a3b8' }
+  if (clean.includes('cam')) return { name: colorName, icon: '🟠', hex: '#fb923c', border: '#ea580c' }
+  return { name: colorName, icon: '🎨', hex: '#e2e8f0', border: '#94a3b8' }
+}
+
+export function formatColorWithIcon(colorName = '') {
+  const clean = (colorName || '').trim()
+  if (!clean) return ''
+  const sw = getColorSwatch(clean)
+  return `${sw?.icon || '🎨'} ${clean}`
 }
 
 const COLOR_TAG_REGEX = /^\[Màu:\s*([^\]]+)\]\s*/i
