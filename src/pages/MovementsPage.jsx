@@ -45,7 +45,7 @@ export default function MovementsPage() {
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
   const [filterType, setFilterType] = useState('all')
-  const [filterItem, setFilterItem] = useState('all')
+  const [filterKind, setFilterKind] = useState('all')
   const [filterProject, setFilterProject] = useState('all')
 
   const loadAll = async () => {
@@ -214,12 +214,12 @@ export default function MovementsPage() {
       if (filterFrom && m.moved_at < filterFrom) return false
       if (filterTo && m.moved_at > filterTo) return false
       if (filterType !== 'all' && m.type !== filterType) return false
-      if (filterItem !== 'all' && String(m.item_id) !== String(filterItem)) return false
+      if (filterKind !== 'all' && m.item?.kind !== filterKind) return false
       if (filterProject !== 'all' && String(m.project_id || '') !== String(filterProject))
         return false
       return true
     })
-  }, [movements, filterFrom, filterTo, filterType, filterItem, filterProject])
+  }, [movements, filterFrom, filterTo, filterType, filterKind, filterProject])
 
   const handleExport = () => {
     const rows = filteredMovements.map((m) => ({
@@ -548,14 +548,10 @@ export default function MovementsPage() {
               </option>
             ))}
           </select>
-          <select value={filterItem} onChange={(e) => setFilterItem(e.target.value)}>
-            <option value="all">Tất cả vật tư</option>
-            {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.code ? `[${i.code}] ` : ''}
-                {i.name}
-              </option>
-            ))}
+          <select value={filterKind} onChange={(e) => setFilterKind(e.target.value)}>
+            <option value="all">Tất cả loại vật tư</option>
+            <option value="consumable">🟢 Tiêu hao (dùng 1 lần)</option>
+            <option value="reusable">🔵 Tái sử dụng (thu hồi)</option>
           </select>
           <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)}>
             <option value="all">Tất cả dự án</option>
@@ -569,7 +565,7 @@ export default function MovementsPage() {
           {(filterFrom ||
             filterTo ||
             filterType !== 'all' ||
-            filterItem !== 'all' ||
+            filterKind !== 'all' ||
             filterProject !== 'all') && (
             <button
               className="btn btn-sm btn-outline"
@@ -577,7 +573,7 @@ export default function MovementsPage() {
                 setFilterFrom('')
                 setFilterTo('')
                 setFilterType('all')
-                setFilterItem('all')
+                setFilterKind('all')
                 setFilterProject('all')
               }}
             >
