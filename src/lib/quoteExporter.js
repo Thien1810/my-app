@@ -1,7 +1,7 @@
 // Xuất Phiếu Báo Giá Đặng Wedding ra file Ảnh PNG sắc nét (có Logo + Hình ảnh các Set trang trí)
 // Hiển thị GIÁ TRỊ HỢP ĐỒNG trọn gói của dự án (tuyệt đối không lộ giá vốn vật tư nội bộ)
 
-import { formatCurrency, formatDate, formatNumber } from './formatters'
+import { formatCurrency, formatDate } from './formatters'
 
 function loadImg(src) {
   return new Promise((resolve) => {
@@ -130,9 +130,8 @@ export async function exportQuoteToPng({
   ctx.font = 'bold 14px "Segoe UI", sans-serif'
   ctx.fillText('STT', 74, tableY + 26)
   ctx.fillText('Hình ảnh mẫu', 130, tableY + 26)
-  ctx.fillText('Hạng mục / Mẫu Set Trang Trí & Chi tiết', 285, tableY + 26)
-  ctx.fillText('Phân loại', 880, tableY + 26)
-  ctx.fillText('Số lượng', 1045, tableY + 26)
+  ctx.fillText('Hạng mục / Mẫu Set Trang Trí & Danh mục vật tư', 285, tableY + 26)
+  ctx.fillText('Phân loại', 980, tableY + 26)
 
   // Preload line images
   const lineImgs = await Promise.all(quoteLines.map((l) => loadImg(l.image_url)))
@@ -141,7 +140,6 @@ export async function exportQuoteToPng({
 
   for (let i = 0; i < quoteLines.length; i++) {
     const line = quoteLines[i]
-    const qty = Number(line.qty || 1)
 
     const rowBg = i % 2 === 0 ? '#ffffff' : '#f9fcfb'
     drawRoundedRect(ctx, 56, curY, W - 112, rowH - 10, 12, rowBg, '#e2efe7', 1)
@@ -166,15 +164,15 @@ export async function exportQuoteToPng({
       ctx.fillText('Chưa có ảnh', 145, curY + 74)
     }
 
-    // Name & Note
+    // Name & Item names list (no quantities)
     ctx.fillStyle = '#0f172a'
     ctx.font = 'bold 17px "Segoe UI", sans-serif'
-    ctx.fillText(String(line.name || '').slice(0, 56), 285, curY + 52)
+    ctx.fillText(String(line.name || '').slice(0, 62), 285, curY + 52)
 
     if (line.note) {
       ctx.fillStyle = '#475569'
       ctx.font = '14px "Segoe UI", sans-serif'
-      ctx.fillText(String(line.note).slice(0, 74), 285, curY + 84)
+      ctx.fillText(String(line.note).slice(0, 88), 285, curY + 84)
     }
 
     // Category badge
@@ -182,9 +180,9 @@ export async function exportQuoteToPng({
     const isMamQua = catText === 'Mâm quả'
     drawRoundedRect(
       ctx,
-      875,
+      975,
       curY + 52,
-      125,
+      135,
       30,
       15,
       isMamQua ? '#dbeafe' : '#dcfce7',
@@ -192,12 +190,7 @@ export async function exportQuoteToPng({
     )
     ctx.fillStyle = isMamQua ? '#1e40af' : '#166534'
     ctx.font = 'bold 13.5px "Segoe UI", sans-serif'
-    ctx.fillText(catText, 895, curY + 72)
-
-    // Qty
-    ctx.fillStyle = '#1e293b'
-    ctx.font = 'bold 16px "Segoe UI", sans-serif'
-    ctx.fillText(`${formatNumber(qty)} gói`, 1055, curY + 72)
+    ctx.fillText(catText, 1000, curY + 72)
 
     curY += rowH
   }

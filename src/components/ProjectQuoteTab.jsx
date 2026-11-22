@@ -81,9 +81,20 @@ export default function ProjectQuoteTab({
     }
   }
 
-  // Đưa Mẫu set vào báo giá: chỉ lấy Hình ảnh + Tên set + Phân loại + Mô tả (KHÔNG lấy giá vốn vật tư của anh)
+  // Đưa Mẫu set vào báo giá: chỉ lấy Hình ảnh + Tên set + Phân loại + Tên các vật tư (KHÔNG lấy số lượng vật tư & KHÔNG lấy giá vốn)
   const handleAddTemplateToQuote = (tpl) => {
     setSyncMsg('')
+    const itemNames = (tpl.items || [])
+      .map((ti) => ti.item?.name)
+      .filter(Boolean)
+      .join(', ')
+
+    const defaultDesc = tpl.parsedNote
+      ? tpl.parsedNote
+      : itemNames
+        ? `Gồm: ${itemNames}`
+        : ''
+
     const newLine = {
       uid: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       template_id: tpl.id,
@@ -91,7 +102,7 @@ export default function ProjectQuoteTab({
       category: tpl.parsedCategory || 'Gia tiên',
       image_url: tpl.parsedImageUrl || '',
       qty: 1,
-      note: tpl.parsedNote || '',
+      note: defaultDesc,
     }
     const next = [...quoteLines, newLine]
     setQuoteLines(next)
@@ -197,15 +208,13 @@ export default function ProjectQuoteTab({
       STT: i + 1,
       'Phân loại': l.category || 'Gia tiên',
       'Hạng mục / Mẫu Set Trang Trí': l.name,
-      'Mô tả / Ghi chú': l.note || '',
-      'Số lượng': Number(l.qty || 1),
+      'Danh sách vật tư / Mô tả': l.note || '',
     }))
     rows.push({
       STT: '',
       'Phân loại': '',
       'Hạng mục / Mẫu Set Trang Trí': 'GIÁ TRỊ HỢP ĐỒNG TRỌN GÓI',
-      'Mô tả / Ghi chú': quoteNote || '',
-      'Số lượng': formatCurrency(finalTotal),
+      'Danh sách vật tư / Mô tả': formatCurrency(finalTotal),
     })
     exportToExcel(
       rows,
@@ -418,9 +427,8 @@ export default function ProjectQuoteTab({
                 <thead>
                   <tr>
                     <th style={{ width: 100 }}>Hình ảnh mẫu</th>
-                    <th style={{ width: 155 }}>Phân loại</th>
-                    <th>Tên Mẫu Set / Hạng mục & Ghi chú</th>
-                    <th style={{ width: 100 }}>Số lượng</th>
+                    <th style={{ width: 165 }}>Phân loại</th>
+                    <th>Tên Mẫu Set & Các vật tư trong gói</th>
                     <th style={{ width: 55 }}></th>
                   </tr>
                 </thead>
@@ -512,23 +520,12 @@ export default function ProjectQuoteTab({
                         />
                         <input
                           type="text"
-                          placeholder="Ghi chú cho khách (VD: Tông màu đỏ rượu, lắp đặt trước 1 ngày...)"
+                          placeholder="Các vật tư trong gói / Ghi chú (chỉ hiện tên vật tư, không hiện số lượng)..."
                           value={line.note || ''}
                           onChange={(e) =>
                             handleUpdateLine(line.uid, 'note', e.target.value)
                           }
                           style={{ fontSize: '0.82rem', color: '#475569' }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={line.qty}
-                          onChange={(e) =>
-                            handleUpdateLine(line.uid, 'qty', e.target.value)
-                          }
                         />
                       </td>
                       <td className="text-right">
