@@ -123,8 +123,12 @@ create table if not exists public.project_costs (
 create table if not exists public.set_templates (
   id bigint generated always as identity primary key,
   name text not null,
+  category text default 'Gia tiên',
+  image_url text,
   note text
 );
+alter table public.set_templates add column if not exists category text default 'Gia tiên';
+alter table public.set_templates add column if not exists image_url text;
 
 create table if not exists public.set_template_items (
   template_id bigint references public.set_templates(id) on delete cascade,

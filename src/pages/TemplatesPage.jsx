@@ -1,9 +1,55 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { formatNumber, KIND_LABELS } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { KindBadge } from '../components/Badges'
+import { compressImageUnder1MB, formatBytes } from '../lib/imageCompressor'
+
+export const SET_CATEGORY_OPTIONS = [
+  { value: 'Gia tiên', label: '🏮 Gia tiên', badgeClass: 'badge-green' },
+  { value: 'Mâm quả', label: '🎁 Mâm quả', badgeClass: 'badge-blue' },
+]
+
+// Hỗ trợ đọc/ghi tương thích ngay cả khi database chưa chạy ALTER TABLE thêm cột category, image_url
+const META_PREFIX = '__SETMETA__'
+
+function parseTemplateMeta(tpl) {
+  if (!tpl) return { category: 'Gia tiên', image_url: '', cleanNote: '' }
+  let category = tpl.category || ''
+  let image_url = tpl.image_url || ''
+  let cleanNote = tpl.note || ''
+
+  if (cleanNote.startsWith(META_PREFIX)) {
+    const endIdx = cleanNote.indexOf('__ENDMETA__')
+    if (endIdx !== -1) {
+      const jsonStr = cleanNote.slice(META_PREFIX.length, endIdx)
+      cleanNote = cleanNote.slice(endIdx + '__ENDMETA__'.length).trim()
+      try {
+        const parsed = JSON.parse(jsonStr)
+        if (!category && parsed.category) category = parsed.category
+        if (!image_url && parsed.image_url) image_url = parsed.image_url
+      } catch {
+        // ignore parse errors
+      }
+    }
+  }
+
+  return {
+    category: category || 'Gia tiên',
+    image_url: image_url || '',
+    cleanNote,
+  }
+}
+
+function packTemplateNoteFallback(category, image_url, cleanNote) {
+  const meta = JSON.stringify({
+    category: category || 'Gia tiên',
+    image_url: image_url || '',
+  })
+  const noteText = (cleanNote || '').trim()
+  return `${META_PREFIX}${meta}__ENDMETA__${noteText ? ' ' + noteText : ''}`
+}
 
 export default function TemplatesPage() {
   const { canEditCatalog, canDeleteCatalog } = useAuth()
@@ -12,14 +58,20 @@ export default function TemplatesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [filterCategory, setFilterCategory] = useState('all')
 
   // Form tạo/sửa mẫu set
   const [modalOpen, setModalOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState(null)
   const [name, setName] = useState('')
+  const [category, setCategory] = useState('Gia tiên')
+  const [imageUrl, setImageUrl] = useState('')
+  const [imageCompressing, setImageCompressing] = useState(false)
+  const [imageStats, setImageStats] = useState(null)
   const [note, setNote] = useState('')
   const [lines, setLines] = useState([{ item_id: '', qty: 1 }])
   const [saving, setSaving] = useState(false)
+  const [previewLightbox, setPreviewLightbox] = useState(null)
 
   const loadData = async () => {
     setLoading(true)
@@ -47,24 +99,65 @@ export default function TemplatesPage() {
     loadData()
   }, [])
 
+  const enrichedTemplates = useMemo(() => {
+    return templates.map((tpl) => {
+      const meta = parseTemplateMeta(tpl)
+      return {
+        ...tpl,
+        parsedCategory: meta.category,
+        parsedImageUrl: meta.image_url,
+        parsedNote: meta.cleanNote,
+      }
+    })
+  }, [templates])
+
+  const filteredTemplates = useMemo(() => {
+    if (filterCategory === 'all') return enrichedTemplates
+    return enrichedTemplates.filter((t) => t.parsedCategory === filterCategory)
+  }, [enrichedTemplates, filterCategory])
+
   const openCreateModal = () => {
     setEditingTemplate(null)
     setName('')
+    setCategory('Gia tiên')
+    setImageUrl('')
+    setImageStats(null)
     setNote('')
     setLines([{ item_id: '', qty: 1 }])
     setModalOpen(true)
   }
 
   const openEditModal = (tpl) => {
+    const meta = parseTemplateMeta(tpl)
     setEditingTemplate(tpl)
     setName(tpl.name || '')
-    setNote(tpl.note || '')
+    setCategory(meta.category || 'Gia tiên')
+    setImageUrl(meta.image_url || '')
+    setImageStats(null)
+    setNote(meta.cleanNote || '')
     const existingLines = (tpl.items || []).map((ti) => ({
       item_id: String(ti.item_id),
       qty: Number(ti.qty),
     }))
     setLines(existingLines.length > 0 ? existingLines : [{ item_id: '', qty: 1 }])
     setModalOpen(true)
+  }
+
+  const handleImageFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImageCompressing(true)
+    setError('')
+    try {
+      const res = await compressImageUnder1MB(file)
+      setImageUrl(res.dataUrl)
+      setImageStats(res)
+    } catch (err) {
+      setError(err.message || 'Lỗi khi xử lý hình ảnh mẫu set')
+    } finally {
+      setImageCompressing(false)
+      e.target.value = ''
+    }
   }
 
   const handleSave = async (e) => {
@@ -74,25 +167,38 @@ export default function TemplatesPage() {
     setSuccess('')
     try {
       let templateId = editingTemplate?.id
-      const payload = {
+      const cleanNote = note.trim()
+
+      const payloadWithCols = {
         name: name.trim(),
-        note: note.trim() || null,
+        category: category || 'Gia tiên',
+        image_url: imageUrl || null,
+        note: cleanNote || null,
       }
 
-      if (editingTemplate) {
-        const { error: err } = await supabase
-          .from('set_templates')
-          .update(payload)
-          .eq('id', templateId)
-        if (err) throw err
-      } else {
-        const { data, error: err } = await supabase
-          .from('set_templates')
-          .insert([payload])
-          .select('id')
-          .single()
-        if (err) throw err
-        templateId = data.id
+      const payloadFallback = {
+        name: name.trim(),
+        note: packTemplateNoteFallback(category, imageUrl, cleanNote),
+      }
+
+      const saveHeader = async (pl) => {
+        if (editingTemplate) {
+          return supabase.from('set_templates').update(pl).eq('id', templateId)
+        }
+        return supabase.from('set_templates').insert([pl]).select('id').single()
+      }
+
+      let res = await saveHeader(payloadWithCols)
+      if (
+        res.error &&
+        (String(res.error.message || '').toLowerCase().includes('category') ||
+          String(res.error.message || '').toLowerCase().includes('image_url'))
+      ) {
+        res = await saveHeader(payloadFallback)
+      }
+      if (res.error) throw res.error
+      if (!editingTemplate && res.data?.id) {
+        templateId = res.data.id
       }
 
       // Gộp các dòng trùng item_id
@@ -117,7 +223,7 @@ export default function TemplatesPage() {
       }
 
       setModalOpen(false)
-      setSuccess('Đã lưu mẫu set trang trí!')
+      setSuccess('Đã lưu mẫu set trang trí thành công!')
       await loadData()
     } catch (err) {
       setError(err.message || 'Lỗi khi lưu mẫu set')
@@ -139,25 +245,27 @@ export default function TemplatesPage() {
 
   const handleExport = () => {
     const rows = []
-    for (const tpl of templates) {
+    for (const tpl of filteredTemplates) {
       if (!tpl.items || tpl.items.length === 0) {
         rows.push({
+          'Phân loại set': tpl.parsedCategory,
           'Tên mẫu set': tpl.name,
-          'Ghi chú set': tpl.note || '',
+          'Ghi chú set': tpl.parsedNote || '',
           'Mã vật tư': '',
           'Tên vật tư': '',
-          'Phân loại': '',
+          'Phân loại vật tư': '',
           'Số lượng': 0,
           'ĐVT': '',
         })
       } else {
         for (const ti of tpl.items) {
           rows.push({
+            'Phân loại set': tpl.parsedCategory,
             'Tên mẫu set': tpl.name,
-            'Ghi chú set': tpl.note || '',
+            'Ghi chú set': tpl.parsedNote || '',
             'Mã vật tư': ti.item?.code || '',
             'Tên vật tư': ti.item?.name || `#${ti.item_id}`,
-            'Phân loại': KIND_LABELS[ti.item?.kind] || '',
+            'Phân loại vật tư': KIND_LABELS[ti.item?.kind] || '',
             'Số lượng': Number(ti.qty),
             'ĐVT': ti.item?.unit || '',
           })
@@ -173,8 +281,8 @@ export default function TemplatesPage() {
         <div>
           <h1>Mẫu Set Trang Trí</h1>
           <p className="text-muted">
-            Định nghĩa sẵn danh sách vật tư cho các gói trang trí tiêu chuẩn (Backdrop cưới, Sinh
-            nhật, Khai trương...) để áp dụng nhanh vào Kế hoạch dự án
+            Quản lý các mẫu set Gia tiên & Mâm quả kèm hình ảnh mẫu thực tế để áp dụng nhanh vào Kế
+            hoạch dự án
           </p>
         </div>
         <div className="header-actions">
@@ -192,21 +300,113 @@ export default function TemplatesPage() {
       {error && <div className="alert alert-error">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
 
+      {/* Bộ lọc Phân loại Set: Gia tiên / Mâm quả */}
+      <div className="card filter-bar" style={{ marginBottom: 16 }}>
+        <div className="filter-group" style={{ alignItems: 'center' }}>
+          <span className="text-sm font-bold" style={{ color: '#475569' }}>
+            Phân loại mẫu set:
+          </span>
+          <button
+            type="button"
+            className={`btn btn-sm ${filterCategory === 'all' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setFilterCategory('all')}
+          >
+            Tất cả ({enrichedTemplates.length})
+          </button>
+          {SET_CATEGORY_OPTIONS.map((opt) => {
+            const count = enrichedTemplates.filter((t) => t.parsedCategory === opt.value).length
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                className={`btn btn-sm ${
+                  filterCategory === opt.value ? 'btn-primary' : 'btn-outline'
+                }`}
+                onClick={() => setFilterCategory(opt.value)}
+              >
+                {opt.label} ({count})
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       {loading ? (
         <div className="loading-state">Đang tải danh sách mẫu set...</div>
-      ) : templates.length === 0 ? (
+      ) : filteredTemplates.length === 0 ? (
         <div className="card empty-state">
-          Chưa có mẫu set trang trí nào. Hãy tạo mẫu set đầu tiên để tăng tốc lập kế hoạch dự án.
+          Chưa có mẫu set trang trí nào trong mục này. Hãy bấm &ldquo;+ Tạo mẫu set mới&rdquo; để
+          thêm mẫu Gia tiên hoặc Mâm quả.
         </div>
       ) : (
         <div className="templates-grid">
-          {templates.map((tpl) => (
+          {filteredTemplates.map((tpl) => (
             <div key={tpl.id} className="card">
-              <div className="card-header">
-                <div>
-                  <h3>✨ {tpl.name}</h3>
-                  {tpl.note && <p className="text-xs text-muted">{tpl.note}</p>}
+              <div
+                className="card-header"
+                style={{ alignItems: 'flex-start', gap: 14, marginBottom: 12 }}
+              >
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', flex: 1 }}>
+                  {tpl.parsedImageUrl ? (
+                    <img
+                      src={tpl.parsedImageUrl}
+                      alt={tpl.name}
+                      title="Bấm để phóng to ảnh mẫu set"
+                      onClick={() =>
+                        setPreviewLightbox({
+                          url: tpl.parsedImageUrl,
+                          name: `${tpl.name} (${tpl.parsedCategory})`,
+                        })
+                      }
+                      style={{
+                        width: 76,
+                        height: 76,
+                        objectFit: 'cover',
+                        borderRadius: 12,
+                        border: '1px solid #cbd5e1',
+                        cursor: 'zoom-in',
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 76,
+                        height: 76,
+                        borderRadius: 12,
+                        border: '1px dashed #cbd5e1',
+                        background: '#f8fafc',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 24,
+                        color: '#94a3b8',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {tpl.parsedCategory === 'Mâm quả' ? '🎁' : '🏮'}
+                    </div>
+                  )}
+
+                  <div>
+                    <div style={{ marginBottom: 4 }}>
+                      <span
+                        className={`badge ${
+                          tpl.parsedCategory === 'Mâm quả' ? 'badge-blue' : 'badge-green'
+                        }`}
+                      >
+                        {tpl.parsedCategory === 'Mâm quả' ? '🎁 Mâm quả' : '🏮 Gia tiên'}
+                      </span>
+                    </div>
+                    <h3 style={{ margin: 0 }}>{tpl.name}</h3>
+                    {tpl.parsedNote && (
+                      <p className="text-xs text-muted" style={{ marginTop: 4 }}>
+                        {tpl.parsedNote}
+                      </p>
+                    )}
+                  </div>
                 </div>
+
                 {canEditCatalog && (
                   <div className="row-actions">
                     <button
@@ -218,6 +418,7 @@ export default function TemplatesPage() {
                     {canDeleteCatalog && (
                       <button
                         className="btn btn-sm btn-outline"
+                        style={{ color: '#dc2626', borderColor: '#fecaca' }}
                         onClick={() => handleDelete(tpl)}
                       >
                         Xóa
@@ -276,22 +477,135 @@ export default function TemplatesPage() {
               </button>
             </div>
             <form onSubmit={handleSave} className="modal-body">
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label>Phân loại mẫu set *</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                  >
+                    {SET_CATEGORY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Tên mẫu set *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: Set Gia Tiên Đỏ Rượu Truyền Thống / Set 6 Mâm Quả Rồng Phượng"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+              </div>
+
               <div className="form-group">
-                <label>Tên mẫu set *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="VD: Set Backdrop Cưới Hoa Lụa Cao Cấp 4m"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
+                <label>
+                  Hình ảnh mẫu set (nhận mọi kích thước, tự động thu nhỏ & nén dưới 1MB)
+                </label>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    padding: 12,
+                    border: '1px dashed #cbd5e1',
+                    borderRadius: 10,
+                    background: '#f8fafc',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt="Xem trước mẫu set"
+                      style={{
+                        width: 80,
+                        height: 80,
+                        objectFit: 'cover',
+                        borderRadius: 10,
+                        border: '1px solid #cbd5e1',
+                        background: '#fff',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 80,
+                        height: 80,
+                        borderRadius: 10,
+                        border: '1px solid #e2e8f0',
+                        background: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 26,
+                        color: '#94a3b8',
+                      }}
+                    >
+                      📷
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <label
+                        className="btn btn-outline btn-sm"
+                        style={{ cursor: 'pointer', margin: 0 }}
+                      >
+                        {imageCompressing
+                          ? '⏳ Đang nén ảnh...'
+                          : imageUrl
+                            ? '📷 Đổi ảnh mẫu khác'
+                            : '📷 Chọn ảnh mẫu set / Chụp ảnh'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageFileSelect}
+                          disabled={imageCompressing}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      {imageUrl && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                          onClick={() => {
+                            setImageUrl('')
+                            setImageStats(null)
+                          }}
+                        >
+                          Xóa ảnh
+                        </button>
+                      )}
+                    </div>
+                    {imageStats ? (
+                      <div className="text-xs text-green" style={{ marginTop: 6 }}>
+                        ✓ Đã tự động thu nhỏ từ{' '}
+                        <strong>{formatBytes(imageStats.originalSize)}</strong> →{' '}
+                        <strong>{formatBytes(imageStats.compressedSize)}</strong> (
+                        {imageStats.width}×{imageStats.height}px)
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted" style={{ marginTop: 6 }}>
+                        Tải lên ảnh mẫu Gia tiên / Mâm quả dung lượng bất kỳ, hệ thống tự nén gọn
+                        dưới 1MB (~100KB).
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="form-group">
                 <label>Mô tả / Ghi chú</label>
                 <textarea
                   rows={2}
-                  placeholder="Phù hợp cho sảnh tiệc 200-300 khách..."
+                  placeholder="Kích thước phông, tông màu, lưu ý khi lắp đặt..."
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                 />
@@ -382,11 +696,49 @@ export default function TemplatesPage() {
                 >
                   Hủy
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={saving || imageCompressing}
+                >
                   {saving ? 'Đang lưu...' : 'Lưu mẫu set'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox phóng to ảnh mẫu set */}
+      {previewLightbox && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPreviewLightbox(null)}
+          style={{ zIndex: 100 }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 680, textAlign: 'center' }}
+          >
+            <div className="modal-header">
+              <h3>{previewLightbox.name}</h3>
+              <button className="btn-icon" onClick={() => setPreviewLightbox(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <img
+                src={previewLightbox.url}
+                alt={previewLightbox.name}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '72vh',
+                  borderRadius: 12,
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
