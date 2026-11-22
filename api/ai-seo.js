@@ -108,21 +108,16 @@ Yêu cầu bắt buộc:
   }
 
   try {
-    const models = [
-      'gemini-3.8-flash',
-      'gemini-3.8-flash-lite',
-      'gemini-3.5-flash',
-      'gemini-2.5-flash-lite',
-    ]
+    const models = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.5-flash']
     let gRes = null
     let lastErr = ''
 
-    for (const model of models) {
+    const callModel = async (model) => {
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 11000)
+      const timer = setTimeout(() => controller.abort(), 12000)
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
-        gRes = await fetch(url, {
+        return await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
@@ -136,29 +131,45 @@ Yêu cầu bắt buộc:
             },
           }),
         })
-      } catch (fetchErr) {
-        lastErr = fetchErr?.name === 'AbortError' ? `${model} timeout (11s)` : fetchErr.message
-        continue
       } finally {
         clearTimeout(timer)
       }
+    }
 
-      if (gRes.ok) break
-      const errBody = await gRes.json().catch(() => ({}))
-      lastErr = errBody?.error?.message || `Gemini HTTP ${gRes.status}`
-      const lowerErr = lastErr.toLowerCase()
-      const shouldFallback =
-        gRes.status === 404 ||
-        gRes.status === 429 ||
-        gRes.status === 503 ||
-        gRes.status === 500 ||
-        lowerErr.includes('no longer available') ||
-        lowerErr.includes('high demand') ||
-        lowerErr.includes('overloaded') ||
-        lowerErr.includes('thinking')
-      if (!shouldFallback) {
-        return res.status(gRes.status).json({ error: lastErr })
+    for (const model of models) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          gRes = await callModel(model)
+        } catch (fetchErr) {
+          lastErr = fetchErr?.name === 'AbortError' ? `${model} timeout` : fetchErr.message
+          break
+        }
+
+        if (gRes.ok) break
+        const errBody = await gRes.json().catch(() => ({}))
+        lastErr = errBody?.error?.message || `Gemini HTTP ${gRes.status}`
+        const lowerErr = lastErr.toLowerCase()
+
+        if ((gRes.status === 503 || gRes.status === 429) && attempt === 0) {
+          await new Promise((r) => setTimeout(r, 1200))
+          continue
+        }
+
+        const shouldFallback =
+          gRes.status === 404 ||
+          gRes.status === 429 ||
+          gRes.status === 503 ||
+          gRes.status === 500 ||
+          lowerErr.includes('no longer available') ||
+          lowerErr.includes('high demand') ||
+          lowerErr.includes('overloaded') ||
+          lowerErr.includes('thinking')
+        if (!shouldFallback) {
+          return res.status(gRes.status).json({ error: lastErr })
+        }
+        break
       }
+      if (gRes?.ok) break
     }
 
     if (!gRes || !gRes.ok) {
