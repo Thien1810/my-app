@@ -4,6 +4,12 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { formatDate, generateProjectCode } from '../lib/formatters'
 import { compressImageUnder1MB, formatBytes } from '../lib/imageCompressor'
+import {
+  buildMarkdownFromSeoStructure,
+  emptySection,
+  evaluateSeoChecklist,
+  parseContentToSeoStructure,
+} from '../lib/seoPostHelper'
 
 const LEAD_STATUS_META = {
   new: { label: 'Mới đăng ký', cls: 'badge-amber' },
@@ -117,6 +123,12 @@ export default function WebsiteAdminPage() {
   })
   const [uploadingPostCover, setUploadingPostCover] = useState(false)
   const [savingPost, setSavingPost] = useState(false)
+  const [postEditorMode, setPostEditorMode] = useState('structured') // 'structured' | 'raw'
+  const [seoStruct, setSeoStruct] = useState({
+    intro: '',
+    sections: [emptySection(1), emptySection(2)],
+    conclusionQuote: '',
+  })
 
   // Settings state
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -467,6 +479,46 @@ export default function WebsiteAdminPage() {
       seo_keywords: '',
       is_published: true,
     })
+    setSeoStruct({
+      intro: '',
+      sections: [emptySection(1), emptySection(2)],
+      conclusionQuote: '',
+    })
+    setPostEditorMode('structured')
+  }
+
+  const syncStructToContent = (nextStruct) => {
+    setSeoStruct(nextStruct)
+    setPostForm((prev) => ({
+      ...prev,
+      content: buildMarkdownFromSeoStructure(nextStruct),
+    }))
+  }
+
+  const handleSectionImageUpload = async (idx, e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingPostCover(true)
+    setErrorMsg('')
+    try {
+      const res = await compressImageUnder1MB(file)
+      const nextSections = seoStruct.sections.map((s, i) =>
+        i === idx
+          ? {
+              ...s,
+              imageUrl: res.dataUrl,
+              imageAlt: s.imageAlt || s.heading || 'Mẫu trang trí Đặng Wedding',
+            }
+          : s
+      )
+      syncStructToContent({ ...seoStruct, sections: nextSections })
+      showToast('✓ Đã gắn ảnh minh họa vào mục!')
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setUploadingPostCover(false)
+      e.target.value = ''
+    }
   }
 
   const handlePostCoverUpload = async (e) => {
@@ -573,6 +625,8 @@ export default function WebsiteAdminPage() {
       seo_keywords: post.seo_keywords || '',
       is_published: Boolean(post.is_published),
     })
+    setSeoStruct(parseContentToSeoStructure(post.content || ''))
+    setPostEditorMode('structured')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -1251,70 +1305,343 @@ export default function WebsiteAdminPage() {
                     </div>
 
                     <div className="form-group" style={{ marginBottom: 14 }}>
-                      <label>Tóm tắt ngắn (hiện ngoài thẻ bài viết &amp; mô tả Google)</label>
+                      <label>
+                        2. Meta Description / Tóm tắt ngắn (hiện trên kết quả tìm kiếm Google)
+                      </label>
                       <textarea
                         rows={2}
-                        placeholder="1-2 câu tóm tắt nội dung chính thu hút cô dâu chú rể bấm vào đọc..."
+                        placeholder="1-2 câu tóm tắt hấp dẫn (khoảng 120-160 ký tự) giúp khách hàng bấm vào đọc..."
                         value={postForm.excerpt}
                         onChange={(e) => setPostForm({ ...postForm, excerpt: e.target.value })}
                       />
                     </div>
 
-                    <div className="form-group" style={{ marginBottom: 14 }}>
-                      <label>
-                        Nội dung chi tiết * (Tự động tạo Mục lục bài viết từ các tiêu đề H2 / H3)
-                      </label>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm"
-                          onClick={() => appendPostSnippet('## 1. Tiêu đề mục chính\nNội dung mục...')}
-                        >
-                          + Tiêu đề H2
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm"
-                          onClick={() => appendPostSnippet('### Điểm nổi bật\nNội dung chi tiết...')}
-                        >
-                          + Mục nhỏ H3
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm"
-                          onClick={() => appendPostSnippet('- Ý thứ nhất\n- Ý thứ hai')}
-                        >
-                          + Danh sách
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm"
-                          onClick={() => appendPostSnippet('> Mẹo từ Đặng Wedding: ...')}
-                        >
-                          + Ghi chú nổi bật
-                        </button>
-                        <label
-                          className="btn btn-outline btn-sm"
-                          style={{ cursor: 'pointer', marginBottom: 0 }}
-                        >
-                          📷 Chèn ảnh vào bài
-                          <input
-                            type="file"
-                            accept="image/*"
-                            hidden
-                            disabled={uploadingPostCover}
-                            onChange={handlePostInlineImage}
-                          />
-                        </label>
+                    {/* Xem trước trên Google Search */}
+                    <div
+                      className="sub-card"
+                      style={{
+                        marginBottom: 16,
+                        background: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                      }}
+                    >
+                      <div className="text-xs text-muted" style={{ marginBottom: 6 }}>
+                        🔍 Xem trước hiển thị trên Google Search:
                       </div>
-                      <textarea
-                        rows={8}
-                        required
-                        placeholder={'Mở bài thu hút...\n\n## 1. Tiêu đề mục chính\nNội dung chi tiết...\n\n![Chú thích ảnh](/posts/gia-tien-trang-kem.jpg)'}
-                        value={postForm.content}
-                        onChange={(e) => setPostForm({ ...postForm, content: e.target.value })}
-                      />
+                      <div style={{ fontSize: 12, color: '#15803d', marginBottom: 2 }}>
+                        https://dangwed.com/cam-nang/{postForm.slug || toSlug(postForm.title) || 'bai-viet-moi'}
+                      </div>
+                      <div style={{ fontSize: 17, color: '#1d4ed8', fontWeight: 500, marginBottom: 4 }}>
+                        {postForm.title.trim() || 'Tiêu đề bài viết chuẩn SEO | Đặng Wedding'}
+                      </div>
+                      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+                        {postForm.excerpt.trim() ||
+                          'Đoạn tóm tắt Meta Description sẽ hiển thị tại đây để thu hút cô dâu chú rể bấm vào xem bài viết...'}
+                      </div>
                     </div>
+
+                    {/* Cấu trúc nội dung SEO */}
+                    <div className="form-group" style={{ marginBottom: 14 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: 8,
+                          marginBottom: 10,
+                        }}
+                      >
+                        <label style={{ marginBottom: 0 }}>
+                          3. Cấu trúc Nội dung SEO (Mở bài → Các mục Heading H2 &amp; Ảnh → Kết bài) *
+                        </label>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${postEditorMode === 'structured' ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => {
+                              setSeoStruct(parseContentToSeoStructure(postForm.content))
+                              setPostEditorMode('structured')
+                            }}
+                          >
+                            🧩 Dạng Cấu trúc từng mục
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${postEditorMode === 'raw' ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => setPostEditorMode('raw')}
+                          >
+                            📝 Dạng Văn bản (Markdown)
+                          </button>
+                        </div>
+                      </div>
+
+                      {postEditorMode === 'structured' ? (
+                        <div style={{ display: 'grid', gap: 12 }}>
+                          <div className="sub-card">
+                            <label className="text-xs font-bold" style={{ display: 'block', marginBottom: 6 }}>
+                              A. Đoạn Mở bài (Sapo dẫn nhập — chứa từ khóa chính)
+                            </label>
+                            <textarea
+                              rows={3}
+                              placeholder="Viết 2-3 câu mở đầu giới thiệu chủ đề bài viết..."
+                              value={seoStruct.intro}
+                              onChange={(e) =>
+                                syncStructToContent({ ...seoStruct, intro: e.target.value })
+                              }
+                            />
+                          </div>
+
+                          {seoStruct.sections.map((sec, idx) => (
+                            <div
+                              key={idx}
+                              className="sub-card"
+                              style={{ borderLeft: '3px solid #163828' }}
+                            >
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  marginBottom: 8,
+                                  gap: 8,
+                                }}
+                              >
+                                <strong style={{ fontSize: 13.5, color: '#163828' }}>
+                                  Mục Heading H2 #{idx + 1}
+                                </strong>
+                                {seoStruct.sections.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                                    onClick={() => {
+                                      const next = seoStruct.sections.filter((_, i) => i !== idx)
+                                      syncStructToContent({ ...seoStruct, sections: next })
+                                    }}
+                                  >
+                                    🗑 Xóa mục
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="form-group" style={{ marginBottom: 8 }}>
+                                <input
+                                  type="text"
+                                  placeholder={`Tiêu đề mục H2 #${idx + 1} (VD: 1. Chọn tông màu Gia tiên...)`}
+                                  value={sec.heading}
+                                  onChange={(e) => {
+                                    const next = seoStruct.sections.map((s, i) =>
+                                      i === idx ? { ...s, heading: e.target.value } : s
+                                    )
+                                    syncStructToContent({ ...seoStruct, sections: next })
+                                  }}
+                                />
+                              </div>
+
+                              <div className="form-group" style={{ marginBottom: 8 }}>
+                                <textarea
+                                  rows={3}
+                                  placeholder="Nội dung chi tiết của mục (dòng bắt đầu bằng '- ' sẽ tự thành danh sách gạch đầu dòng)..."
+                                  value={sec.body}
+                                  onChange={(e) => {
+                                    const next = seoStruct.sections.map((s, i) =>
+                                      i === idx ? { ...s, body: e.target.value } : s
+                                    )
+                                    syncStructToContent({ ...seoStruct, sections: next })
+                                  }}
+                                />
+                              </div>
+
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                  flexWrap: 'wrap',
+                                }}
+                              >
+                                <label
+                                  className="btn btn-outline btn-sm"
+                                  style={{ cursor: 'pointer', marginBottom: 0 }}
+                                >
+                                  📷 {sec.imageUrl ? 'Đổi ảnh mục này' : 'Thêm ảnh minh họa cho mục'}
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    hidden
+                                    disabled={uploadingPostCover}
+                                    onChange={(e) => handleSectionImageUpload(idx, e)}
+                                  />
+                                </label>
+                                {sec.imageUrl && (
+                                  <>
+                                    <input
+                                      type="text"
+                                      placeholder="Chú thích ảnh (Alt SEO)"
+                                      value={sec.imageAlt}
+                                      style={{ flex: 1, minWidth: 200, padding: '6px 10px', fontSize: 13 }}
+                                      onChange={(e) => {
+                                        const next = seoStruct.sections.map((s, i) =>
+                                          i === idx ? { ...s, imageAlt: e.target.value } : s
+                                        )
+                                        syncStructToContent({ ...seoStruct, sections: next })
+                                      }}
+                                    />
+                                    <button
+                                      type="button"
+                                      className="btn btn-outline btn-sm"
+                                      onClick={() => {
+                                        const next = seoStruct.sections.map((s, i) =>
+                                          i === idx ? { ...s, imageUrl: '', imageAlt: '' } : s
+                                        )
+                                        syncStructToContent({ ...seoStruct, sections: next })
+                                      }}
+                                    >
+                                      ✕ Gỡ ảnh
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                              {sec.imageUrl && (
+                                <img
+                                  src={sec.imageUrl}
+                                  alt={sec.imageAlt || sec.heading}
+                                  style={{
+                                    marginTop: 8,
+                                    maxWidth: 240,
+                                    maxHeight: 130,
+                                    objectFit: 'cover',
+                                    borderRadius: 6,
+                                    border: '1px solid #e2e8f0',
+                                  }}
+                                />
+                              )}
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            style={{ justifySelf: 'start' }}
+                            onClick={() =>
+                              syncStructToContent({
+                                ...seoStruct,
+                                sections: [
+                                  ...seoStruct.sections,
+                                  emptySection(seoStruct.sections.length + 1),
+                                ],
+                              })
+                            }
+                          >
+                            ➕ Thêm mục Heading H2 mới
+                          </button>
+
+                          <div className="sub-card">
+                            <label className="text-xs font-bold" style={{ display: 'block', marginBottom: 6 }}>
+                              B. Lời khuyên / Cam kết nổi bật cuối bài (tùy chọn)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="VD: Mẹo từ Đặng Wedding: Đặt lịch trước 3-4 tuần để giữ ngày đẹp..."
+                              value={seoStruct.conclusionQuote}
+                              onChange={(e) =>
+                                syncStructToContent({
+                                  ...seoStruct,
+                                  conclusionQuote: e.target.value,
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              onClick={() => appendPostSnippet('## 1. Tiêu đề mục chính\nNội dung mục...')}
+                            >
+                              + Tiêu đề H2
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              onClick={() => appendPostSnippet('### Điểm nổi bật\nNội dung chi tiết...')}
+                            >
+                              + Mục nhỏ H3
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              onClick={() => appendPostSnippet('- Ý thứ nhất\n- Ý thứ hai')}
+                            >
+                              + Danh sách
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              onClick={() => appendPostSnippet('> Mẹo từ Đặng Wedding: ...')}
+                            >
+                              + Ghi chú nổi bật
+                            </button>
+                            <label
+                              className="btn btn-outline btn-sm"
+                              style={{ cursor: 'pointer', marginBottom: 0 }}
+                            >
+                              📷 Chèn ảnh vào bài
+                              <input
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                disabled={uploadingPostCover}
+                                onChange={handlePostInlineImage}
+                              />
+                            </label>
+                          </div>
+                          <textarea
+                            rows={9}
+                            required
+                            placeholder={'Mở bài thu hút...\n\n## 1. Tiêu đề mục chính\nNội dung chi tiết...\n\n![Chú thích ảnh](/posts/gia-tien-trang-kem.jpg)'}
+                            value={postForm.content}
+                            onChange={(e) => setPostForm({ ...postForm, content: e.target.value })}
+                          />
+                        </>
+                      )}
+                    </div>
+
+                    {/* Bảng chấm điểm SEO tự động */}
+                    {(() => {
+                      const seoReport = evaluateSeoChecklist(postForm)
+                      return (
+                        <div className="sub-card" style={{ marginBottom: 16 }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginBottom: 8,
+                            }}
+                          >
+                            <strong>📊 Chấm điểm chuẩn SEO Google</strong>
+                            <span
+                              className={`badge ${
+                                seoReport.score >= 4 ? 'badge-green' : 'badge-amber'
+                              }`}
+                            >
+                              {seoReport.score}/{seoReport.total} tiêu chí đạt
+                            </span>
+                          </div>
+                          <div style={{ display: 'grid', gap: 4, fontSize: 13 }}>
+                            {seoReport.checks.map((ck, i) => (
+                              <div key={i} style={{ color: ck.ok ? '#15803d' : '#64748b' }}>
+                                {ck.ok ? '✅' : '⬜'} {ck.label}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
 
                     <div className="form-group" style={{ marginBottom: 16 }}>
                       <label>Ảnh bìa bài viết (tùy chọn, tự nén &lt; 1MB)</label>
