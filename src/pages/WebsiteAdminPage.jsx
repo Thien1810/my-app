@@ -10,6 +10,11 @@ import {
   evaluateSeoChecklist,
   parseContentToSeoStructure,
 } from '../lib/seoPostHelper'
+import {
+  generateSeoArticleWithGemini,
+  getSavedGeminiKey,
+  saveGeminiKey,
+} from '../lib/aiSeoWriter'
 
 const LEAD_STATUS_META = {
   new: { label: 'Mới đăng ký', cls: 'badge-amber' },
@@ -130,6 +135,13 @@ export default function WebsiteAdminPage() {
     sections: [emptySection(1), emptySection(2)],
     conclusionQuote: '',
   })
+
+  // AI SEO Writer state (Google Gemini)
+  const [aiTopic, setAiTopic] = useState('')
+  const [aiKeyword, setAiKeyword] = useState('')
+  const [geminiKey, setGeminiKey] = useState(() => getSavedGeminiKey())
+  const [showKeyBox, setShowKeyBox] = useState(() => !getSavedGeminiKey())
+  const [aiWriting, setAiWriting] = useState(false)
 
   // Settings state
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -465,6 +477,44 @@ export default function WebsiteAdminPage() {
     }
     setGallery((prev) => prev.filter((g) => g.id !== item.id))
     showToast('Đã xóa ảnh khỏi Thư viện.')
+  }
+
+  const handleAiGeneratePost = async () => {
+    setAiWriting(true)
+    setErrorMsg('')
+    try {
+      saveGeminiKey(geminiKey)
+      const generated = await generateSeoArticleWithGemini({
+        apiKey: geminiKey,
+        topic: aiTopic,
+        keyword: aiKeyword,
+        category: postForm.category,
+      })
+      const nextStruct = {
+        intro: generated.intro,
+        sections: generated.sections.length > 0 ? generated.sections : [emptySection(1)],
+        conclusionQuote: generated.conclusionQuote,
+      }
+      setSeoStruct(nextStruct)
+      setPostEditorMode('structured')
+      setPostForm((prev) => ({
+        ...prev,
+        title: generated.title,
+        slug: editingPostId ? prev.slug : toSlug(generated.title),
+        seo_keywords: generated.seo_keywords,
+        excerpt: generated.excerpt,
+        content: buildMarkdownFromSeoStructure(nextStruct),
+      }))
+      setShowKeyBox(false)
+      showToast('✨ AI đã viết xong bài chuẩn SEO! Anh kiểm tra, gắn thêm ảnh thực tế rồi bấm Đăng bài nhé.')
+    } catch (err) {
+      setErrorMsg(err.message)
+      if (String(err.message).toLowerCase().includes('key')) {
+        setShowKeyBox(true)
+      }
+    } finally {
+      setAiWriting(false)
+    }
   }
 
   // Handlers Bài viết SEO
@@ -1222,6 +1272,109 @@ export default function WebsiteAdminPage() {
                 </div>
               ) : (
                 <>
+                  {/* HỘP AI VIẾT BÀI SEO TỰ ĐỘNG (GOOGLE GEMINI MIỄN PHÍ) */}
+                  <div
+                    className="card"
+                    style={{
+                      padding: 18,
+                      borderLeft: '4px solid #163828',
+                      background: 'linear-gradient(135deg, #f8fafc 0%, #f0fdf4 100%)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: 8,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div>
+                        <strong style={{ fontSize: 15, color: '#163828' }}>
+                          ✨ Trợ lý AI Viết bài chuẩn SEO (Google Gemini miễn phí)
+                        </strong>
+                        <div className="text-xs text-muted">
+                          Nhập chủ đề bên dưới, AI sẽ tự viết trọn bộ Tiêu đề H1, Meta Description,
+                          Mở bài, 4 mục H2 &amp; Lời khuyên đạt 90–100đ SEO.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        onClick={() => setShowKeyBox((v) => !v)}
+                      >
+                        {showKeyBox ? '▲ Ẩn cài đặt API Key' : '🔑 Cài đặt Gemini API Key'}
+                      </button>
+                    </div>
+
+                    {showKeyBox && (
+                      <div className="sub-card" style={{ marginBottom: 12, background: '#ffffff' }}>
+                        <label className="text-xs font-bold" style={{ display: 'block', marginBottom: 6 }}>
+                          Google Gemini API Key (miễn phí tại{' '}
+                          <a
+                            href="https://aistudio.google.com/apikey"
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ color: '#15803d', textDecoration: 'underline' }}
+                          >
+                            aistudio.google.com/apikey
+                          </a>
+                          {' '}— chỉ lưu trên trình duyệt của anh):
+                        </label>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <input
+                            type="password"
+                            style={{ flex: 1, minWidth: 220 }}
+                            placeholder="Dán AIzaSy... vào đây"
+                            value={geminiKey}
+                            onChange={(e) => setGeminiKey(e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            onClick={() => {
+                              saveGeminiKey(geminiKey)
+                              setShowKeyBox(false)
+                              showToast('✓ Đã lưu Gemini API Key trên trình duyệt.')
+                            }}
+                          >
+                            💾 Lưu Key
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="form-grid-2" style={{ marginBottom: 10 }}>
+                      <div className="form-group">
+                        <input
+                          type="text"
+                          placeholder="Chủ đề bài viết (VD: Trang trí gia tiên nhà phố diện tích nhỏ)"
+                          value={aiTopic}
+                          onChange={(e) => setAiTopic(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <input
+                          type="text"
+                          placeholder="Từ khóa SEO muốn nhắm (VD: trang trí gia tiên tối giản)"
+                          value={aiKeyword}
+                          onChange={(e) => setAiKeyword(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={aiWriting}
+                      onClick={handleAiGeneratePost}
+                    >
+                      {aiWriting ? '⏳ AI đang viết bài SEO (khoảng 5 giây)...' : '✨ AI Viết bài chuẩn SEO ngay'}
+                    </button>
+                  </div>
+
                   <form onSubmit={handleSavePost}>
                     <div className="seo-editor-layout">
                       {/* CỘT TRÁI: SOẠN THẢO BÀI VIẾT */}
