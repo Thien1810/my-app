@@ -51,6 +51,7 @@ export default function ItemsPage() {
   const [form, setForm] = useState(INITIAL_FORM)
   const [saving, setSaving] = useState(false)
   const [showCodeRules, setShowCodeRules] = useState(false)
+  const [isCustomCategory, setIsCustomCategory] = useState(false)
 
   const loadItems = async () => {
     setLoading(true)
@@ -76,10 +77,24 @@ export default function ItemsPage() {
   const categories = useMemo(() => {
     const set = new Set()
     for (const i of items) {
-      if (i.category) set.add(i.category)
+      if (i.category && i.category.trim()) set.add(i.category.trim())
     }
-    return Array.from(set).sort()
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi'))
   }, [items])
+
+  // Danh sách nhóm để chọn trong form: gộp các nhóm đã tồn tại + các nhóm chuẩn ngành cưới
+  const selectableCategories = useMemo(() => {
+    const map = new Map()
+    for (const c of categories) {
+      map.set(c.toLowerCase(), { name: c, isExisting: true })
+    }
+    for (const p of ITEM_CATEGORY_PRESETS) {
+      if (!map.has(p.name.toLowerCase())) {
+        map.set(p.name.toLowerCase(), { name: p.name, isExisting: false })
+      }
+    }
+    return Array.from(map.values())
+  }, [categories])
 
   const colors = useMemo(() => {
     const set = new Set()
@@ -111,13 +126,17 @@ export default function ItemsPage() {
 
   const openCreateModal = () => {
     setEditingItem(null)
-    const defaultCategory = 'Hoa tươi'
+    setIsCustomCategory(false)
+    const defaultCategory = categories[0] || 'Hoa tươi'
     const defaultKind = 'consumable'
+    const preset = ITEM_CATEGORY_PRESETS.find(
+      (p) => p.name.toLowerCase() === defaultCategory.toLowerCase()
+    )
     setForm({
       ...INITIAL_FORM,
       kind: defaultKind,
       category: defaultCategory,
-      unit: 'bó',
+      unit: preset?.unit || 'cái',
       code: generateItemCode(defaultKind, defaultCategory, items),
     })
     setModalOpen(true)
@@ -142,6 +161,7 @@ export default function ItemsPage() {
 
   const openEditModal = (item) => {
     setEditingItem(item)
+    setIsCustomCategory(false)
     setForm({
       code: item.code || '',
       name: item.name || '',
@@ -563,20 +583,62 @@ export default function ItemsPage() {
                 </div>
                 <div className="form-group">
                   <label>Danh mục / Nhóm vật tư</label>
-                  <input
-                    type="text"
-                    list="category-presets"
-                    placeholder="Chọn hoặc gõ nhóm (VD: Khung & Backdrop)"
-                    value={form.category}
-                    onChange={(e) => handleKindOrCategoryChange(form.kind, e.target.value)}
-                  />
-                  <datalist id="category-presets">
-                    {ITEM_CATEGORY_PRESETS.map((p) => (
-                      <option key={p.code} value={p.name}>
-                        {p.code} - {p.defaultKind === 'reusable' ? 'Tái sử dụng' : 'Tiêu hao'}
-                      </option>
-                    ))}
-                  </datalist>
+                  {!isCustomCategory ? (
+                    <select
+                      value={form.category}
+                      onChange={(e) => {
+                        if (e.target.value === '__NEW__') {
+                          setIsCustomCategory(true)
+                          handleKindOrCategoryChange(form.kind, '')
+                        } else {
+                          handleKindOrCategoryChange(form.kind, e.target.value)
+                        }
+                      }}
+                    >
+                      <option value="">-- Chọn nhóm vật tư --</option>
+                      {categories.length > 0 && (
+                        <optgroup label="Nhóm đã có trong kho">
+                          {categories.map((c) => (
+                            <option key={`exist-${c}`} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="Nhóm gợi ý ngành trang trí">
+                        {selectableCategories
+                          .filter((c) => !c.isExisting)
+                          .map((c) => (
+                            <option key={`preset-${c.name}`} value={c.name}>
+                              {c.name}
+                            </option>
+                          ))}
+                      </optgroup>
+                      <option value="__NEW__">+ Tạo nhóm mới khác...</option>
+                    </select>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Nhập tên nhóm vật tư mới..."
+                        value={form.category}
+                        onChange={(e) => handleKindOrCategoryChange(form.kind, e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ whiteSpace: 'nowrap' }}
+                        onClick={() => {
+                          setIsCustomCategory(false)
+                          const fallbackCat = categories[0] || 'Hoa tươi'
+                          handleKindOrCategoryChange(form.kind, fallbackCat)
+                        }}
+                      >
+                        Chọn có sẵn
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
