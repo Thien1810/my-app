@@ -43,6 +43,7 @@ export default function Layout() {
     { to: '/mau-set', label: 'Mẫu set trang trí', shortLabel: 'Mẫu set', icon: '✨', show: !isStaff },
     { to: '/doi-tac', label: 'Đối tác', shortLabel: 'Đối tác', icon: '🤝', show: !isStaff },
     { to: '/bao-cao', label: 'Báo cáo & Dự báo', shortLabel: 'Báo cáo', icon: '📈', show: !isStaff },
+    { to: '/quan-tri-web', label: 'Quản trị Website', shortLabel: 'Website', icon: '🌐', show: !isStaff },
     { to: '/nguoi-dung', label: 'Người dùng', shortLabel: 'Tài khoản', icon: '👥', show: isAdmin },
   ].filter((item) => item.show)
 

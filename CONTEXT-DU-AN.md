@@ -12,7 +12,7 @@
 | **Thông tin liên hệ trên ấn phẩm** | Khu vực: **Đồng Nai - TP.HCM** • SĐT / Zalo: **0918.80.90.96** |
 | **Thư mục Source Code trên máy** | `d:\0. AI\1.Vibe code app\my-app` |
 | **GitHub Repository** | `https://github.com/Thien1810/my-app.git` (nhánh `main`, user: `Thien1810`, email: `datthien97@gmail.com`) |
-| **Link Web Online (Vercel)** | `https://my-app-gold-six-81.vercel.app/` (Tự động deploy khi `git push origin main`) |
+| **Link Web Online (Vercel)** | `https://app.dangwed.com/` *(Domain chính thức)* & `https://my-app-gold-six-81.vercel.app/` (Tự động deploy khi `git push origin main`) |
 | **Supabase Project (Cloud DB)** | • Project Ref: `kdcendxxipxstlxuhnwh`<br>• URL: `https://kdcendxxipxstlxuhnwh.supabase.co`<br>• Publishable / Anon Key: `sb_publishable_0GJolCoGzUmNbO8MAwC3YQ_IclKm0bt` (đã cấu hình trong `.env.local` và fallback mặc định trong `src/lib/supabase.js`) |
 | **Tech Stack** | Vite + React 19 + React Router + Supabase (Auth & PostgreSQL RLS) + Recharts + SheetJS (`xlsx`) + HTML5 Canvas (nén ảnh & đóng dấu Watermark) + Plain CSS (tông chủ đạo Xanh lá `#16a34a` / `#14532d`, tối giản, hỗ trợ cả Desktop & Mobile) |
 

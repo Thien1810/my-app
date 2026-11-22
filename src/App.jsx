@@ -17,6 +17,7 @@ import TemplatesPage from './pages/TemplatesPage'
 import PartnersPage from './pages/PartnersPage'
 import ReportsPage from './pages/ReportsPage'
 import UsersPage from './pages/UsersPage'
+import WebsiteAdminPage from './pages/WebsiteAdminPage'
 import './App.css'
 
 function UpdatePasswordScreen() {
@@ -153,6 +154,7 @@ function AppRouter() {
           <Route path="/mau-set" element={<TemplatesPage />} />
           <Route path="/doi-tac" element={<PartnersPage />} />
           <Route path="/bao-cao" element={<ReportsPage />} />
+          <Route path="/quan-tri-web" element={<WebsiteAdminPage />} />
           <Route path="/nguoi-dung" element={<UsersPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

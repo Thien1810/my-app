@@ -12,6 +12,7 @@ export default function NotificationBell({ placement = 'sidebar' }) {
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [alerts, setAlerts] = useState({
+    newLeads: [],
     lateDelivery: [],
     lateReturn: [],
     lateFacebook: [],
@@ -23,13 +24,22 @@ export default function NotificationBell({ placement = 'sidebar' }) {
     if (!supabase) return
     setLoading(true)
     try {
-      const [itemsRes, projectsRes, movesRes] = await Promise.all([
+      const [itemsRes, projectsRes, movesRes, leadsRes] = await Promise.all([
         supabase.from('item_stock').select('id, code, name, kind, unit, in_stock, min_stock, active'),
         supabase
           .from('projects')
           .select('id, code, name, start_date, end_date, status, note, created_at, customer:partners(name)'),
         supabase.from('stock_movements').select('project_id, item_id, type, qty'),
+        !isStaff
+          ? supabase
+              .from('site_leads')
+              .select('id, customer_name, phone, service_interest, event_date, created_at')
+              .eq('status', 'new')
+              .order('created_at', { ascending: false })
+          : Promise.resolve({ data: [] }),
       ])
+
+      const newLeads = leadsRes?.error ? [] : leadsRes?.data || []
 
       const items = (itemsRes.data || []).filter((i) => i.active)
       const projects = projectsRes.data || []
@@ -80,7 +90,7 @@ export default function NotificationBell({ placement = 'sidebar' }) {
         (i) => Number(i.min_stock || 0) > 0 && Number(i.in_stock || 0) < Number(i.min_stock || 0)
       )
 
-      setAlerts({ lateDelivery, lateReturn, lateFacebook, lowStock })
+      setAlerts({ newLeads, lateDelivery, lateReturn, lateFacebook, lowStock })
     } catch {
       // ignore silent fetch errors
     } finally {
@@ -106,6 +116,7 @@ export default function NotificationBell({ placement = 'sidebar' }) {
   }, [open])
 
   const totalCount =
+    alerts.newLeads.length +
     alerts.lateDelivery.length +
     alerts.lateReturn.length +
     alerts.lateFacebook.length +
@@ -117,6 +128,13 @@ export default function NotificationBell({ placement = 'sidebar' }) {
       `🌿 NHẮC VIỆC ĐẶNG WEDDING (${formatDate(todayISO())})`,
       `--------------------------------`,
     ]
+
+    if (alerts.newLeads.length > 0) {
+      lines.push(`🌟 KHÁCH ĐĂNG KÝ BÁO GIÁ TỪ WEB (${alerts.newLeads.length}):`)
+      alerts.newLeads.forEach((l) => {
+        lines.push(` • ${l.customer_name} - ${l.phone} (${l.service_interest || 'Tư vấn cưới'})`)
+      })
+    }
 
     if (alerts.lateDelivery.length > 0) {
       lines.push(`🚚 ĐẾN HẠN / TRỄ GIAO HÀNG (${alerts.lateDelivery.length}):`)
@@ -214,6 +232,30 @@ export default function NotificationBell({ placement = 'sidebar' }) {
               </div>
             ) : (
               <>
+                {alerts.newLeads.length > 0 && (
+                  <div className="notif-group">
+                    <div className="notif-group-title" style={{ color: '#166534' }}>
+                      🌟 Khách mới đăng ký từ dangwed.com ({alerts.newLeads.length})
+                    </div>
+                    {alerts.newLeads.slice(0, 5).map((l) => (
+                      <Link
+                        key={`lead-${l.id}`}
+                        to="/quan-tri-web"
+                        className="notif-item"
+                        onClick={() => setOpen(false)}
+                      >
+                        <div className="font-bold">
+                          {l.customer_name} — {l.phone}
+                        </div>
+                        <div className="text-xs text-muted">
+                          {l.service_interest || 'Yêu cầu báo giá'}
+                          {l.event_date ? ` • Ngày lễ: ${formatDate(l.event_date)}` : ''}
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
                 {alerts.lateDelivery.length > 0 && (
                   <div className="notif-group">
                     <div className="notif-group-title text-red">
