@@ -282,7 +282,7 @@ create policy "moves_insert" on public.stock_movements for insert
 drop policy if exists "moves_update" on public.stock_movements;
 create policy "moves_update" on public.stock_movements for update using (public.has_role(array['admin','manager']));
 drop policy if exists "moves_delete" on public.stock_movements;
-create policy "moves_delete" on public.stock_movements for delete using (public.has_role(array['admin']));
+create policy "moves_delete" on public.stock_movements for delete using (public.has_role(array['admin','manager']));
 
 -- ---------- 8. CẤP QUYỀN TRUY CẬP BẢNG CHO SUPABASE API ----------
 grant usage on schema public to anon, authenticated;
