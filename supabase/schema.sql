@@ -263,10 +263,11 @@ create policy "plan_write"  on public.project_plan for all
   using (public.has_role(array['admin','manager','storekeeper']))
   with check (public.has_role(array['admin','manager','storekeeper']));
 
--- Tài chính dự án: chỉ Quản trị/Quản lý
+-- Tài chính dự án: Giá trị hợp đồng cho Quản trị/Quản lý/Thủ kho (để gửi báo giá); Chi phí khác chỉ Quản trị/Quản lý
 drop policy if exists "finance_all" on public.project_finance;
 create policy "finance_all" on public.project_finance for all
-  using (public.has_role(array['admin','manager'])) with check (public.has_role(array['admin','manager']));
+  using (public.has_role(array['admin','manager','storekeeper']))
+  with check (public.has_role(array['admin','manager','storekeeper']));
 drop policy if exists "costs_all" on public.project_costs;
 create policy "costs_all" on public.project_costs for all
   using (public.has_role(array['admin','manager'])) with check (public.has_role(array['admin','manager']));

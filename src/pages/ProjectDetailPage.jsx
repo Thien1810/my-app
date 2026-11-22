@@ -121,20 +121,21 @@ export default function ProjectDetailPage() {
       setMovements(movesRes.data || [])
       setMembers((memRes.data || []).map((m) => m.profile).filter(Boolean))
 
-      if (isManagerOrAdmin) {
-        const [finRes, costRes] = await Promise.all([
-          supabase
-            .from('project_finance')
-            .select('contract_value')
-            .eq('project_id', projectId)
-            .maybeSingle(),
-          supabase
-            .from('project_costs')
-            .select('*')
-            .eq('project_id', projectId)
-            .order('cost_date', { ascending: false }),
-        ])
+      if (canEditCatalog) {
+        const finRes = await supabase
+          .from('project_finance')
+          .select('contract_value')
+          .eq('project_id', projectId)
+          .maybeSingle()
         setContractValue(Number(finRes.data?.contract_value || 0))
+      }
+
+      if (isManagerOrAdmin) {
+        const costRes = await supabase
+          .from('project_costs')
+          .select('*')
+          .eq('project_id', projectId)
+          .order('cost_date', { ascending: false })
         setOtherCosts(costRes.data || [])
       }
     } catch (err) {
@@ -629,6 +630,12 @@ export default function ProjectDetailPage() {
               • Phụ trách:{' '}
               <strong>{project.lead?.full_name || project.lead?.email || '—'}</strong>
             </span>
+            {canEditCatalog && (
+              <span>
+                • Giá trị HĐ:{' '}
+                <strong className="text-green">{formatCurrency(contractValue)}</strong>
+              </span>
+            )}
           </div>
           {members.length > 0 && (
             <div className="text-xs text-muted" style={{ marginTop: 4 }}>
@@ -662,7 +669,7 @@ export default function ProjectDetailPage() {
 
       {/* Thanh Tabs */}
       <div className="tabs-bar" style={{ marginBottom: 20 }}>
-        {isManagerOrAdmin && (
+        {canEditCatalog && (
           <button
             type="button"
             className={`tab-btn ${activeTab === 'quote' ? 'active' : ''}`}
@@ -723,13 +730,13 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
-      {/* TAB BÁO GIÁ TỪ HÌNH ẢNH SET TRANG TRÍ (Chỉ Quản trị / Quản lý) */}
-      {activeTab === 'quote' && isManagerOrAdmin && (
+      {/* TAB BÁO GIÁ TỪ HÌNH ẢNH SET TRANG TRÍ (Quản trị / Quản lý / Thủ kho) */}
+      {activeTab === 'quote' && canEditCatalog && (
         <ProjectQuoteTab
           project={project}
           templates={templates}
           contractValue={contractValue}
-          isManagerOrAdmin={isManagerOrAdmin}
+          isManagerOrAdmin={canEditCatalog}
           onSyncContractValue={(val) => setContractValue(val)}
           onApplySetsToPlan={handleApplyQuoteSetsToPlan}
         />

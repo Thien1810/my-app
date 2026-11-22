@@ -197,90 +197,12 @@ export default function DashboardPage() {
     return <div className="loading-state">Đang tải dữ liệu tổng quan...</div>
   }
 
-  // Giao diện Tổng quan dành riêng cho Thủ kho & Nhân viên thi công:
-  // Chỉ xem danh sách các Dự án đang chạy, ẩn hoàn toàn báo cáo doanh thu & lãi/lỗ
-  if (!isManagerOrAdmin) {
-    return (
-      <div className="page-container">
-        <div className="page-header">
-          <div>
-            <h1>Tổng quan — Dự án đang chạy</h1>
-            <p className="text-muted">
-              Danh sách các sự kiện đang chuẩn bị, đang thi công hoặc chờ thu hồi vật tư
-            </p>
-          </div>
-          <button className="btn btn-outline" onClick={loadData}>
-            ↻ Làm mới
-          </button>
-        </div>
-
-        {error && <div className="alert alert-error">{error}</div>}
-
-        <div className="card">
-          <div className="card-header">
-            <h3>🎪 Các dự án đang chạy ({stats.runningProjects.length})</h3>
-            <Link to="/du-an" className="btn-link">
-              Xem tất cả dự án →
-            </Link>
-          </div>
-
-          {stats.runningProjects.length === 0 ? (
-            <div className="empty-state">Hiện không có dự án nào đang chạy.</div>
-          ) : (
-            <div className="table-responsive">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Mã</th>
-                    <th>Tên dự án / Sự kiện</th>
-                    <th>Khách hàng</th>
-                    <th>Địa điểm</th>
-                    <th>Ngày thi công → Tháo dỡ</th>
-                    <th>Trạng thái</th>
-                    <th className="text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.runningProjects.map((p) => (
-                    <tr key={p.id}>
-                      <td>
-                        <code>{p.code || `#${p.id}`}</code>
-                      </td>
-                      <td>
-                        <Link to={`/du-an/${p.id}`} className="table-link font-bold">
-                          {p.name}
-                        </Link>
-                      </td>
-                      <td>{p.customer?.name || '—'}</td>
-                      <td>{p.location || '—'}</td>
-                      <td>
-                        {formatDate(p.start_date)} → {formatDate(p.end_date)}
-                      </td>
-                      <td>
-                        <ProjectStatusBadge status={p.status} />
-                      </td>
-                      <td className="text-right">
-                        <Link to={`/du-an/${p.id}`} className="btn btn-sm btn-primary">
-                          Mở dự án
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
           <h1>Tổng quan hệ thống</h1>
-          <p className="text-muted">Theo dõi nhanh tồn kho, vật tư tại dự án và cảnh báo vận hành</p>
+          <p className="text-muted">Theo dõi nhanh tồn kho, vật tư tại dự án và các dự án đang chạy</p>
         </div>
         <button className="btn btn-outline" onClick={loadData}>
           ↻ Làm mới
@@ -289,7 +211,7 @@ export default function DashboardPage() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {/* 6 Thẻ KPI */}
+      {/* Các Thẻ KPI về Vật tư & Dự án (Ẩn thẻ Giá trị tiền tồn kho với Thủ kho & Nhân viên) */}
       <div className="kpi-grid">
         <div className="kpi-card">
           <div className="kpi-label">Số vật tư đang hoạt động</div>
@@ -299,16 +221,22 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="kpi-card">
-          <div className="kpi-label">Giá trị tồn trong kho</div>
-          <div className="kpi-value text-green">{formatCurrency(stats.totalInventoryValue)}</div>
-          <div className="kpi-sub">Tính theo Tồn trong kho × Giá nhập gần nhất</div>
-        </div>
+        {isManagerOrAdmin && (
+          <div className="kpi-card">
+            <div className="kpi-label">Giá trị tồn trong kho</div>
+            <div className="kpi-value text-green">{formatCurrency(stats.totalInventoryValue)}</div>
+            <div className="kpi-sub">Tính theo Tồn trong kho × Giá nhập gần nhất</div>
+          </div>
+        )}
 
         <div className="kpi-card">
           <div className="kpi-label">Đồ đang ở dự án</div>
           <div className="kpi-value text-blue">{formatNumber(stats.totalAtProjectQty)}</div>
-          <div className="kpi-sub">Giá trị: {formatCurrency(stats.totalAtProjectValue)}</div>
+          <div className="kpi-sub">
+            {isManagerOrAdmin
+              ? `Giá trị: ${formatCurrency(stats.totalAtProjectValue)}`
+              : 'Tổng số lượng đồ tái sử dụng đang ở dự án'}
+          </div>
         </div>
 
         <div className="kpi-card">
@@ -328,6 +256,63 @@ export default function DashboardPage() {
           <div className="kpi-value text-red">{formatNumber(stats.overdueProjects.length)}</div>
           <div className="kpi-sub">Đã qua ngày tháo dỡ nhưng còn đồ tại dự án</div>
         </div>
+      </div>
+
+      {/* Bảng Danh sách các Dự án đang chạy */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-header">
+          <h3>🎪 Các dự án đang chạy ({stats.runningProjects.length})</h3>
+          <Link to="/du-an" className="btn-link">
+            Xem tất cả dự án →
+          </Link>
+        </div>
+
+        {stats.runningProjects.length === 0 ? (
+          <div className="empty-state">Hiện không có dự án nào đang chạy.</div>
+        ) : (
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Mã</th>
+                  <th>Tên dự án / Sự kiện</th>
+                  <th>Khách hàng</th>
+                  <th>Địa điểm</th>
+                  <th>Ngày thi công → Tháo dỡ</th>
+                  <th>Trạng thái</th>
+                  <th className="text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.runningProjects.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <code>{p.code || `#${p.id}`}</code>
+                    </td>
+                    <td>
+                      <Link to={`/du-an/${p.id}`} className="table-link font-bold">
+                        {p.name}
+                      </Link>
+                    </td>
+                    <td>{p.customer?.name || '—'}</td>
+                    <td>{p.location || '—'}</td>
+                    <td>
+                      {formatDate(p.start_date)} → {formatDate(p.end_date)}
+                    </td>
+                    <td>
+                      <ProjectStatusBadge status={p.status} />
+                    </td>
+                    <td className="text-right">
+                      <Link to={`/du-an/${p.id}`} className="btn btn-sm btn-primary">
+                        Mở dự án
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Biểu đồ */}

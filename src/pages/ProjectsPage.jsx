@@ -29,7 +29,7 @@ const INITIAL_PROJECT_FORM = {
 }
 
 export default function ProjectsPage() {
-  const { isManagerOrAdmin, isAdmin } = useAuth()
+  const { isManagerOrAdmin, canEditCatalog, isAdmin } = useAuth()
   const [projects, setProjects] = useState([])
   const [customers, setCustomers] = useState([])
   const [profiles, setProfiles] = useState([])
@@ -76,7 +76,7 @@ export default function ProjectsPage() {
       }
       setMembersMap(mMap)
 
-      if (isManagerOrAdmin) {
+      if (canEditCatalog) {
         const finRes = await supabase.from('project_finance').select('*')
         const fMap = new Map()
         for (const f of finRes.data || []) {
@@ -93,7 +93,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     loadData()
-  }, [isManagerOrAdmin])
+  }, [canEditCatalog])
 
   const filteredProjects = useMemo(() => {
     return projects.filter((p) => {
@@ -221,16 +221,15 @@ export default function ProjectsPage() {
         projectId = data.id
       }
 
-      // Lưu tài chính dự án (chỉ Admin/Manager)
-      if (isManagerOrAdmin && projectId) {
-        const { error: finErr } = await supabase.from('project_finance').upsert(
+      // Lưu tài chính dự án (Admin/Manager/Storekeeper)
+      if (canEditCatalog && projectId) {
+        await supabase.from('project_finance').upsert(
           {
             project_id: projectId,
             contract_value: Number(form.contract_value || 0),
           },
           { onConflict: 'project_id' }
         )
-        if (finErr) throw finErr
       }
 
       // Cập nhật thành viên tham gia dự án
@@ -278,7 +277,7 @@ export default function ProjectsPage() {
         'Phụ trách': p.lead?.full_name || p.lead?.email || '',
         'Trạng thái': PROJECT_STATUS_LABELS[p.status] || p.status,
       }
-      if (isManagerOrAdmin) {
+      if (canEditCatalog) {
         base['Giá trị hợp đồng (₫)'] = financesMap.get(p.id) || 0
       }
       base['Ghi chú'] = p.note || ''
@@ -365,7 +364,7 @@ export default function ProjectsPage() {
                   <th>Ngày thi công → Tháo dỡ</th>
                   <th>Phụ trách</th>
                   <th>Trạng thái</th>
-                  {isManagerOrAdmin && <th className="text-right">Giá trị HĐ</th>}
+                  {canEditCatalog && <th className="text-right">Giá trị HĐ</th>}
                   <th className="text-right">Thao tác</th>
                 </tr>
               </thead>
@@ -389,7 +388,7 @@ export default function ProjectsPage() {
                     <td>
                       <ProjectStatusBadge status={p.status} />
                     </td>
-                    {isManagerOrAdmin && (
+                    {canEditCatalog && (
                       <td className="text-right font-bold text-green">
                         {formatCurrency(financesMap.get(p.id) || 0)}
                       </td>
@@ -593,7 +592,7 @@ export default function ProjectsPage() {
                   </select>
                 </div>
 
-                {isManagerOrAdmin && (
+                {canEditCatalog && (
                   <div className="form-group">
                     <label>Giá trị hợp đồng (₫)</label>
                     <CurrencyInput
