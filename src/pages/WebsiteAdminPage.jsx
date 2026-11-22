@@ -1532,8 +1532,8 @@ export default function WebsiteAdminPage() {
                           >
                             <h3>
                               {editingPostId
-                                ? '✏️ Chỉnh sửa bài viết SEO'
-                                : '✍️ Viết bài Cẩm nang mới (Chuẩn SEO Google)'}
+                                ? '✏️ 1. Phần Heading (Sửa Tiêu đề H1, Slug, Meta)'
+                                : '✍️ 1. Phần Heading (Tiêu đề H1, Slug, Meta Description)'}
                             </h3>
                             {editingPostId && (
                               <button
@@ -1613,7 +1613,7 @@ export default function WebsiteAdminPage() {
                             }}
                           >
                             <strong style={{ fontSize: 15 }}>
-                              📄 Nội dung bài viết (Mở bài → Heading H2 &amp; Ảnh → Kết bài)
+                              📄 2. Phần Body (Nội dung chi tiết: Mở bài → H2 &amp; Ảnh → Kết bài)
                             </strong>
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button
