@@ -4,9 +4,9 @@ const GEMINI_STORAGE_KEY = 'dangwed_gemini_api_key'
 
 export function getSavedGeminiKey() {
   try {
-    return localStorage.getItem(GEMINI_STORAGE_KEY) || ''
+    return localStorage.getItem(GEMINI_STORAGE_KEY) || import.meta.env.VITE_GEMINI_API_KEY || ''
   } catch {
-    return ''
+    return import.meta.env.VITE_GEMINI_API_KEY || ''
   }
 }
 
