@@ -6,6 +6,7 @@ import {
   formatNumber,
   formatDate,
   MOVEMENT_TYPE_LABELS,
+  extractItemColor,
 } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { KindBadge, MovementTypeBadge, ProjectStatusBadge } from '../components/Badges'
@@ -126,7 +127,8 @@ export default function ItemDetailPage() {
           </h1>
           <p className="text-muted">
             Mã: <strong>{item.code || `#${item.id}`}</strong> • Danh mục:{' '}
-            <strong>{item.category || 'Chưa phân loại'}</strong> • Đơn vị: <strong>{item.unit}</strong>
+            <strong>{item.category || 'Chưa phân loại'}</strong> • Màu sắc:{' '}
+            <strong>{extractItemColor(item) || '—'}</strong> • Đơn vị: <strong>{item.unit}</strong>
           </p>
         </div>
         <div className="header-actions">

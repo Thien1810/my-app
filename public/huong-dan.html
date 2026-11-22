@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hướng dẫn sử dụng - Đặng Wedding</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 1200px;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f4f7f5;
+      color: #162a22;
+      padding: 36px;
+    }
+    .poster {
+      background: #ffffff;
+      border-radius: 24px;
+      border: 2px solid #d5e6dc;
+      overflow: hidden;
+      box-shadow: 0 12px 32px rgba(22, 60, 42, 0.08);
+    }
+    .header {
+      background: linear-gradient(135deg, #123524 0%, #166534 100%);
+      color: #ffffff;
+      padding: 32px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+    }
+    .logo-box {
+      width: 92px;
+      height: 92px;
+      background: #ffffff;
+      border-radius: 18px;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+      flex-shrink: 0;
+    }
+    .logo-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .header-title .tag {
+      display: inline-block;
+      background: rgba(255,255,255,0.16);
+      color: #dcfce7;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    .header-title h1 {
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 6px;
+    }
+    .header-title p {
+      color: #d1fae5;
+      font-size: 15px;
+    }
+    .content {
+      padding: 32px 40px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 26px;
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 19px;
+      font-weight: 800;
+      color: #14532d;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e2efe7;
+    }
+    .section-num {
+      background: #16a34a;
+      color: #fff;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 800;
+    }
+    /* 2 loại vật tư */
+    .two-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    .kind-card {
+      border-radius: 16px;
+      padding: 18px 20px;
+      border: 1.5px solid #e2e8f0;
+    }
+    .kind-green {
+      background: #f0fdf4;
+      border-color: #86efac;
+    }
+    .kind-blue {
+      background: #eff6ff;
+      border-color: #93c5fd;
+    }
+    .kind-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .kind-head h3 {
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .kind-green h3 { color: #166534; }
+    .kind-blue h3 { color: #1e40af; }
+    .code-pill {
+      font-family: Consolas, monospace;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+    .kind-green .code-pill { background: #16a34a; color: #fff; }
+    .kind-blue .code-pill { background: #2563eb; color: #fff; }
+    .kind-list {
+      list-style: none;
+      font-size: 14px;
+      line-height: 1.65;
+      color: #1e293b;
+    }
+    .kind-list li::before {
+      content: "• ";
+      font-weight: bold;
+    }
+    /* Quy trình 5 bước */
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+    .step-box {
+      background: #f8faf9;
+      border: 1.5px solid #cde2d5;
+      border-radius: 14px;
+      padding: 16px 14px;
+      position: relative;
+    }
+    .step-badge {
+      display: inline-block;
+      background: #14532d;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+    .step-box h4 {
+      font-size: 15px;
+      font-weight: 800;
+      color: #123524;
+      margin-bottom: 6px;
+    }
+    .step-box p {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.5;
+    }
+    /* 4 vai trò */
+    .roles-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+    .role-card {
+      background: #ffffff;
+      border: 1.5px solid #dce8e0;
+      border-radius: 14px;
+      padding: 15px;
+    }
+    .role-title {
+      font-size: 15px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .role-card p {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.5;
+    }
+    /* Quy tắc đặt mã & Báo cáo */
+    .table-box {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #dce8e0;
+    }
+    .table-box th {
+      background: #eaf4ee;
+      color: #14532d;
+      text-align: left;
+      padding: 10px 12px;
+      font-weight: 700;
+    }
+    .table-box td {
+      padding: 9px 12px;
+      border-top: 1px solid #e2efe7;
+      color: #1e293b;
+    }
+    .table-box code {
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: Consolas, monospace;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .footer {
+      background: #f0f7f3;
+      border-top: 1.5px solid #d5e6dc;
+      padding: 16px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13.5px;
+      color: #166534;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="poster">
+    <div class="header">
+      <div class="header-left">
+        <div class="logo-box">
+          <img src="/logo.jpg" alt="Đặng Wedding" />
+        </div>
+        <div class="header-title">
+          <span class="tag">Cẩm nang vận hành nội bộ</span>
+          <h1>HƯỚNG DẪN SỬ DỤNG PHẦN MỀM KHO & DỰ ÁN</h1>
+          <p>ĐẶNG WEDDING • Quản lý vật tư tiêu hao, đồ tái sử dụng, lịch thi công & quyết toán</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <!-- Phần 1: Phân biệt 2 loại vật tư -->
+      <div>
+        <div class="section-title">
+          <span class="section-num">1</span>
+          <span>NGUYÊN TẮC CỐT LÕI: PHÂN BIỆT 2 LOẠI VẬT TƯ TRONG KHO</span>
+        </div>
+        <div class="two-cols">
+          <div class="kind-card kind-green">
+            <div class="kind-head">
+              <h3>🟢 VẬT TƯ TIÊU HAO (Dùng 1 lần)</h3>
+              <span class="code-pill">Mã: TH-[NHÓM]-001</span>
+            </div>
+            <ul class="kind-list">
+              <li><strong>Gồm:</strong> Hoa tươi, bóng bay, băng keo, dây rút, formex in ấn, nến...</li>
+              <li><strong>Khi xuất dự án:</strong> Trừ trực tiếp khỏi tồn kho.</li>
+              <li><strong>Sau khi xong tiệc:</strong> Nếu còn nguyên cuộn / nguyên bịch chưa dùng hết thì nhập lại vào ô <strong>"SL dư trả kho"</strong>.</li>
+              <li><strong>Tính chi phí tiệc:</strong> (SL xuất − SL dư) × Giá nhập.</li>
+            </ul>
+          </div>
+
+          <div class="kind-card kind-blue">
+            <div class="kind-head">
+              <h3>🔵 ĐỒ TÁI SỬ DỤNG (Decor & Dụng cụ)</h3>
+              <span class="code-pill">Mã: TSD-[NHÓM]-001</span>
+            </div>
+            <ul class="kind-list">
+              <li><strong>Gồm:</strong> Khung backdrop, đèn, vải rèm, hoa lụa, bàn ghế, đạo cụ, thang, kìm...</li>
+              <li><strong>Khi xuất dự án:</strong> Chuyển từ <em>"Trong kho"</em> sang trạng thái <strong>"Đang ở dự án"</strong>.</li>
+              <li><strong>Sau khi tháo dỡ:</strong> Bắt buộc vào tab <strong>Thu hồi</strong> đếm đủ 3 ô: <strong>SL Tốt</strong> (về kho) • <strong>SL Hỏng</strong> (sang chờ sửa) • <strong>SL Mất</strong>.</li>
+              <li><strong>Tính chi phí tiệc:</strong> Khấu hao mỗi lần dùng + Giá trị đồ hỏng/mất.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phần 2: Quy trình 5 bước -->
+      <div>
+        <div class="section-title">
+          <span class="section-num">2</span>
+          <span>QUY TRÌNH CHUẨN 5 BƯỚC CHO MỘT TIỆC CƯỚI / SỰ KIỆN</span>
+        </div>
+        <div class="steps-grid">
+          <div class="step-box">
+            <span class="step-badge">BƯỚC 1</span>
+            <h4>📦 Khai báo & Nhập kho</h4>
+            <p>Thêm vật tư (mã tự sinh không trùng). Khi mua hàng mới vào <strong>Phiếu kho → Nhập mua</strong> để cộng tồn kho.</p>
+          </div>
+          <div class="step-box">
+            <span class="step-badge">BƯỚC 2</span>
+            <h4>🎪 Tạo Dự Án Cưới</h4>
+            <p>Vào <strong>Dự án → + Tạo dự án</strong> (mã <code>DA-YYMM-001</code>). Chọn khách, ngày thi công → tháo dỡ & nhân sự.</p>
+          </div>
+          <div class="step-box">
+            <span class="step-badge">BƯỚC 3</span>
+            <h4>📋 Lên Kế Hoạch Đồ</h4>
+            <p>Trong dự án, bấm <strong>"Áp dụng mẫu set"</strong>. App tự động <strong>cảnh báo đỏ nếu thiếu đồ do trùng ngày</strong> với tiệc khác.</p>
+          </div>
+          <div class="step-box">
+            <span class="step-badge">BƯỚC 4</span>
+            <h4>📤 Xuất Kho Đi Tiệc</h4>
+            <p>Ngày đi setup, Thủ kho mở tab <strong>Xuất cho dự án</strong> → bấm <strong>"⚡ Xuất theo kế hoạch"</strong> chỉ với 1 click.</p>
+          </div>
+          <div class="step-box">
+            <span class="step-badge">BƯỚC 5</span>
+            <h4>📥 Thu Hồi & Quyết Toán</h4>
+            <p>Tháo dỡ về, mở tab <strong>Thu hồi</strong> nhập SL Tốt / Hỏng / Mất / Dư. Quản lý xem tab <strong>Tổng kết</strong> để biết lãi/lỗ.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phần 3: Phân quyền 4 vai trò -->
+      <div>
+        <div class="section-title">
+          <span class="section-num">3</span>
+          <span>PHÂN QUYỀN 4 VAI TRÒ TRONG ĐỘI NGŨ ĐẶNG WEDDING</span>
+        </div>
+        <div class="roles-grid">
+          <div class="role-card">
+            <div class="role-title" style="color:#166534;">👑 Quản trị (Admin)</div>
+            <p>Toàn quyền hệ thống. Vào mục <strong>👥 Người dùng</strong> để duyệt tài khoản nhân viên mới đăng ký và cấp vai trò.</p>
+          </div>
+          <div class="role-card">
+            <div class="role-title" style="color:#0369a1;">📊 Quản lý (Manager)</div>
+            <p>Tạo dự án, nhập <strong>Giá trị hợp đồng</strong>, nhập <strong>Chi phí khác</strong> (nhân công, xe tải), xem báo cáo Lãi/Lỗ.</p>
+          </div>
+          <div class="role-card">
+            <div class="role-title" style="color:#b45309;">📦 Thủ kho (Storekeeper)</div>
+            <p>Quản lý danh mục vật tư, mẫu set; lập phiếu Nhập mua, Xuất dự án, Thu hồi, Sửa xong. <em>(Ẩn doanh thu & lãi/lỗ)</em>.</p>
+          </div>
+          <div class="role-card">
+            <div class="role-title" style="color:#475569;">🛠️ NV Thi công (Staff)</div>
+            <p>Chỉ thấy các đám cưới mình được phân công, xem danh sách đồ cần mang đi và nhập xác nhận <strong>Thu hồi</strong> sau tiệc.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phần 4: Quy tắc mã & Báo cáo -->
+      <div class="two-cols">
+        <div>
+          <div class="section-title">
+            <span class="section-num">4</span>
+            <span>BẢNG MÃ TỰ ĐỘNG (CHỐNG TRÙNG 3 LỚP)</span>
+          </div>
+          <table class="table-box">
+            <thead>
+              <tr>
+                <th>Nhóm vật tư</th>
+                <th>Loại</th>
+                <th>Mã tự sinh</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Hoa tươi / Bóng bay</td><td>🟢 Tiêu hao</td><td><code>TH-HOA-001</code>, <code>TH-BONG-001</code></td></tr>
+              <tr><td>Phụ liệu / In Formex</td><td>🟢 Tiêu hao</td><td><code>TH-PHU-001</code>, <code>TH-IN-001</code></td></tr>
+              <tr><td>Khung / Đèn ánh sáng</td><td>🔵 Tái sử dụng</td><td><code>TSD-KHUNG-001</code>, <code>TSD-DEN-001</code></td></tr>
+              <tr><td>Vải rèm / Hoa lụa</td><td>🔵 Tái sử dụng</td><td><code>TSD-VAI-001</code>, <code>TSD-HOALUA-001</code></td></tr>
+              <tr><td>Bàn ghế / Đạo cụ / Dụng cụ</td><td>🔵 Tái sử dụng</td><td><code>TSD-BAN-001</code>, <code>TSD-DC-001</code></td></tr>
+              <tr><td>Mã Dự án (Theo tháng)</td><td>🎪 Sự kiện</td><td><code>DA-2611-001</code> (Tháng 11/2026)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <div class="section-title">
+            <span class="section-num">5</span>
+            <span>BÁO CÁO, DỰ BÁO & XUẤT EXCEL</span>
+          </div>
+          <table class="table-box">
+            <thead>
+              <tr>
+                <th>Mục kiểm tra</th>
+                <th>Xem ở đâu trên phần mềm?</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Đồ đang nằm ở đám cưới nào?</strong></td><td>Menu <strong>Báo cáo → Đồ đang ở đâu</strong></td></tr>
+              <tr><td><strong>Đám cưới nào quá hạn trả đồ?</strong></td><td>Thẻ đỏ tại trang <strong>Tổng quan</strong></td></tr>
+              <tr><td><strong>Hàng sắp hết cần mua thêm?</strong></td><td>Menu <strong>Báo cáo → 🔮 Dự báo (30 ngày tới)</strong></td></tr>
+              <tr><td><strong>Khung/đèn đã hoàn vốn bao nhiêu %?</strong></td><td>Menu <strong>Báo cáo → Hoàn vốn tái sử dụng</strong></td></tr>
+              <tr><td><strong>Đồ hỏng đã sửa xong nhập lại kho?</strong></td><td>Menu <strong>Phiếu kho → Tab Sửa xong</strong></td></tr>
+              <tr><td><strong>Tải toàn bộ dữ liệu ra Excel (.xlsx)?</strong></td><td>Nút <strong>📥 Xuất toàn bộ dữ liệu thô</strong> (Báo cáo)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>🌿 ĐẶNG WEDDING — Hệ thống Quản lý Kho Vật tư & Dự án Trang trí</span>
+      <span>Hỗ trợ sử dụng trên cả Máy tính & Điện thoại</span>
+    </div>
+  </div>
+</body>
+</html>

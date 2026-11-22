@@ -7,16 +7,23 @@ import {
   formatNumber,
   KIND_LABELS,
   ITEM_CATEGORY_PRESETS,
+  ITEM_COLOR_PRESETS,
+  getColorSwatch,
+  extractItemColor,
+  extractItemCleanNote,
+  packNoteWithColorFallback,
   generateItemCode,
   findDuplicateCode,
 } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { KindBadge } from '../components/Badges'
+import CurrencyInput from '../components/CurrencyInput'
 
 const INITIAL_FORM = {
   code: '',
   name: '',
   category: '',
+  color: '',
   kind: 'consumable',
   unit: 'cái',
   cost: 0,
@@ -35,6 +42,7 @@ export default function ItemsPage() {
   const [search, setSearch] = useState('')
   const [filterKind, setFilterKind] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
+  const [filterColor, setFilterColor] = useState('all')
   const [showInactive, setShowInactive] = useState(false)
 
   // Modal state
@@ -73,21 +81,33 @@ export default function ItemsPage() {
     return Array.from(set).sort()
   }, [items])
 
+  const colors = useMemo(() => {
+    const set = new Set()
+    for (const i of items) {
+      const c = extractItemColor(i)
+      if (c) set.add(c)
+    }
+    return Array.from(set).sort()
+  }, [items])
+
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
       if (!showInactive && !item.active) return false
       if (filterKind !== 'all' && item.kind !== filterKind) return false
       if (filterCategory !== 'all' && (item.category || '') !== filterCategory) return false
+      const itemColor = extractItemColor(item)
+      if (filterColor !== 'all' && itemColor !== filterColor) return false
       if (search.trim()) {
         const q = search.toLowerCase()
         const matchName = item.name?.toLowerCase().includes(q)
         const matchCode = item.code?.toLowerCase().includes(q)
         const matchCat = item.category?.toLowerCase().includes(q)
-        if (!matchName && !matchCode && !matchCat) return false
+        const matchColor = itemColor.toLowerCase().includes(q)
+        if (!matchName && !matchCode && !matchCat && !matchColor) return false
       }
       return true
     })
-  }, [items, showInactive, filterKind, filterCategory, search])
+  }, [items, showInactive, filterKind, filterCategory, filterColor, search])
 
   const openCreateModal = () => {
     setEditingItem(null)
@@ -126,13 +146,14 @@ export default function ItemsPage() {
       code: item.code || '',
       name: item.name || '',
       category: item.category || '',
+      color: extractItemColor(item),
       kind: item.kind || 'consumable',
       unit: item.unit || 'cái',
       cost: item.cost ?? 0,
       min_stock: item.min_stock ?? 0,
       expected_uses: item.expected_uses ?? '',
       image_url: item.image_url || '',
-      note: item.note || '',
+      note: extractItemCleanNote(item),
       active: item.active ?? true,
     })
     setModalOpen(true)
@@ -179,7 +200,7 @@ export default function ItemsPage() {
         }
       }
 
-      const payload = {
+      const basePayload = {
         code: finalCode,
         name: form.name.trim(),
         category: form.category.trim() || null,
@@ -192,20 +213,29 @@ export default function ItemsPage() {
             ? Math.round(Number(form.expected_uses))
             : null,
         image_url: form.image_url.trim() || null,
-        note: form.note.trim() || null,
+        note: packNoteWithColorFallback(form.color, form.note),
         active: Boolean(form.active),
       }
 
-      if (editingItem) {
-        const { error: err } = await supabase
-          .from('items')
-          .update(payload)
-          .eq('id', editingItem.id)
-        if (err) throw err
-      } else {
-        const { error: err } = await supabase.from('items').insert([payload])
-        if (err) throw err
+      const payloadWithColor = {
+        ...basePayload,
+        color: form.color.trim() || null,
       }
+
+      const saveRow = async (pl) => {
+        if (editingItem) {
+          return supabase.from('items').update(pl).eq('id', editingItem.id)
+        }
+        return supabase.from('items').insert([pl])
+      }
+
+      let { error: err } = await saveRow(payloadWithColor)
+      if (err && String(err.message || '').toLowerCase().includes('color')) {
+        // Fallback nếu database trên Supabase chưa chạy lệnh thêm cột color
+        const retry = await saveRow(basePayload)
+        err = retry.error
+      }
+      if (err) throw err
 
       setModalOpen(false)
       await loadItems()
@@ -236,6 +266,7 @@ export default function ItemsPage() {
       'Mã vật tư': i.code || '',
       'Tên vật tư': i.name,
       'Danh mục': i.category || '',
+      'Màu sắc': extractItemColor(i),
       'Phân loại': KIND_LABELS[i.kind] || i.kind,
       'Đơn vị': i.unit,
       'Giá nhập (₫)': Number(i.cost || 0),
@@ -246,7 +277,7 @@ export default function ItemsPage() {
       'Tồn tối thiểu': Number(i.min_stock || 0),
       'Số lần dùng dự kiến': i.expected_uses || '',
       'Trạng thái': i.active ? 'Đang dùng' : 'Ngưng dùng',
-      'Ghi chú': i.note || '',
+      'Ghi chú': extractItemCleanNote(i),
     }))
     exportToExcel(rows, 'DanhSachVatTu', 'danh-sach-vat-tu.xlsx')
   }
@@ -354,6 +385,14 @@ export default function ItemsPage() {
               </option>
             ))}
           </select>
+          <select value={filterColor} onChange={(e) => setFilterColor(e.target.value)}>
+            <option value="all">Tất cả màu sắc</option>
+            {colors.map((c) => (
+              <option key={c} value={c}>
+                🎨 {c}
+              </option>
+            ))}
+          </select>
           <label className="checkbox-label">
             <input
               type="checkbox"
@@ -379,6 +418,7 @@ export default function ItemsPage() {
                   <th>Mã</th>
                   <th>Tên vật tư</th>
                   <th>Danh mục</th>
+                  <th>Màu sắc</th>
                   <th>Loại</th>
                   <th>ĐVT</th>
                   <th className="text-right">Giá nhập</th>
@@ -394,6 +434,8 @@ export default function ItemsPage() {
                   const isLowStock =
                     Number(item.min_stock || 0) > 0 &&
                     Number(item.in_stock || 0) < Number(item.min_stock || 0)
+                  const itemColor = extractItemColor(item)
+                  const swatch = getColorSwatch(itemColor)
                   return (
                     <tr key={item.id} className={!item.active ? 'row-inactive' : ''}>
                       <td>
@@ -410,6 +452,34 @@ export default function ItemsPage() {
                         )}
                       </td>
                       <td>{item.category || '—'}</td>
+                      <td>
+                        {itemColor ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: '0.85rem',
+                              fontWeight: 500,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 12,
+                                height: 12,
+                                borderRadius: '50%',
+                                backgroundColor: swatch?.hex || '#e2e8f0',
+                                border: `1.5px solid ${swatch?.border || '#94a3b8'}`,
+                                display: 'inline-block',
+                                flexShrink: 0,
+                              }}
+                            />
+                            {itemColor}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td>
                         <KindBadge kind={item.kind} />
                       </td>
@@ -586,15 +656,70 @@ export default function ItemsPage() {
                 />
               </div>
 
+              <div className="form-group">
+                <label>Màu sắc (chọn nhanh hoặc tự nhập)</label>
+                <input
+                  type="text"
+                  list="color-presets"
+                  placeholder="VD: Trắng kem, Hồng Pastel, Đỏ rượu, Vàng đồng..."
+                  value={form.color}
+                  onChange={(e) => setForm({ ...form, color: e.target.value })}
+                />
+                <datalist id="color-presets">
+                  {ITEM_COLOR_PRESETS.map((c) => (
+                    <option key={c.name} value={c.name} />
+                  ))}
+                </datalist>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                    marginTop: 8,
+                  }}
+                >
+                  {ITEM_COLOR_PRESETS.slice(0, 10).map((c) => {
+                    const active = form.color.trim().toLowerCase() === c.name.toLowerCase()
+                    return (
+                      <button
+                        key={c.name}
+                        type="button"
+                        onClick={() => setForm({ ...form, color: c.name })}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '3px 9px',
+                          fontSize: '0.78rem',
+                          borderRadius: 999,
+                          border: active ? '1.5px solid #16a34a' : '1px solid #cbd5e1',
+                          background: active ? '#dcfce7' : '#ffffff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: '50%',
+                            backgroundColor: c.hex,
+                            border: `1px solid ${c.border}`,
+                          }}
+                        />
+                        {c.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               <div className="form-grid-2">
                 <div className="form-group">
                   <label>Giá nhập gần nhất (₫)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
+                  <CurrencyInput
                     value={form.cost}
-                    onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                    onChange={(num) => setForm({ ...form, cost: num })}
+                    placeholder="VD: 10.000; 250.000; 1.000.000"
                   />
                 </div>
                 <div className="form-group">

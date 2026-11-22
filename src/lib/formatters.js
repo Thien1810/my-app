@@ -36,16 +36,34 @@ export const MOVEMENT_TYPE_LABELS = {
   adjust: 'Điều chỉnh',
 }
 
+// Luôn định dạng dấu chấm (.) giữa mỗi 3 chữ số: 10.000; 250.000; 1.000.000
+export function formatPriceDots(value) {
+  const num = Math.round(Number(value || 0))
+  if (Number.isNaN(num)) return '0'
+  const sign = num < 0 ? '-' : ''
+  const absStr = String(Math.abs(num))
+  return sign + absStr.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+export function parsePriceInput(str) {
+  if (typeof str === 'number') return Math.round(str)
+  const digits = String(str || '').replace(/[^\d-]/g, '')
+  const parsed = parseInt(digits, 10)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
 export function formatCurrency(value) {
-  const num = Number(value || 0)
-  return new Intl.NumberFormat('vi-VN').format(Math.round(num)) + ' ₫'
+  return formatPriceDots(value) + ' ₫'
 }
 
 export function formatNumber(value) {
   const num = Number(value || 0)
-  return new Intl.NumberFormat('vi-VN', {
-    maximumFractionDigits: 2,
-  }).format(num)
+  if (Number.isNaN(num)) return '0'
+  const isInt = Number.isInteger(num)
+  if (isInt) return formatPriceDots(num)
+  const [intPart, decPart] = num.toFixed(2).replace(/\.?0+$/, '').split('.')
+  const formattedInt = formatPriceDots(Number(intPart))
+  return decPart ? `${formattedInt},${decPart}` : formattedInt
 }
 
 export function formatDate(dateStr) {
@@ -215,4 +233,69 @@ export function translateAuthError(message = '') {
     return 'Bạn thao tác quá nhanh, vui lòng đợi khoảng 1 phút rồi thử lại.'
   }
   return msg || 'Đã xảy ra lỗi. Vui lòng thử lại.'
+}
+
+
+// ---------- MÀU SẮC VẬT TƯ NGÀNH CƯỚI ----------
+export const ITEM_COLOR_PRESETS = [
+  { name: 'Trắng', hex: '#ffffff', border: '#cbd5e1' },
+  { name: 'Trắng kem', hex: '#fef3c7', border: '#fcd34d' },
+  { name: 'Hồng Pastel', hex: '#fce7f3', border: '#f9a8d4' },
+  { name: 'Hồng phấn', hex: '#f472b6', border: '#ec4899' },
+  { name: 'Đỏ tươi', hex: '#ef4444', border: '#dc2626' },
+  { name: 'Đỏ rượu (Burgundy)', hex: '#881337', border: '#881337' },
+  { name: 'Vàng đồng (Gold)', hex: '#eab308', border: '#ca8a04' },
+  { name: 'Vàng Champagne', hex: '#fde68a', border: '#f59e0b' },
+  { name: 'Xanh lá', hex: '#22c55e', border: '#16a34a' },
+  { name: 'Xanh dương Pastel', hex: '#bae6fd', border: '#38bdf8' },
+  { name: 'Tím Pastel', hex: '#e9d5ff', border: '#c084fc' },
+  { name: 'Nâu gỗ', hex: '#92400e', border: '#78350f' },
+  { name: 'Bạc (Silver)', hex: '#cbd5e1', border: '#94a3b8' },
+  { name: 'Đen', hex: '#1e293b', border: '#0f172a' },
+  { name: 'Trong suốt', hex: '#f8fafc', border: '#94a3b8' },
+  { name: 'Nhiều màu', hex: '#16a34a', border: '#16a34a' },
+]
+
+export function getColorSwatch(colorName = '') {
+  const clean = (colorName || '').trim().toLowerCase()
+  if (!clean) return null
+  const found = ITEM_COLOR_PRESETS.find((c) => c.name.toLowerCase() === clean)
+  if (found) return found
+  if (clean.includes('trắng')) return ITEM_COLOR_PRESETS[0]
+  if (clean.includes('kem')) return ITEM_COLOR_PRESETS[1]
+  if (clean.includes('hồng')) return ITEM_COLOR_PRESETS[2]
+  if (clean.includes('đỏ')) return ITEM_COLOR_PRESETS[4]
+  if (clean.includes('vàng') || clean.includes('gold')) return ITEM_COLOR_PRESETS[6]
+  if (clean.includes('xanh lá') || clean.includes('rêu')) return ITEM_COLOR_PRESETS[8]
+  if (clean.includes('xanh')) return ITEM_COLOR_PRESETS[9]
+  if (clean.includes('tím')) return ITEM_COLOR_PRESETS[10]
+  if (clean.includes('nâu') || clean.includes('gỗ')) return ITEM_COLOR_PRESETS[11]
+  if (clean.includes('bạc')) return ITEM_COLOR_PRESETS[12]
+  if (clean.includes('đen')) return ITEM_COLOR_PRESETS[13]
+  return { name: colorName, hex: '#e2e8f0', border: '#94a3b8' }
+}
+
+const COLOR_TAG_REGEX = /^\[Màu:\s*([^\]]+)\]\s*/i
+
+export function extractItemColor(item) {
+  if (!item) return ''
+  if (item.color && String(item.color).trim()) {
+    return String(item.color).trim()
+  }
+  const note = String(item.note || '')
+  const match = note.match(COLOR_TAG_REGEX)
+  return match ? match[1].trim() : ''
+}
+
+export function extractItemCleanNote(item) {
+  if (!item) return ''
+  const note = String(item.note || '')
+  return note.replace(COLOR_TAG_REGEX, '').trim()
+}
+
+export function packNoteWithColorFallback(color = '', cleanNote = '') {
+  const c = (color || '').trim()
+  const n = (cleanNote || '').replace(COLOR_TAG_REGEX, '').trim()
+  if (!c) return n || null
+  return n ? `[Màu: ${c}] ${n}` : `[Màu: ${c}]`
 }

@@ -11,6 +11,7 @@ import {
 } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { MovementTypeBadge } from '../components/Badges'
+import CurrencyInput from '../components/CurrencyInput'
 
 export default function MovementsPage() {
   const { canEditCatalog, isAdmin } = useAuth()
@@ -384,15 +385,13 @@ export default function MovementsPage() {
                             />
                           </td>
                           <td>
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
+                            <CurrencyInput
                               required
                               value={line.unit_cost}
-                              onChange={(e) =>
-                                handlePurchaseLineChange(idx, 'unit_cost', e.target.value)
+                              onChange={(num) =>
+                                handlePurchaseLineChange(idx, 'unit_cost', num)
                               }
+                              placeholder="VD: 250.000"
                             />
                           </td>
                           <td className="text-right font-bold">

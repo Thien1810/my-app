@@ -21,6 +21,7 @@ import {
   ProjectStatusBadge,
   MovementTypeBadge,
 } from '../components/Badges'
+import CurrencyInput from '../components/CurrencyInput'
 
 export default function ProjectDetailPage() {
   const { id } = useParams()
@@ -1214,14 +1215,11 @@ export default function ProjectDetailPage() {
               </div>
               <div className="form-group">
                 <label>Số tiền (₫) *</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="any"
+                <CurrencyInput
                   required
-                  placeholder="VD: 1500000"
+                  placeholder="VD: 1.500.000"
                   value={costAmount}
-                  onChange={(e) => setCostAmount(e.target.value)}
+                  onChange={(num) => setCostAmount(num)}
                 />
               </div>
               <div className="form-group">

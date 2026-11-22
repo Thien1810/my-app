@@ -12,6 +12,7 @@ import {
 } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
+import CurrencyInput from '../components/CurrencyInput'
 
 const INITIAL_PROJECT_FORM = {
   code: '',
@@ -595,12 +596,10 @@ export default function ProjectsPage() {
                 {isManagerOrAdmin && (
                   <div className="form-group">
                     <label>Giá trị hợp đồng (₫)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
+                    <CurrencyInput
                       value={form.contract_value}
-                      onChange={(e) => setForm({ ...form, contract_value: e.target.value })}
+                      onChange={(num) => setForm({ ...form, contract_value: num })}
+                      placeholder="VD: 15.000.000"
                     />
                   </div>
                 )}

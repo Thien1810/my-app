@@ -61,6 +61,7 @@ create table if not exists public.items (
   code text unique,
   name text not null,
   category text,
+  color text,
   kind text not null check (kind in ('consumable','reusable')), -- Tiêu hao / Tái sử dụng
   unit text not null default 'cái',
   cost numeric(14,2) not null default 0,          -- Giá nhập gần nhất
@@ -71,6 +72,7 @@ create table if not exists public.items (
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
+alter table public.items add column if not exists color text;
 
 -- ---------- 3. DỰ ÁN ----------
 create table if not exists public.projects (
