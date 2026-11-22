@@ -1533,3 +1533,22 @@
     transform: rotate(360deg);
   }
 }
+
+.ai-loading-fill {
+  transition: width 0.25s linear;
+}
+
+.ai-loading-shimmer {
+  background: linear-gradient(90deg, #15803d 0%, #22c55e 50%, #15803d 100%);
+  background-size: 200% 100%;
+  animation: aiShimmerMove 1.4s linear infinite;
+}
+
+@keyframes aiShimmerMove {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
