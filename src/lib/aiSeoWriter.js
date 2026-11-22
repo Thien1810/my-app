@@ -51,28 +51,69 @@ async function callAiPayload(apiKey, payload, directPrompt) {
     }
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(key)}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: directPrompt }] }],
-      generationConfig: {
-        temperature: 0.65,
-        responseMimeType: 'application/json',
-      },
-    }),
-  })
+  const models = [
+    'gemini-3.8-flash',
+    'gemini-3.8-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-2.5-flash-lite',
+  ]
+  let lastErr = ''
 
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}))
-    throw new Error(`Lỗi Gemini API: ${errBody?.error?.message || `HTTP ${res.status}`}`)
+  for (const model of models) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 11000)
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: directPrompt }] }],
+          generationConfig: {
+            temperature: 0.6,
+            maxOutputTokens: 1600,
+            responseMimeType: 'application/json',
+            thinkingConfig: { thinkingBudget: 0 },
+          },
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        const cleaned = text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim()
+        return JSON.parse(cleaned)
+      }
+
+      const errBody = await res.json().catch(() => ({}))
+      lastErr = errBody?.error?.message || `HTTP ${res.status}`
+      const lower = lastErr.toLowerCase()
+      const shouldFallback =
+        res.status === 404 ||
+        res.status === 429 ||
+        res.status === 503 ||
+        res.status === 500 ||
+        lower.includes('no longer available') ||
+        lower.includes('high demand') ||
+        lower.includes('overloaded') ||
+        lower.includes('thinking')
+      if (!shouldFallback) {
+        throw new Error(`Lỗi Gemini API: ${lastErr}`)
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        lastErr = `${model} timeout (11s)`
+        continue
+      }
+      if (String(err?.message || '').startsWith('Lỗi Gemini API:')) throw err
+      lastErr = err.message
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
-  const data = await res.json()
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-  const cleaned = text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim()
-  return JSON.parse(cleaned)
+  throw new Error(`Lỗi Gemini API: ${lastErr || 'Tất cả model đang bận, anh thử lại sau vài giây.'}`)
 }
 
 function normalizeArticleResult(parsed, fallbackTitle = '') {
