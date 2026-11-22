@@ -31,11 +31,20 @@ const DEFAULT_SETTINGS = {
   tiktok_url: 'https://www.tiktok.com/@dangweddingg?lang=en',
 }
 
+const GALLERY_CATEGORIES = [
+  'Gia tiên',
+  'Mâm quả',
+  'Cổng hoa',
+  'Backdrop',
+  'Rạp & bàn ghế',
+  'Đám thực tế',
+]
+
 export default function WebsiteAdminPage() {
   const { isManagerOrAdmin, isStaff } = useAuth()
   const navigate = useNavigate()
 
-  const [tab, setTab] = useState('leads') // 'leads' | 'settings'
+  const [tab, setTab] = useState('leads') // 'leads' | 'gallery' | 'settings'
   const [loading, setLoading] = useState(true)
   const [schemaMissing, setSchemaMissing] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -46,6 +55,20 @@ export default function WebsiteAdminPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [convertingId, setConvertingId] = useState(null)
+
+  // Gallery state (ảnh đám thực tế tải lên riêng)
+  const [gallery, setGallery] = useState([])
+  const [galleryMissing, setGalleryMissing] = useState(false)
+  const [galFilter, setGalFilter] = useState('all')
+  const [galForm, setGalForm] = useState({
+    title: '',
+    category: 'Gia tiên',
+    event_date: '',
+    description: '',
+    images: [], // [{ dataUrl, info }]
+  })
+  const [uploadingGal, setUploadingGal] = useState(false)
+  const [savingGal, setSavingGal] = useState(false)
 
   // Settings state
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -63,10 +86,12 @@ export default function WebsiteAdminPage() {
     setLoading(true)
     setErrorMsg('')
     setSchemaMissing(false)
+    setGalleryMissing(false)
     try {
-      const [leadsRes, settingsRes] = await Promise.all([
+      const [leadsRes, settingsRes, galleryRes] = await Promise.all([
         supabase.from('site_leads').select('*').order('created_at', { ascending: false }),
         supabase.from('site_settings').select('*').eq('id', 1).maybeSingle(),
+        supabase.from('site_gallery').select('*').order('created_at', { ascending: false }),
       ])
 
       const err = leadsRes.error || settingsRes.error
@@ -87,6 +112,20 @@ export default function WebsiteAdminPage() {
         if (settingsRes.data) {
           setSettings({ ...DEFAULT_SETTINGS, ...settingsRes.data })
         }
+      }
+
+      if (galleryRes.error) {
+        const gmsg = (galleryRes.error.message || '').toLowerCase()
+        if (
+          galleryRes.error.code === '42P01' ||
+          gmsg.includes('does not exist') ||
+          gmsg.includes('schema cache') ||
+          gmsg.includes('could not find the table')
+        ) {
+          setGalleryMissing(true)
+        }
+      } else {
+        setGallery(galleryRes.data || [])
       }
     } catch (e) {
       setErrorMsg(e.message)
@@ -278,6 +317,101 @@ export default function WebsiteAdminPage() {
     }
   }
 
+  const handleGalleryFiles = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    setUploadingGal(true)
+    setErrorMsg('')
+    try {
+      const compressed = []
+      for (const file of files.slice(0, 10)) {
+        const res = await compressImageUnder1MB(file)
+        compressed.push({
+          dataUrl: res.dataUrl,
+          info: `${formatBytes(res.originalSize)} → ${formatBytes(res.compressedSize)}`,
+        })
+      }
+      setGalForm((prev) => ({
+        ...prev,
+        images: [...prev.images, ...compressed],
+      }))
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setUploadingGal(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleAddGallery = async (e) => {
+    e.preventDefault()
+    if (!galForm.title.trim()) {
+      setErrorMsg('Vui lòng nhập tên đám hoặc tiêu đề ảnh.')
+      return
+    }
+    if (galForm.images.length === 0) {
+      setErrorMsg('Vui lòng chọn ít nhất 1 ảnh đám thực tế để tải lên.')
+      return
+    }
+    setSavingGal(true)
+    setErrorMsg('')
+    try {
+      const rows = galForm.images.map((img, idx) => ({
+        title:
+          galForm.images.length > 1
+            ? `${galForm.title.trim()} (${idx + 1})`
+            : galForm.title.trim(),
+        category: galForm.category || 'Gia tiên',
+        image_url: img.dataUrl,
+        description: galForm.description.trim() || '',
+        event_date: galForm.event_date || null,
+        is_featured: true,
+      }))
+      const { data, error } = await supabase.from('site_gallery').insert(rows).select('*')
+      if (error) throw error
+      setGallery((prev) => [...(data || []), ...prev])
+      setGalForm({
+        title: '',
+        category: galForm.category,
+        event_date: '',
+        description: '',
+        images: [],
+      })
+      showToast(`✓ Đã đăng ${rows.length} ảnh lên mục Thư viện của dangwed.com!`)
+    } catch (err) {
+      setErrorMsg('Không thể lưu ảnh thư viện: ' + err.message)
+    } finally {
+      setSavingGal(false)
+    }
+  }
+
+  const handleToggleFeatured = async (item) => {
+    const next = !item.is_featured
+    const { error } = await supabase
+      .from('site_gallery')
+      .update({ is_featured: next })
+      .eq('id', item.id)
+    if (error) {
+      setErrorMsg('Không thể cập nhật trạng thái hiển thị: ' + error.message)
+      return
+    }
+    setGallery((prev) =>
+      prev.map((g) => (g.id === item.id ? { ...g, is_featured: next } : g))
+    )
+    showToast(next ? 'Đã bật hiển thị ảnh trên Website.' : 'Đã tạm ẩn ảnh khỏi Website.')
+  }
+
+  const handleDeleteGallery = async (item) => {
+    if (!window.confirm(`Xóa ảnh "${item.title}" khỏi Thư viện?`)) return
+    const { error } = await supabase.from('site_gallery').delete().eq('id', item.id)
+    if (error) {
+      setErrorMsg('Không thể xóa ảnh: ' + error.message)
+      return
+    }
+    setGallery((prev) => prev.filter((g) => g.id !== item.id))
+    showToast('Đã xóa ảnh khỏi Thư viện.')
+  }
+
   const filteredLeads = leads.filter((l) => {
     if (statusFilter !== 'all' && l.status !== statusFilter) return false
     if (search.trim()) {
@@ -303,7 +437,7 @@ export default function WebsiteAdminPage() {
         </div>
         <div className="header-actions">
           <Link to="/mau-set" className="btn btn-outline">
-            ✨ Quản lý Bộ sưu tập Mẫu
+            ✨ Quản lý Mẫu Set
           </Link>
           <a
             href="https://dangwed.com"
@@ -347,6 +481,13 @@ export default function WebsiteAdminPage() {
                   {newLeadsCount} mới
                 </span>
               )}
+            </button>
+            <button
+              type="button"
+              className={`tab-btn ${tab === 'gallery' ? 'active' : ''}`}
+              onClick={() => setTab('gallery')}
+            >
+              🖼 Thư viện ảnh đám thực tế ({gallery.length})
             </button>
             <button
               type="button"
@@ -546,8 +687,269 @@ export default function WebsiteAdminPage() {
                 </div>
               )}
             </>
+          ) : tab === 'gallery' ? (
+            /* Tab 2: Thư viện ảnh đám thực tế */
+            <div style={{ display: 'grid', gap: 18 }}>
+              {galleryMissing ? (
+                <div className="card" style={{ padding: 24 }}>
+                  <h3 style={{ marginBottom: 8 }}>
+                    ⚙️ Cần cập nhật SQL để bật mục Tải ảnh đám thực tế
+                  </h3>
+                  <p className="text-muted" style={{ marginBottom: 14, lineHeight: 1.6 }}>
+                    Database chưa có bảng <code>site_gallery</code>. Anh mở{' '}
+                    <strong>Supabase → SQL Editor</strong>, dán lại toàn bộ file{' '}
+                    <code>my-app/supabase/website_schema.sql</code> bản mới nhất rồi bấm{' '}
+                    <strong>Run</strong>, sau đó bấm nút kiểm tra lại bên dưới nhé.
+                  </p>
+                  <button type="button" className="btn btn-primary" onClick={loadData}>
+                    🔄 Kiểm tra lại kết nối
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <form onSubmit={handleAddGallery} className="card" style={{ padding: 20 }}>
+                    <h3 style={{ marginBottom: 4 }}>📷 Đăng ảnh đám đã làm thực tế lên Thư viện</h3>
+                    <p className="text-muted" style={{ fontSize: 13.5, marginBottom: 16 }}>
+                      Mục <strong>Thư viện</strong> trên <strong>dangwed.com</strong> sẽ hiển thị
+                      gộp cả ảnh đám thực tế anh tải lên ở đây cùng với các mẫu trong{' '}
+                      <Link to="/mau-set" style={{ color: '#163828', fontWeight: 600 }}>
+                        ✨ Mẫu set trang trí
+                      </Link>
+                      .
+                    </p>
+
+                    <div className="form-grid" style={{ marginBottom: 14 }}>
+                      <div className="form-group">
+                        <label>Tên đám / Tiêu đề ảnh *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="VD: Gia tiên tone trắng xanh - Nhà anh Tuấn"
+                          value={galForm.title}
+                          onChange={(e) => setGalForm({ ...galForm, title: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Hạng mục hiển thị</label>
+                        <select
+                          value={galForm.category}
+                          onChange={(e) => setGalForm({ ...galForm, category: e.target.value })}
+                        >
+                          {GALLERY_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Ngày tổ chức (tùy chọn)</label>
+                        <input
+                          type="date"
+                          value={galForm.event_date}
+                          onChange={(e) =>
+                            setGalForm({ ...galForm, event_date: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 14 }}>
+                      <label>Mô tả ngắn (tùy chọn)</label>
+                      <input
+                        type="text"
+                        placeholder="VD: Hoa tươi nhập khẩu phối voan lụa kem, lắp đặt trọn gói tại tư gia..."
+                        value={galForm.description}
+                        onChange={(e) =>
+                          setGalForm({ ...galForm, description: e.target.value })
+                        }
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 16 }}>
+                      <label>
+                        Chọn ảnh thực tế (có thể chọn nhiều ảnh cùng lúc, tự động nén &lt; 1MB)
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
+                        <label
+                          className="btn btn-outline btn-sm"
+                          style={{ cursor: 'pointer', marginBottom: 0 }}
+                        >
+                          {uploadingGal ? 'Đang nén ảnh...' : '📁 Chọn 1 hoặc nhiều ảnh'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            hidden
+                            disabled={uploadingGal}
+                            onChange={handleGalleryFiles}
+                          />
+                        </label>
+                        {galForm.images.length > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            onClick={() => setGalForm((prev) => ({ ...prev, images: [] }))}
+                          >
+                            ✕ Xóa ảnh đã chọn ({galForm.images.length})
+                          </button>
+                        )}
+                      </div>
+
+                      {galForm.images.length > 0 && (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+                            gap: 10,
+                            marginTop: 12,
+                          }}
+                        >
+                          {galForm.images.map((img, i) => (
+                            <div
+                              key={i}
+                              style={{
+                                position: 'relative',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: 8,
+                                overflow: 'hidden',
+                                background: '#fff',
+                              }}
+                            >
+                              <img
+                                src={img.dataUrl}
+                                alt={`Preview ${i + 1}`}
+                                style={{ width: '100%', height: 90, objectFit: 'cover', display: 'block' }}
+                              />
+                              <div style={{ padding: '4px 6px', fontSize: 10.5, color: '#64748b' }}>
+                                {img.info}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={savingGal || uploadingGal}
+                    >
+                      {savingGal ? 'Đang đăng lên Website...' : '✨ Đăng ảnh lên Thư viện Website'}
+                    </button>
+                  </form>
+
+                  {/* Danh sách ảnh đã đăng */}
+                  <div className="card" style={{ padding: 20 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        flexWrap: 'wrap',
+                        marginBottom: 14,
+                      }}
+                    >
+                      <h3>🖼 Ảnh đám thực tế đã đăng ({gallery.length})</h3>
+                      <select
+                        value={galFilter}
+                        onChange={(e) => setGalFilter(e.target.value)}
+                        style={{ padding: '6px 10px', fontSize: 13 }}
+                      >
+                        <option value="all">Tất cả hạng mục</option>
+                        {GALLERY_CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {gallery.filter((g) => galFilter === 'all' || g.category === galFilter).length === 0 ? (
+                      <div className="empty-state" style={{ padding: 28 }}>
+                        Chưa có ảnh đám thực tế nào được tải lên ở mục này.
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
+                          gap: 14,
+                        }}
+                      >
+                        {gallery
+                          .filter((g) => galFilter === 'all' || g.category === galFilter)
+                          .map((item) => (
+                            <div
+                              key={item.id}
+                              style={{
+                                border: '1px solid #e2e8f0',
+                                borderRadius: 10,
+                                overflow: 'hidden',
+                                background: '#fff',
+                                opacity: item.is_featured ? 1 : 0.6,
+                              }}
+                            >
+                              <img
+                                src={item.image_url}
+                                alt={item.title}
+                                style={{ width: '100%', height: 165, objectFit: 'cover', display: 'block' }}
+                              />
+                              <div style={{ padding: 12 }}>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    marginBottom: 6,
+                                  }}
+                                >
+                                  <span className="badge badge-green">{item.category}</span>
+                                  {item.event_date && (
+                                    <span className="text-xs text-muted">
+                                      {formatDate(item.event_date)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="font-bold" style={{ fontSize: 14, marginBottom: 4 }}>
+                                  {item.title}
+                                </div>
+                                {item.description && (
+                                  <div className="text-xs text-muted" style={{ marginBottom: 10 }}>
+                                    {item.description}
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    style={{ flex: 1 }}
+                                    onClick={() => handleToggleFeatured(item)}
+                                  >
+                                    {item.is_featured ? '👁 Đang hiện' : '🙈 Đang ẩn'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                                    onClick={() => handleDeleteGallery(item)}
+                                  >
+                                    🗑
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           ) : (
-            /* Tab 2: Settings */
+            /* Tab 3: Settings */
             <form onSubmit={handleSaveSettings} className="card" style={{ padding: 20 }}>
               {!isManagerOrAdmin && (
                 <div className="alert alert-error" style={{ marginBottom: 16 }}>
@@ -728,9 +1130,10 @@ export default function WebsiteAdminPage() {
               </div>
 
               <div className="sub-card" style={{ marginBottom: 20 }}>
-                <strong>💡 Lưu ý về Bộ sưu tập Mẫu Gia tiên & Mâm quả trên Website:</strong>
+                <strong>💡 Lưu ý về Thư viện trên Website:</strong>
                 <p className="text-muted" style={{ fontSize: 13.5, marginTop: 4 }}>
-                  Mục Bộ sưu tập trên <strong>dangwed.com</strong> tự động lấy hình ảnh từ trang{' '}
+                  Mục Thư viện trên <strong>dangwed.com</strong> tự động gộp hình ảnh từ tab{' '}
+                  <strong>🖼 Thư viện ảnh đám thực tế</strong> ở trên cùng với các mẫu trong{' '}
                   <Link to="/mau-set" style={{ color: '#163828', fontWeight: 600 }}>
                     ✨ Mẫu set trang trí
                   </Link>

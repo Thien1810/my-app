@@ -38,9 +38,23 @@ create table if not exists public.site_leads (
   created_at timestamptz not null default now()
 );
 
--- 3. Bật RLS & Phân quyền công khai an toàn cho Website khách hàng
+-- 3. Bảng Thư viện ảnh các đám đã làm thực tế (hiển thị chung trong mục Thư viện trên dangwed.com)
+create table if not exists public.site_gallery (
+  id bigint generated always as identity primary key,
+  title text not null,
+  category text not null default 'Gia tiên',
+  image_url text not null,
+  description text default '',
+  event_date date,
+  is_featured boolean not null default true,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- 4. Bật RLS & Phân quyền công khai an toàn cho Website khách hàng
 alter table public.site_settings enable row level security;
 alter table public.site_leads enable row level security;
+alter table public.site_gallery enable row level security;
 
 -- Ai cũng xem được cấu hình web & bộ sưu tập mẫu set (chỉ xem, không sửa)
 drop policy if exists "site_settings_public_read" on public.site_settings;
@@ -71,8 +85,19 @@ drop policy if exists "site_leads_admin_delete" on public.site_leads;
 create policy "site_leads_admin_delete" on public.site_leads for delete
   using (public.has_role(array['admin','manager']));
 
+-- Thư viện ảnh đám thực tế: khách xem ảnh đang bật hiển thị; Admin/Manager/Thủ kho thêm/sửa/xóa
+drop policy if exists "site_gallery_public_read" on public.site_gallery;
+create policy "site_gallery_public_read" on public.site_gallery for select
+  using (is_featured = true or public.has_role(array['admin','manager','storekeeper']));
+
+drop policy if exists "site_gallery_staff_write" on public.site_gallery;
+create policy "site_gallery_staff_write" on public.site_gallery for all
+  using (public.has_role(array['admin','manager','storekeeper']))
+  with check (public.has_role(array['admin','manager','storekeeper']));
+
 -- Cấp quyền GRANT cho API anon và authenticated
-grant select on public.site_settings, public.set_templates to anon, authenticated;
+grant select on public.site_settings, public.set_templates, public.site_gallery to anon, authenticated;
 grant insert on public.site_leads to anon, authenticated;
 grant select, update, delete on public.site_settings, public.site_leads to authenticated;
+grant select, insert, update, delete on public.site_gallery to authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
