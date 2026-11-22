@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [authError, setAuthError] = useState('')
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
 
   const fetchProfile = useCallback(async (user) => {
     if (!supabase || !user) {
@@ -59,7 +60,10 @@ export function AuthProvider({ children }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true)
+      }
       setSession(s)
       if (s?.user) {
         fetchProfile(s.user)
@@ -104,6 +108,16 @@ export function AuthProvider({ children }) {
     return data
   }
 
+  const updatePassword = async (newPassword) => {
+    setAuthError('')
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+    })
+    if (error) throw error
+    setIsPasswordRecovery(false)
+    return data
+  }
+
   const signOut = async () => {
     if (!supabase) return
     await supabase.auth.signOut()
@@ -145,6 +159,9 @@ export function AuthProvider({ children }) {
         signIn,
         signUp,
         resetPassword,
+        updatePassword,
+        isPasswordRecovery,
+        setIsPasswordRecovery,
         signOut,
         refreshProfile,
       }}

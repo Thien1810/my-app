@@ -4,7 +4,7 @@ import { useAuth } from '../lib/AuthContext'
 import { RoleBadge } from './Badges'
 
 export default function Layout() {
-  const { profile, user, role, isAdmin, isStaff, signOut } = useAuth()
+  const { profile, user, role, isAdmin, isStaff, signOut, setIsPasswordRecovery } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const navItems = [
@@ -70,9 +70,18 @@ export default function Layout() {
               <RoleBadge role={role} />
             </div>
           </div>
-          <button className="btn btn-outline btn-sm btn-block" onClick={signOut}>
-            Đăng xuất
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ flex: 1 }}
+              onClick={() => setIsPasswordRecovery(true)}
+            >
+              🔑 Đổi MK
+            </button>
+            <button className="btn btn-outline btn-sm" style={{ flex: 1 }} onClick={signOut}>
+              Đăng xuất
+            </button>
+          </div>
         </div>
       </aside>
 
