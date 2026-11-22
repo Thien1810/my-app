@@ -139,6 +139,7 @@ export default function WebsiteAdminPage() {
   const [uploadingPostCover, setUploadingPostCover] = useState(false)
   const [savingPost, setSavingPost] = useState(false)
   const [postEditorMode, setPostEditorMode] = useState('structured') // 'structured' | 'raw'
+  const [postView, setPostView] = useState('list') // 'list' | 'editor'
   const [googlePreviewMode, setGooglePreviewMode] = useState('desktop') // 'desktop' | 'mobile'
   const [seoStruct, setSeoStruct] = useState({
     intro: '',
@@ -550,6 +551,7 @@ export default function WebsiteAdminPage() {
         conclusionQuote: opt.conclusionQuote,
       }
       setEditingPostId(post.id)
+      setPostView('editor')
       setSeoStruct(nextStruct)
       setPostEditorMode('structured')
       setPostForm({
@@ -875,6 +877,7 @@ export default function WebsiteAdminPage() {
         showToast('✓ Đã đăng bài viết mới lên Cẩm nang dangwed.com!')
       }
       resetPostForm()
+      setPostView('list')
     } catch (err) {
       setErrorMsg('Lỗi khi lưu bài viết: ' + err.message)
     } finally {
@@ -884,6 +887,7 @@ export default function WebsiteAdminPage() {
 
   const handleEditPost = (post) => {
     setEditingPostId(post.id)
+    setPostView('editor')
     setPostForm({
       title: post.title || '',
       slug: post.slug || '',
@@ -1488,8 +1492,24 @@ export default function WebsiteAdminPage() {
                     🔄 Kiểm tra lại kết nối
                   </button>
                 </div>
-              ) : (
+              ) : postView === 'editor' ? (
                 <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => {
+                        resetPostForm()
+                        setPostView('list')
+                      }}
+                    >
+                      ← Quay lại Danh sách bài viết
+                    </button>
+                    <span className="text-xs text-muted">
+                      {editingPostId ? 'Đang chỉnh sửa bài viết' : 'Đang soạn bài viết mới'}
+                    </span>
+                  </div>
+
                   {/* HỘP AI VIẾT BÀI SEO TỰ ĐỘNG (GOOGLE GEMINI MIỄN PHÍ) */}
                   <div
                     className="card"
@@ -2306,7 +2326,9 @@ export default function WebsiteAdminPage() {
                       </div>
                     </div>
                   </form>
-
+                </>
+              ) : (
+                <>
                   <div className="card" style={{ padding: 20 }}>
                     <div
                       style={{
@@ -2319,18 +2341,31 @@ export default function WebsiteAdminPage() {
                       }}
                     >
                       <h3 style={{ marginBottom: 0 }}>📚 Danh sách bài viết ({posts.length})</h3>
-                      {posts.length > 0 && (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {posts.length > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            disabled={aiBatchBusy || aiWriting}
+                            onClick={handleAiOptimizeAllPosts}
+                          >
+                            {aiBatchBusy
+                              ? '⏳ AI đang tối ưu tất cả bài...'
+                              : '✨ AI Tối ưu SEO tất cả bài'}
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
-                          disabled={aiBatchBusy || aiWriting}
-                          onClick={handleAiOptimizeAllPosts}
+                          onClick={() => {
+                            resetPostForm()
+                            setPostView('editor')
+                            window.scrollTo({ top: 0, behavior: 'smooth' })
+                          }}
                         >
-                          {aiBatchBusy
-                            ? '⏳ AI đang tối ưu tất cả bài...'
-                            : '✨ AI Tối ưu SEO tất cả bài viết'}
+                          ✍️ Thêm bài viết
                         </button>
-                      )}
+                      </div>
                     </div>
                     <AiLoadingBanner
                       active={aiBatchBusy}
