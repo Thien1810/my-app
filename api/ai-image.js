@@ -1,33 +1,51 @@
-// Vercel Serverless Function: tự động dò model tạo ảnh khả dụng trên Google AI Studio (GEMINI_API_KEY),
-// nếu tài khoản Google Free chưa mở quyền tạo ảnh thì dùng dịch vụ tạo ảnh miễn phí dự phòng.
+// Vercel Serverless Function: tự động dò model tạo ảnh khả dụng trên Google AI Studio,
+// nếu key Google chưa bật tạo ảnh thì gọi ngay Pollinations Flux miễn phí (~6 giây).
 
 export const config = {
   maxDuration: 60,
 }
 
+function toAsciiPrompt(str = '') {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .replace(/[^a-zA-Z0-9\s,.-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 async function discoverGoogleImageModels(apiKey) {
   try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
-    )
-    if (!r.ok) return { generateContent: [], predict: [] }
-    const data = await r.json()
-    const list = Array.isArray(data?.models) ? data.models : []
-    const generateContent = []
-    const predict = []
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+        { signal: controller.signal }
+      )
+      if (!r.ok) return { generateContent: [], predict: [] }
+      const data = await r.json()
+      const list = Array.isArray(data?.models) ? data.models : []
+      const generateContent = []
+      const predict = []
 
-    for (const m of list) {
-      const id = String(m.name || '').replace(/^models\//, '')
-      const lower = id.toLowerCase()
-      const methods = m.supportedGenerationMethods || []
-      if (lower.includes('image') && !lower.includes('imagen')) {
-        if (methods.includes('generateContent')) generateContent.push(id)
-      } else if (lower.includes('imagen')) {
-        if (methods.includes('predict')) predict.push(id)
-        else if (methods.includes('generateContent')) generateContent.push(id)
+      for (const m of list) {
+        const id = String(m.name || '').replace(/^models\//, '')
+        const lower = id.toLowerCase()
+        const methods = m.supportedGenerationMethods || []
+        if (lower.includes('image') && !lower.includes('imagen')) {
+          if (methods.includes('generateContent')) generateContent.push(id)
+        } else if (lower.includes('imagen')) {
+          if (methods.includes('predict')) predict.push(id)
+          else if (methods.includes('generateContent')) generateContent.push(id)
+        }
       }
+      return { generateContent, predict }
+    } finally {
+      clearTimeout(timer)
     }
-    return { generateContent, predict }
   } catch {
     return { generateContent: [], predict: [] }
   }
@@ -39,28 +57,22 @@ export default async function handler(req, res) {
   }
 
   const apiKey = (process.env.GEMINI_API_KEY || '').trim()
-  const { prompt = '', style = 'luxury' } = req.body || {}
+  const { prompt = '' } = req.body || {}
   if (!prompt.trim()) {
     return res.status(400).json({ error: 'Vui lòng nhập mô tả bức ảnh cần tạo.' })
   }
 
-  const fullPrompt = `Editorial luxury Vietnamese wedding decoration photography, minimalist warm ivory, cream and deep forest green aesthetic with soft champagne gold accents, natural daylight, photorealistic, high-end magazine style, no text, no watermarks, no people. Scene: ${prompt.trim()} (${style}).`
+  const cleanTopic = toAsciiPrompt(prompt).slice(0, 120)
+  const fullPrompt = `Editorial luxury Vietnamese wedding decor photography, minimalist warm ivory, cream and deep forest green, soft gold accents, natural light, photorealistic, no text, no watermark. Scene: ${cleanTopic}`
 
   let lastErr = ''
 
   if (apiKey) {
     const discovered = await discoverGoogleImageModels(apiKey)
-    const gcModels = Array.from(
-      new Set([
-        ...discovered.generateContent,
-        'gemini-2.5-flash-image',
-        'gemini-3.1-flash-image-preview',
-      ])
-    )
 
-    for (const model of gcModels) {
+    for (const model of discovered.generateContent.slice(0, 2)) {
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 14000)
+      const timer = setTimeout(() => controller.abort(), 10000)
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
         const gRes = await fetch(url, {
@@ -93,12 +105,9 @@ export default async function handler(req, res) {
       }
     }
 
-    const predModels = Array.from(
-      new Set([...discovered.predict, 'imagen-4.0-generate-001', 'imagen-3.0-generate-002'])
-    )
-    for (const model of predModels) {
+    for (const model of discovered.predict.slice(0, 2)) {
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 14000)
+      const timer = setTimeout(() => controller.abort(), 10000)
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${encodeURIComponent(apiKey)}`
         const iRes = await fetch(url, {
@@ -130,13 +139,16 @@ export default async function handler(req, res) {
     }
   }
 
-  // Dự phòng miễn phí (Pollinations Flux) nếu Google AI Studio Free key không bật tạo ảnh
+  // Gọi ngay Pollinations Flux miễn phí (~6 giây)
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 22000)
     try {
-      const pUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1280&height=720&nologo=true&seed=${Date.now()}`
-      const pRes = await fetch(pUrl, { signal: controller.signal })
+      const pUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1024&height=576&nologo=true&seed=${Date.now() % 100000}`
+      const pRes = await fetch(pUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'DangWeddingApp/1.0' },
+      })
       if (pRes.ok) {
         const contentType = pRes.headers.get('content-type') || 'image/jpeg'
         if (contentType.startsWith('image/')) {
@@ -146,15 +158,17 @@ export default async function handler(req, res) {
             model: 'pollinations-flux',
           })
         }
+      } else {
+        lastErr = `Pollinations HTTP ${pRes.status}`
       }
     } finally {
       clearTimeout(timer)
     }
   } catch (pErr) {
-    lastErr = lastErr || pErr.message
+    lastErr = pErr?.name === 'AbortError' ? 'Pollinations timeout' : pErr.message
   }
 
   return res.status(502).json({
-    error: `Không tạo được ảnh (${lastErr || 'Google Free Key chưa bật quyền tạo ảnh'}).`,
+    error: `Không tạo được ảnh (${lastErr || 'vui lòng thử lại sau vài giây'}).`,
   })
 }
