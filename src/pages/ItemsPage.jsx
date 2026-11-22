@@ -2,7 +2,13 @@ import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { formatCurrency, formatNumber, KIND_LABELS } from '../lib/formatters'
+import {
+  formatCurrency,
+  formatNumber,
+  KIND_LABELS,
+  ITEM_CATEGORY_PRESETS,
+  generateItemCode,
+} from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { KindBadge } from '../components/Badges'
 
@@ -35,6 +41,7 @@ export default function ItemsPage() {
   const [editingItem, setEditingItem] = useState(null)
   const [form, setForm] = useState(INITIAL_FORM)
   const [saving, setSaving] = useState(false)
+  const [showCodeRules, setShowCodeRules] = useState(false)
 
   const loadItems = async () => {
     setLoading(true)
@@ -83,8 +90,33 @@ export default function ItemsPage() {
 
   const openCreateModal = () => {
     setEditingItem(null)
-    setForm(INITIAL_FORM)
+    const defaultCategory = 'Hoa tươi'
+    const defaultKind = 'consumable'
+    setForm({
+      ...INITIAL_FORM,
+      kind: defaultKind,
+      category: defaultCategory,
+      unit: 'bó',
+      code: generateItemCode(defaultKind, defaultCategory, items),
+    })
     setModalOpen(true)
+  }
+
+  const handleKindOrCategoryChange = (newKind, newCategory) => {
+    const preset = ITEM_CATEGORY_PRESETS.find(
+      (p) => p.name.toLowerCase() === (newCategory || '').trim().toLowerCase()
+    )
+    const nextUnit = !editingItem && preset ? preset.unit : form.unit
+    const nextCode = !editingItem
+      ? generateItemCode(newKind, newCategory, items)
+      : form.code
+    setForm({
+      ...form,
+      kind: newKind,
+      category: newCategory,
+      unit: nextUnit,
+      code: nextCode,
+    })
   }
 
   const openEditModal = (item) => {
@@ -192,6 +224,13 @@ export default function ItemsPage() {
           </p>
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => setShowCodeRules((v) => !v)}
+          >
+            🏷️ Quy tắc đặt mã
+          </button>
           <button className="btn btn-outline" onClick={handleExport}>
             📥 Xuất Excel
           </button>
@@ -202,6 +241,56 @@ export default function ItemsPage() {
           )}
         </div>
       </div>
+
+      {showCodeRules && (
+        <div className="card" style={{ marginBottom: 16, borderLeft: '4px solid #16a34a' }}>
+          <h3 style={{ marginBottom: 8 }}>🏷️ Quy tắc đặt mã Vật tư chuẩn ngành Trang trí</h3>
+          <p className="text-sm text-muted" style={{ marginBottom: 10 }}>
+            Cấu trúc tự động: <code>[LOẠI]-[NHÓM]-[SỐ THỨ TỰ 3 CHỮ SỐ]</code> (Hệ thống tự sinh mã
+            tiếp theo khi bạn bấm Thêm vật tư)
+          </p>
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Tiền tố loại</th>
+                  <th>Mã nhóm gợi ý</th>
+                  <th>Ví dụ mã chuẩn</th>
+                  <th>Giải thích</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <span className="badge badge-green">TH</span> (Tiêu hao)
+                  </td>
+                  <td>
+                    <code>HOA</code>, <code>BONG</code>, <code>PHU</code>, <code>IN</code>,{' '}
+                    <code>NEN</code>
+                  </td>
+                  <td>
+                    <code>TH-HOA-001</code>, <code>TH-BONG-002</code>
+                  </td>
+                  <td>Hàng dùng 1 lần (hoa tươi, bóng bay, băng keo, formex in...)</td>
+                </tr>
+                <tr>
+                  <td>
+                    <span className="badge badge-blue">TSD</span> (Tái sử dụng)
+                  </td>
+                  <td>
+                    <code>KHUNG</code>, <code>DEN</code>, <code>VAI</code>, <code>HOALUA</code>,{' '}
+                    <code>BAN</code>, <code>DAOCU</code>, <code>DC</code>
+                  </td>
+                  <td>
+                    <code>TSD-KHUNG-001</code>, <code>TSD-DEN-002</code>
+                  </td>
+                  <td>Đồ trang trí & dụng cụ xuất đi phải thu hồi sau dự án</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -356,23 +445,69 @@ export default function ItemsPage() {
             <form onSubmit={handleSave} className="modal-body">
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label>Mã vật tư (tùy chọn)</label>
-                  <input
-                    type="text"
-                    placeholder="VD: VT-001"
-                    value={form.code}
-                    onChange={(e) => setForm({ ...form, code: e.target.value })}
-                  />
-                </div>
-                <div className="form-group">
                   <label>Phân loại *</label>
                   <select
                     value={form.kind}
-                    onChange={(e) => setForm({ ...form, kind: e.target.value })}
+                    onChange={(e) => handleKindOrCategoryChange(e.target.value, form.category)}
                   >
-                    <option value="consumable">Tiêu hao (dùng 1 lần)</option>
-                    <option value="reusable">Tái sử dụng (thu hồi sau dự án)</option>
+                    <option value="consumable">🟢 Tiêu hao (TH - dùng 1 lần)</option>
+                    <option value="reusable">🔵 Tái sử dụng (TSD - thu hồi sau dự án)</option>
                   </select>
+                </div>
+                <div className="form-group">
+                  <label>Danh mục / Nhóm vật tư</label>
+                  <input
+                    type="text"
+                    list="category-presets"
+                    placeholder="Chọn hoặc gõ nhóm (VD: Khung & Backdrop)"
+                    value={form.category}
+                    onChange={(e) => handleKindOrCategoryChange(form.kind, e.target.value)}
+                  />
+                  <datalist id="category-presets">
+                    {ITEM_CATEGORY_PRESETS.map((p) => (
+                      <option key={p.code} value={p.name}>
+                        {p.code} - {p.defaultKind === 'reusable' ? 'Tái sử dụng' : 'Tiêu hao'}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label>Mã vật tư (tự sinh theo quy tắc)</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      type="text"
+                      placeholder="VD: TH-HOA-001"
+                      value={form.code}
+                      onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      title="Sinh mã tự động theo Loại & Danh mục"
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          code: generateItemCode(form.kind, form.category, items),
+                        })
+                      }
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      ⚡ Sinh mã
+                    </button>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Đơn vị tính *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="cái, bộ, bịch, bó, mét..."
+                    value={form.unit}
+                    onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                  />
                 </div>
               </div>
 
@@ -385,28 +520,6 @@ export default function ItemsPage() {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
-              </div>
-
-              <div className="form-grid-2">
-                <div className="form-group">
-                  <label>Danh mục</label>
-                  <input
-                    type="text"
-                    placeholder="VD: Khung sắt, Hoa lụa, Đèn, Bóng..."
-                    value={form.category}
-                    onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Đơn vị tính *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="cái, bộ, bịch, mét..."
-                    value={form.unit}
-                    onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                  />
-                </div>
               </div>
 
               <div className="form-grid-2">

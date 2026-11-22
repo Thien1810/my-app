@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../lib/AuthContext'
+import { translateAuthError } from '../lib/formatters'
 
 export default function AuthPage() {
   const { signIn, signUp, resetPassword } = useAuth()
@@ -43,7 +44,7 @@ export default function AuthPage() {
         setMessage('Đã gửi email đặt lại mật khẩu. Vui lòng kiểm tra hộp thư của bạn.')
       }
     } catch (err) {
-      setError(err.message || 'Đã xảy ra lỗi. Vui lòng thử lại.')
+      setError(translateAuthError(err.message))
     } finally {
       setBusy(false)
     }

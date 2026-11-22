@@ -6,6 +6,8 @@ import {
   formatCurrency,
   formatDate,
   PROJECT_STATUS_LABELS,
+  generateProjectCode,
+  todayISO,
 } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
@@ -110,7 +112,12 @@ export default function ProjectsPage() {
 
   const openCreateModal = () => {
     setEditingProject(null)
-    setForm(INITIAL_PROJECT_FORM)
+    const today = todayISO()
+    setForm({
+      ...INITIAL_PROJECT_FORM,
+      start_date: today,
+      code: generateProjectCode(today, projects),
+    })
     setModalOpen(true)
   }
 
@@ -395,13 +402,29 @@ export default function ProjectsPage() {
             <form onSubmit={handleSaveProject} className="modal-body">
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label>Mã dự án (tùy chọn)</label>
-                  <input
-                    type="text"
-                    placeholder="VD: DA-2025-01"
-                    value={form.code}
-                    onChange={(e) => setForm({ ...form, code: e.target.value })}
-                  />
+                  <label>Mã dự án (tự sinh DA-YYMM-001)</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      type="text"
+                      placeholder="VD: DA-2611-001"
+                      value={form.code}
+                      onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      title="Sinh mã dự án tự động theo tháng thi công"
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          code: generateProjectCode(form.start_date, projects),
+                        })
+                      }
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      ⚡ Sinh mã
+                    </button>
+                  </div>
                 </div>
                 <div className="form-group">
                   <label>Trạng thái *</label>
@@ -461,7 +484,16 @@ export default function ProjectsPage() {
                   <input
                     type="date"
                     value={form.start_date}
-                    onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                    onChange={(e) => {
+                      const nextStart = e.target.value
+                      setForm({
+                        ...form,
+                        start_date: nextStart,
+                        code: !editingProject
+                          ? generateProjectCode(nextStart, projects)
+                          : form.code,
+                      })
+                    }}
                   />
                 </div>
                 <div className="form-group">
