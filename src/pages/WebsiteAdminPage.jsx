@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+﻿import { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -140,7 +140,7 @@ export default function WebsiteAdminPage() {
 
   if (isStaff) {
     return (
-      <div className="page">
+      <div className="page-container">
         <div className="alert alert-error">
           Bạn không có quyền truy cập trang Quản trị Website.
         </div>
@@ -427,7 +427,7 @@ export default function WebsiteAdminPage() {
   const convertedCount = leads.filter((l) => l.status === 'converted').length
 
   return (
-    <div className="page">
+    <div className="page-container">
       <div className="page-header">
         <div>
           <h1>🌐 Quản trị Website (dangwed.com)</h1>
@@ -469,7 +469,7 @@ export default function WebsiteAdminPage() {
       ) : (
         <>
           {/* Tabs */}
-          <div className="tabs" style={{ marginBottom: 18 }}>
+          <div className="tabs-bar" style={{ marginBottom: 18 }}>
             <button
               type="button"
               className={`tab-btn ${tab === 'leads' ? 'active' : ''}`}
@@ -523,10 +523,10 @@ export default function WebsiteAdminPage() {
               </div>
 
               {/* Filter bar */}
-              <div className="filter-bar" style={{ marginBottom: 16 }}>
+              <div className="card filter-bar" style={{ marginBottom: 16 }}><div className="filter-group" style={{ alignItems: "center" }}>
                 <input
                   type="text"
-                  className="search-input"
+                  className="filter-input"
                   placeholder="Tìm tên khách, SĐT, khu vực, mẫu..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -718,7 +718,7 @@ export default function WebsiteAdminPage() {
                       .
                     </p>
 
-                    <div className="form-grid" style={{ marginBottom: 14 }}>
+                    <div className="form-grid-2" style={{ marginBottom: 14 }}>
                       <div className="form-group">
                         <label>Tên đám / Tiêu đề ảnh *</label>
                         <input
@@ -958,7 +958,7 @@ export default function WebsiteAdminPage() {
               )}
 
               <h3 style={{ marginBottom: 12 }}>1. Phần mở đầu (Hero Banner & Slogan)</h3>
-              <div className="form-grid" style={{ marginBottom: 16 }}>
+              <div className="form-grid-2" style={{ marginBottom: 16 }}>
                 <div className="form-group">
                   <label>Slogan chính trên trang chủ</label>
                   <input
@@ -1042,7 +1042,7 @@ export default function WebsiteAdminPage() {
               <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '20px 0' }} />
 
               <h3 style={{ marginBottom: 12 }}>2. Câu chuyện thương hiệu & Con số nổi bật</h3>
-              <div className="form-grid" style={{ marginBottom: 14 }}>
+              <div className="form-grid-2" style={{ marginBottom: 14 }}>
                 <div className="form-group">
                   <label>Số năm kinh nghiệm (VD: 3+)</label>
                   <input
@@ -1086,7 +1086,7 @@ export default function WebsiteAdminPage() {
               <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '20px 0' }} />
 
               <h3 style={{ marginBottom: 12 }}>3. Thông tin liên hệ & Mạng xã hội</h3>
-              <div className="form-grid" style={{ marginBottom: 14 }}>
+              <div className="form-grid-2" style={{ marginBottom: 14 }}>
                 <div className="form-group">
                   <label>Hotline / Zalo hiển thị</label>
                   <input
@@ -1108,7 +1108,7 @@ export default function WebsiteAdminPage() {
                 </div>
               </div>
 
-              <div className="form-grid" style={{ marginBottom: 22 }}>
+              <div className="form-grid-2" style={{ marginBottom: 22 }}>
                 <div className="form-group">
                   <label>Link Fanpage Facebook</label>
                   <input
@@ -1157,3 +1157,4 @@ export default function WebsiteAdminPage() {
     </div>
   )
 }
+
