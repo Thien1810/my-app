@@ -58,6 +58,7 @@ input[type='email'],
 input[type='password'],
 input[type='number'],
 input[type='date'],
+input[type='url'],
 select,
 textarea {
   width: 100%;
@@ -67,6 +68,20 @@ textarea {
   background: var(--surface);
   color: var(--text);
   transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+@media (max-width: 768px) {
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='number'],
+  input[type='date'],
+  input[type='url'],
+  select,
+  textarea {
+    font-size: 16px; /* Ngăn iOS Safari tự động zoom khi chạm vào ô nhập liệu */
+    padding: 9px 11px;
+  }
 }
 
 input:focus,

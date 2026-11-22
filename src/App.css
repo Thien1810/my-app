@@ -926,17 +926,19 @@
     left: 0;
     right: 0;
     height: 54px;
-    padding: 0 16px;
+    padding: 0 14px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     z-index: 45;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
   }
 
   .mobile-brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
     color: var(--primary-hover);
+    font-size: 15.5px;
   }
 
   .brand-dot {
@@ -947,9 +949,12 @@
   }
 
   .sidebar {
+    width: 270px;
+    max-width: 82vw;
     transform: translateX(-100%);
-    transition: transform 0.2s ease;
+    transition: transform 0.22s ease;
     z-index: 60;
+    box-shadow: 4px 0 18px rgba(15, 23, 42, 0.15);
   }
 
   .sidebar.open {
@@ -960,13 +965,15 @@
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.4);
+    background: rgba(15, 23, 42, 0.45);
     z-index: 50;
   }
 
   .main-content {
     margin-left: 0;
-    padding: 70px 14px 80px;
+    padding: 66px 12px calc(74px + env(safe-area-inset-bottom, 0px));
+    width: 100%;
+    overflow-x: hidden;
   }
 
   .mobile-bottom-nav {
@@ -975,10 +982,12 @@
     bottom: 0;
     left: 0;
     right: 0;
-    height: 58px;
+    height: calc(58px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     background: var(--surface);
     border-top: 1px solid var(--border);
     z-index: 45;
+    box-shadow: 0 -2px 8px rgba(15, 23, 42, 0.04);
   }
 
   .bottom-nav-item {
@@ -987,28 +996,302 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 2px;
     font-size: 11px;
     color: var(--text-muted);
     text-decoration: none;
+    padding: 4px 2px;
   }
 
   .bottom-nav-item.active {
     color: var(--primary-hover);
-    font-weight: 600;
+    font-weight: 700;
   }
 
   .bottom-nav-icon {
     font-size: 17px;
+    line-height: 1.1;
   }
 
+  /* Page header & buttons trên điện thoại */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .page-header h1 {
+    font-size: 19px;
+    line-height: 1.28;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .header-actions .btn,
+  .header-actions .status-select {
+    flex: 1 1 auto;
+    min-height: 38px;
+    font-size: 13px;
+    padding: 7px 10px;
+  }
+
+  /* Thẻ Card & Sub-card gọn gàng trên màn hình hẹp */
+  .card {
+    padding: 13px 12px;
+    border-radius: 10px;
+  }
+
+  .sub-card {
+    padding: 11px 10px;
+  }
+
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .card-header h3 {
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  /* KPI Grid: chia 2 cột cân đối trên điện thoại, thẻ lẻ cuối cùng tự giãn full 2 cột */
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .kpi-card:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .kpi-card {
+    padding: 12px 11px;
+  }
+
+  .kpi-label {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .kpi-value {
+    font-size: 18px;
+    margin: 4px 0 2px;
+    word-break: break-word;
+  }
+
+  .kpi-sub {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  /* Bộ lọc (Filter bar) trên điện thoại */
+  .filter-bar {
+    padding: 11px 12px;
+    margin-bottom: 12px;
+  }
+
+  .filter-group {
+    gap: 8px;
+  }
+
+  .filter-input {
+    flex: 1 1 100%;
+    min-width: 100%;
+  }
+
+  .filter-group select {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 130px;
+  }
+
+  .filter-group select:only-of-type {
+    flex: 1 1 100%;
+  }
+
+  .filter-inline {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 135px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+  }
+
+  .filter-inline input {
+    width: 100%;
+  }
+
+  /* Thanh Tabs: trượt ngang mượt mà 1 dòng như App Mobile, ẩn thanh cuộn thô */
+  .tabs-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 6px;
+    margin-bottom: 14px !important;
+    gap: 6px;
+    scrollbar-width: none;
+  }
+
+  .tabs-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 8px 12px;
+    font-size: 12.5px;
+  }
+
+  /* Biểu đồ, Mẫu set, Form Grids */
   .charts-grid,
   .templates-grid,
-  .plan-controls-grid {
+  .plan-controls-grid,
+  .form-grid-3,
+  .form-grid-4 {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* Giữ 2 giá trị trên 1 hàng cho form-grid-2 trên điện thoại để form ngắn gọn */
+  .form-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .modal-body .form-group {
+    margin-bottom: 9px;
+  }
+
+  .modal-body .form-group label {
+    font-size: 12px;
+    margin-bottom: 3px;
+  }
+
+  .modal-body input[type='text'],
+  .modal-body input[type='number'],
+  .modal-body input[type='date'],
+  .modal-body select,
+  .modal-body textarea {
+    padding: 7px 9px;
+    font-size: 14.5px;
   }
 
   .form-inline-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .form-inline-row input,
+  .form-inline-row select,
+  .form-inline-row button {
+    width: 100% !important;
+  }
+
+  /* Bảng dữ liệu cuộn ngang mượt và không bị bóp nghẹt ô input */
+  .table-responsive {
+    margin: 0 -4px;
+    padding: 0 4px 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table {
+    font-size: 12.5px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 9px;
+  }
+
+  .data-table input[type='text'],
+  .data-table input[type='number'],
+  .data-table select {
+    min-width: 95px;
+    padding: 6px 8px;
+    font-size: 14px;
+  }
+
+  /* Cửa sổ Modal tối ưu dạng Bottom Sheet trên điện thoại */
+  .modal-backdrop {
+    padding: 8px;
+    align-items: flex-end;
+  }
+
+  .modal-card,
+  .modal-card.modal-lg {
+    max-width: 100%;
+    max-height: 92vh;
+    border-radius: 14px 14px 10px 10px;
+  }
+
+  .modal-header {
+    padding: 13px 15px;
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 5;
+  }
+
+  .modal-body {
+    padding: 14px 15px 6px;
+  }
+
+  .modal-footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--surface);
+    padding: 12px 0 10px;
+    margin-top: 12px;
+    z-index: 5;
+  }
+
+  .modal-footer .btn {
+    flex: 1;
+    min-height: 40px;
+  }
+
+  /* Auth card trên điện thoại */
+  .auth-wrapper {
+    padding: 12px;
+  }
+
+  .auth-card {
+    padding: 22px 18px;
+  }
+
+  .auth-logo-img {
+    width: 52px;
+    height: 52px;
+  }
+
+  .project-meta-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 400px) {
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .kpi-value {
+    font-size: 16.5px;
+  }
+
+  .bottom-nav-item {
+    font-size: 10px;
   }
 }

@@ -684,6 +684,7 @@ export default function ItemsPage() {
               </button>
             </div>
             <form onSubmit={handleSave} className="modal-body">
+              {/* Hàng 1: Phân loại + Danh mục (2 cột trên 1 hàng) */}
               <div className="form-grid-2">
                 <div className="form-group">
                   <label>Phân loại *</label>
@@ -691,12 +692,12 @@ export default function ItemsPage() {
                     value={form.kind}
                     onChange={(e) => handleKindOrCategoryChange(e.target.value, form.category)}
                   >
-                    <option value="consumable">🟢 Tiêu hao (TH - dùng 1 lần)</option>
-                    <option value="reusable">🔵 Tái sử dụng (TSD - thu hồi sau dự án)</option>
+                    <option value="consumable">🟢 Tiêu hao (1 lần)</option>
+                    <option value="reusable">🔵 Tái sử dụng</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Danh mục / Nhóm vật tư</label>
+                  <label>Danh mục / Nhóm</label>
                   {!isCustomCategory ? (
                     <select
                       value={form.category}
@@ -709,7 +710,7 @@ export default function ItemsPage() {
                         }
                       }}
                     >
-                      <option value="">-- Chọn nhóm vật tư --</option>
+                      <option value="">-- Chọn nhóm --</option>
                       {categories.length > 0 && (
                         <optgroup label="Nhóm đã có trong kho">
                           {categories.map((c) => (
@@ -728,41 +729,48 @@ export default function ItemsPage() {
                             </option>
                           ))}
                       </optgroup>
-                      <option value="__NEW__">+ Tạo nhóm mới khác...</option>
+                      <option value="__NEW__">+ Tạo nhóm mới...</option>
                     </select>
                   ) : (
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 4 }}>
                       <input
                         type="text"
                         autoFocus
-                        placeholder="Nhập tên nhóm vật tư mới..."
+                        placeholder="Tên nhóm mới..."
                         value={form.category}
                         onChange={(e) => handleKindOrCategoryChange(form.kind, e.target.value)}
                       />
                       <button
                         type="button"
                         className="btn btn-outline btn-sm"
-                        style={{ whiteSpace: 'nowrap' }}
                         onClick={() => {
                           setIsCustomCategory(false)
                           const fallbackCat = categories[0] || 'Hoa & Lá'
                           handleKindOrCategoryChange(form.kind, fallbackCat)
                         }}
                       >
-                        Chọn có sẵn
+                        ✕
                       </button>
                     </div>
                   )}
                 </div>
               </div>
 
+              {/* Hàng 2: Mã vật tư + Đơn vị tính (2 cột trên 1 hàng) */}
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label>Mã vật tư (tự sinh theo quy tắc)</label>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <label>
+                    Mã vật tư{' '}
+                    {duplicateItem ? (
+                      <span className="text-red">(⚠️ Trùng)</span>
+                    ) : form.code.trim() ? (
+                      <span className="text-green">(✓ Hợp lệ)</span>
+                    ) : null}
+                  </label>
+                  <div style={{ display: 'flex', gap: 4 }}>
                     <input
                       type="text"
-                      placeholder="VD: TH-HOA-001"
+                      placeholder="TH-HOA-001"
                       value={form.code}
                       onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
                       style={
@@ -781,71 +789,51 @@ export default function ItemsPage() {
                           code: generateItemCode(form.kind, form.category, items, editingItem?.id),
                         })
                       }
-                      style={{ whiteSpace: 'nowrap' }}
+                      style={{ padding: '0 8px', flexShrink: 0 }}
                     >
-                      ⚡ Sinh mã
+                      ⚡
                     </button>
                   </div>
-                  {duplicateItem ? (
-                    <div className="text-xs text-red" style={{ marginTop: 4 }}>
-                      ⚠️ Trùng mã với: <strong>{duplicateItem.name}</strong>.{' '}
-                      <button
-                        type="button"
-                        className="btn-link"
-                        style={{ fontSize: '0.78rem', padding: 0 }}
-                        onClick={() =>
-                          setForm({
-                            ...form,
-                            code: generateItemCode(form.kind, form.category, items, editingItem?.id),
-                          })
-                        }
-                      >
-                        Đổi sang mã kế tiếp
-                      </button>
-                    </div>
-                  ) : form.code.trim() ? (
-                    <div className="text-xs text-green" style={{ marginTop: 4 }}>
-                      ✓ Mã hợp lệ, chưa trùng trong hệ thống
-                    </div>
-                  ) : null}
                 </div>
                 <div className="form-group">
                   <label>Đơn vị tính *</label>
                   <input
                     type="text"
                     required
-                    placeholder="cái, bộ, bịch, bó, mét..."
+                    placeholder="cái, bộ, bó, mét..."
                     value={form.unit}
                     onChange={(e) => setForm({ ...form, unit: e.target.value })}
                   />
                 </div>
               </div>
 
-              <div className="form-grid-2">
-                <div className="form-group">
-                  <label>Tên vật tư *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="VD: Khung backdrop tròn 2.2m / Bóng cao su nhũ"
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  />
-                </div>
+              {/* Hàng 3: Tên vật tư */}
+              <div className="form-group">
+                <label>Tên vật tư *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Khung backdrop tròn 2.2m / Hoa lụa..."
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
 
+              {/* Hàng 4: Màu sắc + Hình ảnh (2 cột gọn trên 1 hàng) */}
+              <div className="form-grid-2">
                 <div className="form-group">
                   <label>Màu sắc</label>
                   {!isCustomColor ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {form.color && (
                         <span
                           title={form.color}
                           style={{
-                            width: 24,
-                            height: 24,
+                            width: 18,
+                            height: 18,
                             borderRadius: '50%',
                             backgroundColor: getColorSwatch(form.color)?.hex || '#e2e8f0',
-                            border: `2px solid ${getColorSwatch(form.color)?.border || '#94a3b8'}`,
+                            border: `1.5px solid ${getColorSwatch(form.color)?.border || '#94a3b8'}`,
                             flexShrink: 0,
                           }}
                         />
@@ -862,7 +850,7 @@ export default function ItemsPage() {
                           }
                         }}
                       >
-                        <option value="">-- Chọn màu sắc --</option>
+                        <option value="">-- Chọn màu --</option>
                         {colors.length > 0 && (
                           <optgroup label="Màu đã có trong kho">
                             {colors.map((c) => (
@@ -881,141 +869,109 @@ export default function ItemsPage() {
                               </option>
                             ))}
                         </optgroup>
-                        <option value="__NEW_COLOR__">+ Tạo màu mới khác...</option>
+                        <option value="__NEW_COLOR__">+ Màu mới...</option>
                       </select>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 4 }}>
                       <input
                         type="text"
                         autoFocus
-                        placeholder="Nhập tên màu mới..."
+                        placeholder="Tên màu mới..."
                         value={form.color}
                         onChange={(e) => setForm({ ...form, color: e.target.value })}
                       />
                       <button
                         type="button"
                         className="btn btn-outline btn-sm"
-                        style={{ whiteSpace: 'nowrap' }}
                         onClick={() => {
                           setIsCustomColor(false)
                           setForm({ ...form, color: colors[0] || 'Trắng' })
                         }}
                       >
-                        Chọn có sẵn
+                        ✕
                       </button>
                     </div>
                   )}
                 </div>
-              </div>
 
-              <div className="form-group">
-                <label>
-                  Hình ảnh vật tư (nhận mọi kích thước, tự động thu nhỏ & nén dưới 1MB)
-                </label>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 14,
-                    padding: 12,
-                    border: '1px dashed #cbd5e1',
-                    borderRadius: 10,
-                    background: '#f8fafc',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {form.image_url ? (
-                    <img
-                      src={form.image_url}
-                      alt="Xem trước"
+                <div className="form-group">
+                  <label>
+                    Hình ảnh{' '}
+                    {imageStats ? (
+                      <span className="text-green">({formatBytes(imageStats.compressedSize)})</span>
+                    ) : (
+                      <span className="text-muted">(&lt;1MB)</span>
+                    )}
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {form.image_url && (
+                      <img
+                        src={form.image_url}
+                        alt="Ảnh"
+                        style={{
+                          width: 34,
+                          height: 34,
+                          objectFit: 'cover',
+                          borderRadius: 6,
+                          border: '1px solid #cbd5e1',
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <label
+                      className="btn btn-outline btn-sm"
                       style={{
-                        width: 72,
-                        height: 72,
-                        objectFit: 'cover',
-                        borderRadius: 10,
-                        border: '1px solid #cbd5e1',
-                        background: '#fff',
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: 72,
-                        height: 72,
-                        borderRadius: 10,
-                        border: '1px solid #e2e8f0',
-                        background: '#ffffff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 24,
-                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        margin: 0,
+                        flex: 1,
+                        height: 35,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
                       }}
                     >
-                      📷
-                    </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <label
+                      {imageCompressing
+                        ? '⏳ Đang nén...'
+                        : form.image_url
+                          ? '📷 Đổi ảnh'
+                          : '📷 Chọn ảnh'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageFileSelect}
+                        disabled={imageCompressing}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    {form.image_url && (
+                      <button
+                        type="button"
                         className="btn btn-outline btn-sm"
-                        style={{ cursor: 'pointer', margin: 0 }}
+                        style={{ color: '#dc2626', borderColor: '#fecaca', padding: '0 7px', height: 35 }}
+                        onClick={() => {
+                          setForm({ ...form, image_url: '' })
+                          setImageStats(null)
+                        }}
                       >
-                        {imageCompressing
-                          ? '⏳ Đang nén ảnh...'
-                          : form.image_url
-                            ? '📷 Đổi ảnh khác'
-                            : '📷 Chọn ảnh / Chụp ảnh'}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageFileSelect}
-                          disabled={imageCompressing}
-                          style={{ display: 'none' }}
-                        />
-                      </label>
-                      {form.image_url && (
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm"
-                          style={{ color: '#dc2626', borderColor: '#fecaca' }}
-                          onClick={() => {
-                            setForm({ ...form, image_url: '' })
-                            setImageStats(null)
-                          }}
-                        >
-                          Xóa ảnh
-                        </button>
-                      )}
-                    </div>
-                    {imageStats ? (
-                      <div className="text-xs text-green" style={{ marginTop: 6 }}>
-                        ✓ Đã tự động thu nhỏ từ{' '}
-                        <strong>{formatBytes(imageStats.originalSize)}</strong> →{' '}
-                        <strong>{formatBytes(imageStats.compressedSize)}</strong> (
-                        {imageStats.width}×{imageStats.height}px)
-                      </div>
-                    ) : (
-                      <div className="text-xs text-muted" style={{ marginTop: 6 }}>
-                        Tải lên ảnh dung lượng bất kỳ (kể cả 10MB–20MB), hệ thống tự nén gọn ~100KB.
-                      </div>
+                        ✕
+                      </button>
                     )}
                   </div>
                 </div>
               </div>
 
+              {/* Hàng 5: Giá nhập + Tồn tối thiểu (2 cột trên 1 hàng) */}
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label>Giá nhập gần nhất (₫)</label>
+                  <label>Giá nhập (₫)</label>
                   <CurrencyInput
                     value={form.cost}
                     onChange={(num) => setForm({ ...form, cost: num })}
-                    placeholder="VD: 10.000; 250.000; 1.000.000"
+                    placeholder="VD: 250.000"
                   />
                 </div>
                 <div className="form-group">
-                  <label>Tồn tối thiểu (cảnh báo)</label>
+                  <label>Tồn tối thiểu</label>
                   <input
                     type="number"
                     min="0"
@@ -1026,31 +982,43 @@ export default function ItemsPage() {
                 </div>
               </div>
 
-              {form.kind === 'reusable' && (
+              {/* Hàng 6: Số lần dùng (nếu Tái sử dụng) + Ghi chú gọn */}
+              {form.kind === 'reusable' ? (
+                <div className="form-grid-2">
+                  <div className="form-group">
+                    <label>Số lần dùng dự kiến</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="VD: 10 lần"
+                      value={form.expected_uses}
+                      onChange={(e) => setForm({ ...form, expected_uses: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Ghi chú</label>
+                    <input
+                      type="text"
+                      value={form.note}
+                      onChange={(e) => setForm({ ...form, note: e.target.value })}
+                      placeholder="Kích thước, quy cách..."
+                    />
+                  </div>
+                </div>
+              ) : (
                 <div className="form-group">
-                  <label>Số lần sử dụng dự kiến (để tính khấu hao mỗi dự án)</label>
+                  <label>Ghi chú</label>
                   <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="VD: 10 (mỗi lần xuất tính 1/10 giá vốn)"
-                    value={form.expected_uses}
-                    onChange={(e) => setForm({ ...form, expected_uses: e.target.value })}
+                    type="text"
+                    value={form.note}
+                    onChange={(e) => setForm({ ...form, note: e.target.value })}
+                    placeholder="Kích thước, quy cách bảo quản..."
                   />
                 </div>
               )}
 
-              <div className="form-group">
-                <label>Ghi chú</label>
-                <textarea
-                  rows={2}
-                  value={form.note}
-                  onChange={(e) => setForm({ ...form, note: e.target.value })}
-                  placeholder="Kích thước, màu sắc, quy cách bảo quản..."
-                />
-              </div>
-
-              <label className="checkbox-label">
+              <label className="checkbox-label" style={{ marginTop: 2 }}>
                 <input
                   type="checkbox"
                   checked={form.active}

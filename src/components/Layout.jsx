@@ -8,14 +8,14 @@ export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const navItems = [
-    { to: '/', label: 'Tổng quan', icon: '📊', show: true, end: true },
-    { to: '/vat-tu', label: 'Vật tư', icon: '📦', show: true },
-    { to: '/phieu-kho', label: 'Nhập kho / Phiếu kho', icon: '📝', show: !isStaff },
-    { to: '/du-an', label: 'Dự án', icon: '🎪', show: true },
-    { to: '/mau-set', label: 'Mẫu set trang trí', icon: '✨', show: !isStaff },
-    { to: '/doi-tac', label: 'Đối tác', icon: '🤝', show: !isStaff },
-    { to: '/bao-cao', label: 'Báo cáo & Dự báo', icon: '📈', show: !isStaff },
-    { to: '/nguoi-dung', label: 'Người dùng', icon: '👥', show: isAdmin },
+    { to: '/', label: 'Tổng quan', shortLabel: 'Tổng quan', icon: '📊', show: true, end: true },
+    { to: '/vat-tu', label: 'Vật tư', shortLabel: 'Vật tư', icon: '📦', show: true },
+    { to: '/phieu-kho', label: 'Nhập kho / Phiếu kho', shortLabel: 'Phiếu kho', icon: '📝', show: !isStaff },
+    { to: '/du-an', label: 'Dự án', shortLabel: 'Dự án', icon: '🎪', show: true },
+    { to: '/mau-set', label: 'Mẫu set trang trí', shortLabel: 'Mẫu set', icon: '✨', show: !isStaff },
+    { to: '/doi-tac', label: 'Đối tác', shortLabel: 'Đối tác', icon: '🤝', show: !isStaff },
+    { to: '/bao-cao', label: 'Báo cáo & Dự báo', shortLabel: 'Báo cáo', icon: '📈', show: !isStaff },
+    { to: '/nguoi-dung', label: 'Người dùng', shortLabel: 'Tài khoản', icon: '👥', show: isAdmin },
   ].filter((item) => item.show)
 
   const closeMenu = () => setMobileMenuOpen(false)
@@ -94,7 +94,7 @@ export default function Layout() {
 
       {/* Mobile Bottom Navigation */}
       <nav className="mobile-bottom-nav">
-        {navItems.slice(0, 5).map((item) => (
+        {navItems.slice(0, 4).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -103,9 +103,18 @@ export default function Layout() {
             className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}
           >
             <span className="bottom-nav-icon">{item.icon}</span>
-            <span className="bottom-nav-label">{item.label.split(' ')[0]}</span>
+            <span className="bottom-nav-label">{item.shortLabel || item.label}</span>
           </NavLink>
         ))}
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen((v) => !v)}
+          className={`bottom-nav-item ${mobileMenuOpen ? 'active' : ''}`}
+          style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+        >
+          <span className="bottom-nav-icon">☰</span>
+          <span className="bottom-nav-label">Menu</span>
+        </button>
       </nav>
     </div>
   )
