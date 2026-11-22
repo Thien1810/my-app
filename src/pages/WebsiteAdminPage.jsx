@@ -696,6 +696,45 @@ export default function WebsiteAdminPage() {
     }
   }
 
+  const handleMovePost = async (idx, dir) => {
+    const targetIdx = idx + dir
+    if (targetIdx < 0 || targetIdx >= posts.length) return
+
+    const a = posts[idx]
+    const b = posts[targetIdx]
+    const tA = new Date(a.published_at || a.created_at || Date.now()).getTime()
+    const tB = new Date(b.published_at || b.created_at || Date.now()).getTime()
+
+    // Hoán đổi published_at (đảm bảo khác nhau ít nhất 1 giây để sort DESC luôn chính xác)
+    let nextTimeA = new Date(tB).toISOString()
+    let nextTimeB = new Date(tA).toISOString()
+    if (tA === tB) {
+      if (dir < 0) {
+        nextTimeA = new Date(tB + 1000).toISOString()
+        nextTimeB = new Date(tB).toISOString()
+      } else {
+        nextTimeA = new Date(tB).toISOString()
+        nextTimeB = new Date(tB + 1000).toISOString()
+      }
+    }
+
+    const updated = [...posts]
+    updated[idx] = { ...b, published_at: nextTimeB }
+    updated[targetIdx] = { ...a, published_at: nextTimeA }
+    setPosts(updated)
+
+    try {
+      await Promise.all([
+        supabase.from('site_posts').update({ published_at: nextTimeA }).eq('id', a.id),
+        supabase.from('site_posts').update({ published_at: nextTimeB }).eq('id', b.id),
+      ])
+      showToast('✓ Đã cập nhật thứ tự hiển thị bài viết lên dangwed.com!')
+    } catch (err) {
+      setErrorMsg('Không thể lưu thứ tự bài viết: ' + err.message)
+      loadData()
+    }
+  }
+
   // Handlers Bài viết SEO
   const resetPostForm = () => {
     setEditingPostId(null)
@@ -2304,7 +2343,7 @@ export default function WebsiteAdminPage() {
                       </div>
                     ) : (
                       <div style={{ display: 'grid', gap: 12 }}>
-                        {posts.map((p) => (
+                        {posts.map((p, idx) => (
                           <div
                             key={p.id}
                             className="sub-card"
@@ -2319,6 +2358,7 @@ export default function WebsiteAdminPage() {
                           >
                             <div style={{ flex: 1, minWidth: 240 }}>
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+                                <span className="badge badge-amber">#{idx + 1}</span>
                                 <span className="badge badge-green">{p.category}</span>
                                 <span className={`badge ${p.is_published ? 'badge-blue' : 'badge-gray'}`}>
                                   {p.is_published ? 'Đang đăng' : 'Nháp (ẩn)'}
@@ -2337,6 +2377,24 @@ export default function WebsiteAdminPage() {
                               )}
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                title="Đẩy bài viết lên trước"
+                                disabled={idx === 0}
+                                onClick={() => handleMovePost(idx, -1)}
+                              >
+                                ⬆
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                title="Đẩy bài viết xuống sau"
+                                disabled={idx === posts.length - 1}
+                                onClick={() => handleMovePost(idx, 1)}
+                              >
+                                ⬇
+                              </button>
                               <button
                                 type="button"
                                 className="btn btn-outline btn-sm"
