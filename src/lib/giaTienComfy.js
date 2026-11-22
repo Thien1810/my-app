@@ -59,18 +59,27 @@ const COUPLE_POSE_MAP = {
   ngoi: 'a Vietnamese bride and groom in elegant ao dai seated naturally on ceremonial chairs beside the Gia Tien table, relaxed upright posture, hands resting neatly on lap, genuine warm expressions, realistic skin texture, natural anatomy, five fingers per hand',
 }
 
+function resolveChoice(val, options, map, fallbackKey) {
+  const clean = String(val || '').trim()
+  if (!clean) return map[fallbackKey]
+  if (map[clean]) return map[clean]
+  const byLabel = options.find((o) => o.label.toLowerCase() === clean.toLowerCase())
+  if (byLabel && map[byLabel.value]) return map[byLabel.value]
+  return clean
+}
+
 export function buildGiaTienPrompt({
-  tone = 'do_truyen_thong',
-  style = 'truyen_thong',
-  flower = 'hong_lan',
+  tone = 'Đỏ truyền thống & Vàng đồng',
+  style = 'Truyền thống (Song Hỷ, Lư đồng)',
+  flower = 'Hoa Hồng & Lan Hồ Điệp',
   hasCouple = false,
   couplePose = 'dung',
   isImg2Img = false,
   extra = '',
 }) {
-  const toneDesc = TONE_MAP[tone] || TONE_MAP.do_truyen_thong
-  const styleDesc = STYLE_MAP[style] || STYLE_MAP.truyen_thong
-  const flowerDesc = FLOWER_MAP[flower] || FLOWER_MAP.hong_lan
+  const toneDesc = resolveChoice(tone, TONE_OPTIONS, TONE_MAP, 'do_truyen_thong')
+  const styleDesc = resolveChoice(style, STYLE_OPTIONS, STYLE_MAP, 'truyen_thong')
+  const flowerDesc = resolveChoice(flower, FLOWER_OPTIONS, FLOWER_MAP, 'hong_lan')
 
   const prefix = isImg2Img
     ? 'Realistic editorial wedding photography transforming the existing room into a '

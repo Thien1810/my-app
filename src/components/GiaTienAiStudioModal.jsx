@@ -20,9 +20,9 @@ export default function GiaTienAiStudioModal({
 }) {
   const [engine, setEngine] = useState('comfyui') // 'comfyui' | 'cloud'
   const [ratio, setRatio] = useState(defaultRatio)
-  const [tone, setTone] = useState('do_truyen_thong')
-  const [style, setStyle] = useState('truyen_thong')
-  const [flower, setFlower] = useState('hong_lan')
+  const [tone, setTone] = useState('Đỏ truyền thống & Vàng đồng')
+  const [style, setStyle] = useState('Truyền thống (Song Hỷ, Lư đồng)')
+  const [flower, setFlower] = useState('Hoa Hồng & Lan Hồ Điệp')
   const [hasCouple, setHasCouple] = useState(false)
   const [couplePose, setCouplePose] = useState('dung')
   const [extra, setExtra] = useState(defaultExtra)
@@ -86,9 +86,7 @@ export default function GiaTienAiStudioModal({
 
   const handleConfirmUse = () => {
     if (!resultUrl) return
-    const toneLabel = TONE_OPTIONS.find((t) => t.value === tone)?.label || ''
-    const styleLabel = STYLE_OPTIONS.find((s) => s.value === style)?.label || ''
-    const altText = `Trang trí Gia tiên ${styleLabel} ${toneLabel} - Đặng Wedding`
+    const altText = `Trang trí Gia tiên ${style} ${tone} - Đặng Wedding`
     onUseImage?.(resultUrl, altText)
     onClose?.()
   }
@@ -147,36 +145,51 @@ export default function GiaTienAiStudioModal({
             </div>
 
             <div className="form-group">
-              <label>Tone màu chủ đạo</label>
-              <select value={tone} onChange={(e) => setTone(e.target.value)}>
+              <label>Tone màu chủ đạo (chọn hoặc tự gõ)</label>
+              <input
+                type="text"
+                list="giatien-tone-list"
+                placeholder="VD: Xanh rêu & Vàng champagne..."
+                value={tone}
+                onChange={(e) => setTone(e.target.value)}
+              />
+              <datalist id="giatien-tone-list">
                 {TONE_OPTIONS.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
+                  <option key={t.value} value={t.label} />
                 ))}
-              </select>
+              </datalist>
             </div>
 
             <div className="form-group">
-              <label>Phong cách decor</label>
-              <select value={style} onChange={(e) => setStyle(e.target.value)}>
+              <label>Phong cách decor (chọn hoặc tự gõ)</label>
+              <input
+                type="text"
+                list="giatien-style-list"
+                placeholder="VD: Tối giản sang trọng, Indochine..."
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+              />
+              <datalist id="giatien-style-list">
                 {STYLE_OPTIONS.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
+                  <option key={s.value} value={s.label} />
                 ))}
-              </select>
+              </datalist>
             </div>
 
             <div className="form-group">
-              <label>Loại hoa chính</label>
-              <select value={flower} onChange={(e) => setFlower(e.target.value)}>
+              <label>Loại hoa chính (chọn hoặc tự gõ)</label>
+              <input
+                type="text"
+                list="giatien-flower-list"
+                placeholder="VD: Hoa Tulip trắng, Hồng Juliet..."
+                value={flower}
+                onChange={(e) => setFlower(e.target.value)}
+              />
+              <datalist id="giatien-flower-list">
                 {FLOWER_OPTIONS.map((f) => (
-                  <option key={f.value} value={f.value}>
-                    {f.label}
-                  </option>
+                  <option key={f.value} value={f.label} />
                 ))}
-              </select>
+              </datalist>
             </div>
           </div>
 
