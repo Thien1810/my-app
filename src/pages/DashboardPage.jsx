@@ -15,7 +15,6 @@ import { useAuth } from '../lib/AuthContext'
 import { formatCurrency, formatNumber, formatDate, todayISO } from '../lib/formatters'
 import { calcProjectItemStats, calcProjectFinancialSummary } from '../lib/calc'
 import { KindBadge, ProjectStatusBadge } from '../components/Badges'
-import { calcProjectFbReminder } from '../lib/watermarkHelper'
 
 export default function DashboardPage() {
   const { isManagerOrAdmin } = useAuth()
@@ -113,18 +112,6 @@ export default function DashboardPage() {
       }
     }
 
-    const fbOverdueProjects = []
-    for (const p of projects) {
-      const rem = calcProjectFbReminder(p)
-      if (rem.isOverdue5Days) {
-        fbOverdueProjects.push({
-          ...p,
-          daysPassed: rem.daysPassed,
-          refDateStr: rem.refDateStr,
-        })
-      }
-    }
-
     return {
       activeItemCount: activeItems.length,
       consumableCount: activeItems.filter((i) => i.kind === 'consumable').length,
@@ -136,7 +123,6 @@ export default function DashboardPage() {
       runningProjectsCount: runningProjects.length,
       lowStockItems,
       overdueProjects,
-      fbOverdueProjects,
     }
   }, [items, projects, movements, itemMap])
 
@@ -270,71 +256,7 @@ export default function DashboardPage() {
           <div className="kpi-value text-red">{formatNumber(stats.overdueProjects.length)}</div>
           <div className="kpi-sub">Đã qua ngày tháo dỡ nhưng còn đồ tại dự án</div>
         </div>
-
-        <div className={`kpi-card ${stats.fbOverdueProjects.length > 0 ? 'kpi-warning' : ''}`}>
-          <div className="kpi-label">Nhắc đăng bài Facebook (&gt; 5 ngày)</div>
-          <div className="kpi-value text-amber">{formatNumber(stats.fbOverdueProjects.length)}</div>
-          <div className="kpi-sub">Dự án quá 5 ngày chưa đăng Fanpage</div>
-        </div>
       </div>
-
-      {/* Bảng Nhắc đăng bài Facebook (> 5 ngày) */}
-      {stats.fbOverdueProjects.length > 0 && (
-        <div
-          className="card"
-          style={{
-            marginBottom: 20,
-            borderLeft: '4px solid #f59e0b',
-            background: '#fffbeb',
-          }}
-        >
-          <div className="card-header">
-            <h3>
-              🔔 Nhắc đăng bài Facebook: {stats.fbOverdueProjects.length} dự án đã quá 5 ngày chưa
-              đăng Fanpage
-            </h3>
-          </div>
-          <div className="table-responsive">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Mã</th>
-                  <th>Tên dự án / Sự kiện</th>
-                  <th>Khách hàng</th>
-                  <th>Ngày thi công</th>
-                  <th>Thời gian trôi qua</th>
-                  <th className="text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stats.fbOverdueProjects.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <code>{p.code || `#${p.id}`}</code>
-                    </td>
-                    <td className="font-bold">{p.name}</td>
-                    <td>{p.customer?.name || '—'}</td>
-                    <td>{formatDate(p.refDateStr)}</td>
-                    <td>
-                      <span className="badge badge-danger">
-                        ⏰ Đã qua {p.daysPassed} ngày
-                      </span>
-                    </td>
-                    <td className="text-right">
-                      <Link
-                        to={`/du-an/${p.id}?tab=facebook`}
-                        className="btn btn-sm btn-primary"
-                      >
-                        📱 Ghép Watermark & Đăng bài
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* Bảng Danh sách các Dự án đang chạy */}
       <div className="card" style={{ marginBottom: 20 }}>
