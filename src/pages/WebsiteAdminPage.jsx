@@ -485,6 +485,34 @@ export default function WebsiteAdminPage() {
     }
   }
 
+  const handlePostInlineImage = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingPostCover(true)
+    setErrorMsg('')
+    try {
+      const res = await compressImageUnder1MB(file)
+      const caption = window.prompt('Nhập chú thích ngắn cho ảnh (tốt cho SEO Google):', 'Mẫu trang trí thực tế tại Đặng Wedding') || 'Đặng Wedding'
+      setPostForm((prev) => ({
+        ...prev,
+        content: `${prev.content.trimEnd()}\n\n![${caption}](${res.dataUrl})\n\n`,
+      }))
+      showToast('✓ Đã chèn ảnh vào nội dung bài viết!')
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setUploadingPostCover(false)
+      e.target.value = ''
+    }
+  }
+
+  const appendPostSnippet = (snippet) => {
+    setPostForm((prev) => ({
+      ...prev,
+      content: prev.content ? `${prev.content.trimEnd()}\n\n${snippet}` : snippet,
+    }))
+  }
+
   const handleSavePost = async (e) => {
     e.preventDefault()
     if (!postForm.title.trim() || !postForm.content.trim()) {
@@ -1234,13 +1262,55 @@ export default function WebsiteAdminPage() {
 
                     <div className="form-group" style={{ marginBottom: 14 }}>
                       <label>
-                        Nội dung chi tiết * (Mẹo: dòng bắt đầu bằng <code>## </code> sẽ tự hiển
-                        thị thành tiêu đề mục lớn)
+                        Nội dung chi tiết * (Tự động tạo Mục lục bài viết từ các tiêu đề H2 / H3)
                       </label>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() => appendPostSnippet('## 1. Tiêu đề mục chính\nNội dung mục...')}
+                        >
+                          + Tiêu đề H2
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() => appendPostSnippet('### Điểm nổi bật\nNội dung chi tiết...')}
+                        >
+                          + Mục nhỏ H3
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() => appendPostSnippet('- Ý thứ nhất\n- Ý thứ hai')}
+                        >
+                          + Danh sách
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() => appendPostSnippet('> Mẹo từ Đặng Wedding: ...')}
+                        >
+                          + Ghi chú nổi bật
+                        </button>
+                        <label
+                          className="btn btn-outline btn-sm"
+                          style={{ cursor: 'pointer', marginBottom: 0 }}
+                        >
+                          📷 Chèn ảnh vào bài
+                          <input
+                            type="file"
+                            accept="image/*"
+                            hidden
+                            disabled={uploadingPostCover}
+                            onChange={handlePostInlineImage}
+                          />
+                        </label>
+                      </div>
                       <textarea
-                        rows={7}
+                        rows={8}
                         required
-                        placeholder={'Giới thiệu tổng quan...\n\n## 1. Lưu ý quan trọng đầu tiên\nNội dung chi tiết...'}
+                        placeholder={'Mở bài thu hút...\n\n## 1. Tiêu đề mục chính\nNội dung chi tiết...\n\n![Chú thích ảnh](/posts/gia-tien-trang-kem.jpg)'}
                         value={postForm.content}
                         onChange={(e) => setPostForm({ ...postForm, content: e.target.value })}
                       />
