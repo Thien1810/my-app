@@ -25,8 +25,8 @@ export default function Layout() {
       {/* Mobile Header */}
       <header className="mobile-header">
         <div className="mobile-brand">
-          <span className="brand-dot" />
-          <strong>Kho Trang Trí</strong>
+          <img src="/logo.jpg" alt="Đặng Wedding" className="mobile-brand-logo" />
+          <strong>Đặng Wedding</strong>
         </div>
         <button
           className="btn-icon"
@@ -40,9 +40,9 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className={`sidebar ${mobileMenuOpen ? 'open' : ''}`}>
         <div className="sidebar-brand">
-          <div className="brand-logo">🌿</div>
+          <img src="/logo.jpg" alt="Đặng Wedding" className="brand-logo-img" />
           <div>
-            <div className="brand-title">Kho Trang Trí</div>
+            <div className="brand-title">Đặng Wedding</div>
             <div className="brand-subtitle">Quản lý Vật tư & Dự án</div>
           </div>
         </div>

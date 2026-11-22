@@ -14,7 +14,10 @@ export default function PendingApprovalScreen() {
   return (
     <div className="auth-wrapper">
       <div className="auth-card" style={{ textAlign: 'center' }}>
-        <div className="brand-badge">KHO TRANG TRÍ</div>
+        <div className="auth-logo-wrap" style={{ justifyContent: 'center' }}>
+          <img src="/logo.jpg" alt="Đặng Wedding" className="auth-logo-img" />
+          <div className="brand-badge">ĐẶNG WEDDING</div>
+        </div>
         <div className="pending-icon">⏳</div>
         <h2>Tài khoản đang chờ Quản trị duyệt</h2>
         <p className="text-muted" style={{ marginTop: 8 }}>

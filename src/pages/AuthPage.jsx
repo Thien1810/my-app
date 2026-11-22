@@ -53,7 +53,10 @@ export default function AuthPage() {
   return (
     <div className="auth-wrapper">
       <div className="auth-card">
-        <div className="brand-badge">🌿 KHO TRANG TRÍ</div>
+        <div className="auth-logo-wrap">
+          <img src="/logo.jpg" alt="Đặng Wedding" className="auth-logo-img" />
+          <div className="brand-badge">ĐẶNG WEDDING</div>
+        </div>
         <h1>
           {mode === 'login' && 'Đăng nhập hệ thống'}
           {mode === 'signup' && 'Đăng ký tài khoản mới'}

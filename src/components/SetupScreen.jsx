@@ -2,7 +2,10 @@ export default function SetupScreen() {
   return (
     <div className="auth-wrapper">
       <div className="auth-card setup-card">
-        <div className="brand-badge">KHO TRANG TRÍ</div>
+        <div className="auth-logo-wrap">
+          <img src="/logo.jpg" alt="Đặng Wedding" className="auth-logo-img" />
+          <div className="brand-badge">ĐẶNG WEDDING</div>
+        </div>
         <h1>Chưa cấu hình kết nối Supabase</h1>
         <p className="text-muted">
           Ứng dụng cần 2 biến môi trường <code>VITE_SUPABASE_URL</code> và{' '}
