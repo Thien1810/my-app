@@ -23,12 +23,41 @@ export function saveGeminiKey(key = '') {
 }
 
 export async function generateSeoArticleWithGemini({ apiKey, topic, keyword = '', category = 'Kinh nghiệm cưới' }) {
-  const key = (apiKey || '').trim()
-  if (!key) {
-    throw new Error('Vui lòng nhập Google Gemini API Key miễn phí trước khi tạo bài.')
-  }
   if (!topic || !topic.trim()) {
     throw new Error('Vui lòng nhập chủ đề hoặc ý tưởng bài viết.')
+  }
+
+  const key = (apiKey || '').trim()
+
+  // Nếu không có key ở trình duyệt, tự động gọi qua Vercel Serverless Function (/api/ai-seo)
+  if (!key) {
+    const srvRes = await fetch('/api/ai-seo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, keyword, category }),
+    })
+    const srvData = await srvRes.json().catch(() => ({}))
+    if (srvRes.ok && srvData?.title) {
+      return {
+        title: srvData.title || topic.trim(),
+        seo_keywords: srvData.seo_keywords || keyword.trim() || topic.trim(),
+        excerpt: srvData.excerpt || '',
+        intro: srvData.intro || '',
+        sections: Array.isArray(srvData.sections)
+          ? srvData.sections.map((s) => ({
+              heading: s.heading || '',
+              body: s.body || '',
+              imageUrl: '',
+              imageAlt: '',
+            }))
+          : [],
+        conclusionQuote: srvData.conclusionQuote || '',
+      }
+    }
+    if (srvData?.error === 'MISSING_SERVER_KEY') {
+      throw new Error('Vui lòng nhập Google Gemini API Key hoặc cấu hình GEMINI_API_KEY trên Vercel.')
+    }
+    throw new Error(`Lỗi AI Server: ${srvData?.error || `HTTP ${srvRes.status}`}`)
   }
 
   const prompt = `Bạn là chuyên gia viết bài SEO ngành trang trí cưới hỏi cao cấp tại Việt Nam cho thương hiệu "Đặng Wedding" (phong cách sang trọng, tối giản, tinh tế; dịch vụ gồm: Trang trí Gia tiên, Mâm quả cưới hỏi, Cổng hoa cưới, Backdrop tiệc cưới, Cho thuê rạp & bàn ghế; Hotline/Zalo: 0918.80.90.96).
