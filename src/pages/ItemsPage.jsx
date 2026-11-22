@@ -18,6 +18,7 @@ import {
 import { exportToExcel } from '../lib/exportExcel'
 import { KindBadge } from '../components/Badges'
 import CurrencyInput from '../components/CurrencyInput'
+import { compressImageUnder1MB, formatBytes } from '../lib/imageCompressor'
 
 const INITIAL_FORM = {
   code: '',
@@ -52,6 +53,10 @@ export default function ItemsPage() {
   const [saving, setSaving] = useState(false)
   const [showCodeRules, setShowCodeRules] = useState(false)
   const [isCustomCategory, setIsCustomCategory] = useState(false)
+  const [isCustomColor, setIsCustomColor] = useState(false)
+  const [imageCompressing, setImageCompressing] = useState(false)
+  const [imageStats, setImageStats] = useState(null)
+  const [previewLightbox, setPreviewLightbox] = useState(null)
 
   const loadItems = async () => {
     setLoading(true)
@@ -102,8 +107,21 @@ export default function ItemsPage() {
       const c = extractItemColor(i)
       if (c) set.add(c)
     }
-    return Array.from(set).sort()
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'vi'))
   }, [items])
+
+  const selectableColors = useMemo(() => {
+    const map = new Map()
+    for (const c of colors) {
+      map.set(c.toLowerCase(), { name: c, isExisting: true })
+    }
+    for (const p of ITEM_COLOR_PRESETS) {
+      if (!map.has(p.name.toLowerCase())) {
+        map.set(p.name.toLowerCase(), { name: p.name, isExisting: false })
+      }
+    }
+    return Array.from(map.values())
+  }, [colors])
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -127,6 +145,8 @@ export default function ItemsPage() {
   const openCreateModal = () => {
     setEditingItem(null)
     setIsCustomCategory(false)
+    setIsCustomColor(false)
+    setImageStats(null)
     const defaultCategory = categories[0] || 'Hoa & Lá'
     const defaultKind = 'consumable'
     const preset = ITEM_CATEGORY_PRESETS.find(
@@ -162,6 +182,8 @@ export default function ItemsPage() {
   const openEditModal = (item) => {
     setEditingItem(item)
     setIsCustomCategory(false)
+    setIsCustomColor(false)
+    setImageStats(null)
     setForm({
       code: item.code || '',
       name: item.name || '',
@@ -183,6 +205,23 @@ export default function ItemsPage() {
     () => findDuplicateCode(form.code, items, editingItem?.id),
     [form.code, items, editingItem]
   )
+
+  const handleImageFileSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImageCompressing(true)
+    setError('')
+    try {
+      const res = await compressImageUnder1MB(file)
+      setForm((prev) => ({ ...prev, image_url: res.dataUrl }))
+      setImageStats(res)
+    } catch (err) {
+      setError(err.message || 'Lỗi khi xử lý hình ảnh')
+    } finally {
+      setImageCompressing(false)
+      e.target.value = ''
+    }
+  }
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -461,6 +500,7 @@ export default function ItemsPage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th style={{ width: 54 }}>Ảnh</th>
                   <th>Mã</th>
                   <th>Tên vật tư</th>
                   <th>Danh mục</th>
@@ -484,6 +524,44 @@ export default function ItemsPage() {
                   const swatch = getColorSwatch(itemColor)
                   return (
                     <tr key={item.id} className={!item.active ? 'row-inactive' : ''}>
+                      <td>
+                        {item.image_url ? (
+                          <img
+                            src={item.image_url}
+                            alt={item.name}
+                            title="Bấm để phóng to ảnh"
+                            onClick={() =>
+                              setPreviewLightbox({ url: item.image_url, name: item.name })
+                            }
+                            style={{
+                              width: 42,
+                              height: 42,
+                              objectFit: 'cover',
+                              borderRadius: 8,
+                              border: '1px solid #cbd5e1',
+                              cursor: 'zoom-in',
+                              display: 'block',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 42,
+                              height: 42,
+                              borderRadius: 8,
+                              border: '1px dashed #cbd5e1',
+                              background: '#f8fafc',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 16,
+                              color: '#94a3b8',
+                            }}
+                          >
+                            🖼️
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <code>{item.code || `#${item.id}`}</code>
                       </td>
@@ -742,71 +820,171 @@ export default function ItemsPage() {
                 </div>
               </div>
 
-              <div className="form-group">
-                <label>Tên vật tư *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="VD: Khung backdrop tròn 2.2m / Bóng cao su nhũ"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                />
+              <div className="form-grid-2">
+                <div className="form-group">
+                  <label>Tên vật tư *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: Khung backdrop tròn 2.2m / Bóng cao su nhũ"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Màu sắc</label>
+                  {!isCustomColor ? (
+                    <select
+                      value={form.color}
+                      onChange={(e) => {
+                        if (e.target.value === '__NEW_COLOR__') {
+                          setIsCustomColor(true)
+                          setForm({ ...form, color: '' })
+                        } else {
+                          setForm({ ...form, color: e.target.value })
+                        }
+                      }}
+                    >
+                      <option value="">-- Chọn màu sắc --</option>
+                      {colors.length > 0 && (
+                        <optgroup label="Màu đã có trong kho">
+                          {colors.map((c) => (
+                            <option key={`exist-color-${c}`} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="Màu gợi ý ngành cưới">
+                        {selectableColors
+                          .filter((c) => !c.isExisting)
+                          .map((c) => (
+                            <option key={`preset-color-${c.name}`} value={c.name}>
+                              {c.name}
+                            </option>
+                          ))}
+                      </optgroup>
+                      <option value="__NEW_COLOR__">+ Tạo màu mới khác...</option>
+                    </select>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Nhập tên màu mới..."
+                        value={form.color}
+                        onChange={(e) => setForm({ ...form, color: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        style={{ whiteSpace: 'nowrap' }}
+                        onClick={() => {
+                          setIsCustomColor(false)
+                          setForm({ ...form, color: colors[0] || 'Trắng' })
+                        }}
+                      >
+                        Chọn có sẵn
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="form-group">
-                <label>Màu sắc (chọn nhanh hoặc tự nhập)</label>
-                <input
-                  type="text"
-                  list="color-presets"
-                  placeholder="VD: Trắng kem, Hồng Pastel, Đỏ rượu, Vàng đồng..."
-                  value={form.color}
-                  onChange={(e) => setForm({ ...form, color: e.target.value })}
-                />
-                <datalist id="color-presets">
-                  {ITEM_COLOR_PRESETS.map((c) => (
-                    <option key={c.name} value={c.name} />
-                  ))}
-                </datalist>
+                <label>
+                  Hình ảnh vật tư (nhận mọi kích thước, tự động thu nhỏ & nén dưới 1MB)
+                </label>
                 <div
                   style={{
                     display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    padding: 12,
+                    border: '1px dashed #cbd5e1',
+                    borderRadius: 10,
+                    background: '#f8fafc',
                     flexWrap: 'wrap',
-                    gap: 6,
-                    marginTop: 8,
                   }}
                 >
-                  {ITEM_COLOR_PRESETS.slice(0, 10).map((c) => {
-                    const active = form.color.trim().toLowerCase() === c.name.toLowerCase()
-                    return (
-                      <button
-                        key={c.name}
-                        type="button"
-                        onClick={() => setForm({ ...form, color: c.name })}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 5,
-                          padding: '3px 9px',
-                          fontSize: '0.78rem',
-                          borderRadius: 999,
-                          border: active ? '1.5px solid #16a34a' : '1px solid #cbd5e1',
-                          background: active ? '#dcfce7' : '#ffffff',
-                          cursor: 'pointer',
-                        }}
+                  {form.image_url ? (
+                    <img
+                      src={form.image_url}
+                      alt="Xem trước"
+                      style={{
+                        width: 72,
+                        height: 72,
+                        objectFit: 'cover',
+                        borderRadius: 10,
+                        border: '1px solid #cbd5e1',
+                        background: '#fff',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 72,
+                        height: 72,
+                        borderRadius: 10,
+                        border: '1px solid #e2e8f0',
+                        background: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 24,
+                        color: '#94a3b8',
+                      }}
+                    >
+                      📷
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <label
+                        className="btn btn-outline btn-sm"
+                        style={{ cursor: 'pointer', margin: 0 }}
                       >
-                        <span
-                          style={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: '50%',
-                            backgroundColor: c.hex,
-                            border: `1px solid ${c.border}`,
-                          }}
+                        {imageCompressing
+                          ? '⏳ Đang nén ảnh...'
+                          : form.image_url
+                            ? '📷 Đổi ảnh khác'
+                            : '📷 Chọn ảnh / Chụp ảnh'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageFileSelect}
+                          disabled={imageCompressing}
+                          style={{ display: 'none' }}
                         />
-                        {c.name}
-                      </button>
-                    )
-                  })}
+                      </label>
+                      {form.image_url && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                          onClick={() => {
+                            setForm({ ...form, image_url: '' })
+                            setImageStats(null)
+                          }}
+                        >
+                          Xóa ảnh
+                        </button>
+                      )}
+                    </div>
+                    {imageStats ? (
+                      <div className="text-xs text-green" style={{ marginTop: 6 }}>
+                        ✓ Đã tự động thu nhỏ từ{' '}
+                        <strong>{formatBytes(imageStats.originalSize)}</strong> →{' '}
+                        <strong>{formatBytes(imageStats.compressedSize)}</strong> (
+                        {imageStats.width}×{imageStats.height}px)
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted" style={{ marginTop: 6 }}>
+                        Tải lên ảnh dung lượng bất kỳ (kể cả 10MB–20MB), hệ thống tự nén gọn ~100KB.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -875,12 +1053,46 @@ export default function ItemsPage() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={saving || Boolean(duplicateItem)}
+                  disabled={saving || imageCompressing || Boolean(duplicateItem)}
                 >
                   {saving ? 'Đang lưu...' : 'Lưu vật tư'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox phóng to ảnh vật tư */}
+      {previewLightbox && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setPreviewLightbox(null)}
+          style={{ zIndex: 100 }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 620, textAlign: 'center' }}
+          >
+            <div className="modal-header">
+              <h3>{previewLightbox.name}</h3>
+              <button className="btn-icon" onClick={() => setPreviewLightbox(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <img
+                src={previewLightbox.url}
+                alt={previewLightbox.name}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '70vh',
+                  borderRadius: 12,
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

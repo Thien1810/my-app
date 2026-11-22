@@ -115,21 +115,38 @@ export default function ItemDetailPage() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <div>
-          <div className="breadcrumb">
-            <Link to="/vat-tu">Vật tư</Link> / <span>{item.name}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          {item.image_url && (
+            <img
+              src={item.image_url}
+              alt={item.name}
+              style={{
+                width: 84,
+                height: 84,
+                objectFit: 'cover',
+                borderRadius: 12,
+                border: '1px solid #cbd5e1',
+                background: '#fff',
+              }}
+            />
+          )}
+          <div>
+            <div className="breadcrumb">
+              <Link to="/vat-tu">Vật tư</Link> / <span>{item.name}</span>
+            </div>
+            <h1>
+              {item.name}{' '}
+              <span style={{ fontSize: '0.9rem', verticalAlign: 'middle' }}>
+                <KindBadge kind={item.kind} />
+              </span>
+            </h1>
+            <p className="text-muted">
+              Mã: <strong>{item.code || `#${item.id}`}</strong> • Danh mục:{' '}
+              <strong>{item.category || 'Chưa phân loại'}</strong> • Màu sắc:{' '}
+              <strong>{extractItemColor(item) || '—'}</strong> • Đơn vị:{' '}
+              <strong>{item.unit}</strong>
+            </p>
           </div>
-          <h1>
-            {item.name}{' '}
-            <span style={{ fontSize: '0.9rem', verticalAlign: 'middle' }}>
-              <KindBadge kind={item.kind} />
-            </span>
-          </h1>
-          <p className="text-muted">
-            Mã: <strong>{item.code || `#${item.id}`}</strong> • Danh mục:{' '}
-            <strong>{item.category || 'Chưa phân loại'}</strong> • Màu sắc:{' '}
-            <strong>{extractItemColor(item) || '—'}</strong> • Đơn vị: <strong>{item.unit}</strong>
-          </p>
         </div>
         <div className="header-actions">
           <button className="btn btn-outline" onClick={handleExportHistory}>
