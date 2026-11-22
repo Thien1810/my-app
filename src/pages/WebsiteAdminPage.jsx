@@ -40,11 +40,42 @@ const GALLERY_CATEGORIES = [
   'Đám thực tế',
 ]
 
+const POST_CATEGORIES = [
+  'Kinh nghiệm cưới',
+  'Trang trí Gia tiên',
+  'Mâm quả cưới hỏi',
+  'Tiệc cưới & Backdrop',
+]
+
+function toSlug(str = '') {
+  return str
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function isMissingTableErr(err) {
+  if (!err) return false
+  const msg = (err.message || '').toLowerCase()
+  return (
+    err.code === '42P01' ||
+    msg.includes('does not exist') ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the table')
+  )
+}
+
 export default function WebsiteAdminPage() {
   const { isManagerOrAdmin, isStaff } = useAuth()
   const navigate = useNavigate()
 
-  const [tab, setTab] = useState('leads') // 'leads' | 'gallery' | 'settings'
+  const [tab, setTab] = useState('leads') // 'leads' | 'gallery' | 'posts' | 'settings'
   const [loading, setLoading] = useState(true)
   const [schemaMissing, setSchemaMissing] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -70,6 +101,23 @@ export default function WebsiteAdminPage() {
   const [uploadingGal, setUploadingGal] = useState(false)
   const [savingGal, setSavingGal] = useState(false)
 
+  // Posts (SEO Blog) state
+  const [posts, setPosts] = useState([])
+  const [postsMissing, setPostsMissing] = useState(false)
+  const [editingPostId, setEditingPostId] = useState(null)
+  const [postForm, setPostForm] = useState({
+    title: '',
+    slug: '',
+    category: 'Kinh nghiệm cưới',
+    excerpt: '',
+    content: '',
+    cover_image_url: '',
+    seo_keywords: '',
+    is_published: true,
+  })
+  const [uploadingPostCover, setUploadingPostCover] = useState(false)
+  const [savingPost, setSavingPost] = useState(false)
+
   // Settings state
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [savingSettings, setSavingSettings] = useState(false)
@@ -87,22 +135,18 @@ export default function WebsiteAdminPage() {
     setErrorMsg('')
     setSchemaMissing(false)
     setGalleryMissing(false)
+    setPostsMissing(false)
     try {
-      const [leadsRes, settingsRes, galleryRes] = await Promise.all([
+      const [leadsRes, settingsRes, galleryRes, postsRes] = await Promise.all([
         supabase.from('site_leads').select('*').order('created_at', { ascending: false }),
         supabase.from('site_settings').select('*').eq('id', 1).maybeSingle(),
         supabase.from('site_gallery').select('*').order('created_at', { ascending: false }),
+        supabase.from('site_posts').select('*').order('published_at', { ascending: false }),
       ])
 
       const err = leadsRes.error || settingsRes.error
       if (err) {
-        const msg = (err.message || '').toLowerCase()
-        if (
-          err.code === '42P01' ||
-          msg.includes('does not exist') ||
-          msg.includes('schema cache') ||
-          msg.includes('could not find the table')
-        ) {
+        if (isMissingTableErr(err)) {
           setSchemaMissing(true)
         } else {
           setErrorMsg(err.message)
@@ -115,17 +159,15 @@ export default function WebsiteAdminPage() {
       }
 
       if (galleryRes.error) {
-        const gmsg = (galleryRes.error.message || '').toLowerCase()
-        if (
-          galleryRes.error.code === '42P01' ||
-          gmsg.includes('does not exist') ||
-          gmsg.includes('schema cache') ||
-          gmsg.includes('could not find the table')
-        ) {
-          setGalleryMissing(true)
-        }
+        if (isMissingTableErr(galleryRes.error)) setGalleryMissing(true)
       } else {
         setGallery(galleryRes.data || [])
+      }
+
+      if (postsRes.error) {
+        if (isMissingTableErr(postsRes.error)) setPostsMissing(true)
+      } else {
+        setPosts(postsRes.data || [])
       }
     } catch (e) {
       setErrorMsg(e.message)
@@ -412,6 +454,126 @@ export default function WebsiteAdminPage() {
     showToast('Đã xóa ảnh khỏi Thư viện.')
   }
 
+  // Handlers Bài viết SEO
+  const resetPostForm = () => {
+    setEditingPostId(null)
+    setPostForm({
+      title: '',
+      slug: '',
+      category: 'Kinh nghiệm cưới',
+      excerpt: '',
+      content: '',
+      cover_image_url: '',
+      seo_keywords: '',
+      is_published: true,
+    })
+  }
+
+  const handlePostCoverUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingPostCover(true)
+    setErrorMsg('')
+    try {
+      const res = await compressImageUnder1MB(file)
+      setPostForm((prev) => ({ ...prev, cover_image_url: res.dataUrl }))
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setUploadingPostCover(false)
+      e.target.value = ''
+    }
+  }
+
+  const handleSavePost = async (e) => {
+    e.preventDefault()
+    if (!postForm.title.trim() || !postForm.content.trim()) {
+      setErrorMsg('Vui lòng nhập Tiêu đề và Nội dung bài viết.')
+      return
+    }
+    setSavingPost(true)
+    setErrorMsg('')
+    try {
+      const finalSlug = (postForm.slug.trim() || toSlug(postForm.title)) || `bai-viet-${Date.now()}`
+      const payload = {
+        title: postForm.title.trim(),
+        slug: finalSlug,
+        category: postForm.category || 'Kinh nghiệm cưới',
+        excerpt: postForm.excerpt.trim(),
+        content: postForm.content.trim(),
+        cover_image_url: postForm.cover_image_url || '',
+        seo_keywords: postForm.seo_keywords.trim(),
+        is_published: Boolean(postForm.is_published),
+      }
+      if (editingPostId) {
+        const { data, error } = await supabase
+          .from('site_posts')
+          .update(payload)
+          .eq('id', editingPostId)
+          .select('*')
+          .single()
+        if (error) throw error
+        setPosts((prev) => prev.map((p) => (p.id === editingPostId ? data : p)))
+        showToast('✓ Đã cập nhật bài viết SEO!')
+      } else {
+        const { data, error } = await supabase
+          .from('site_posts')
+          .insert({ ...payload, published_at: new Date().toISOString() })
+          .select('*')
+          .single()
+        if (error) throw error
+        setPosts((prev) => [data, ...prev])
+        showToast('✓ Đã đăng bài viết mới lên Cẩm nang dangwed.com!')
+      }
+      resetPostForm()
+    } catch (err) {
+      setErrorMsg('Lỗi khi lưu bài viết: ' + err.message)
+    } finally {
+      setSavingPost(false)
+    }
+  }
+
+  const handleEditPost = (post) => {
+    setEditingPostId(post.id)
+    setPostForm({
+      title: post.title || '',
+      slug: post.slug || '',
+      category: post.category || 'Kinh nghiệm cưới',
+      excerpt: post.excerpt || '',
+      content: post.content || '',
+      cover_image_url: post.cover_image_url || '',
+      seo_keywords: post.seo_keywords || '',
+      is_published: Boolean(post.is_published),
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleTogglePostPublish = async (post) => {
+    const next = !post.is_published
+    const { error } = await supabase
+      .from('site_posts')
+      .update({ is_published: next })
+      .eq('id', post.id)
+    if (error) {
+      setErrorMsg('Không thể cập nhật trạng thái bài viết: ' + error.message)
+      return
+    }
+    setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, is_published: next } : p)))
+    showToast(next ? 'Đã xuất bản bài viết lên Website.' : 'Đã chuyển bài viết về Nháp (ẩn).')
+  }
+
+  const handleDeletePost = async (post) => {
+    if (!window.confirm(`Xóa bài viết "${post.title}"?`)) return
+    const { error } = await supabase.from('site_posts').delete().eq('id', post.id)
+    if (error) {
+      setErrorMsg('Không thể xóa bài viết: ' + error.message)
+      return
+    }
+    setPosts((prev) => prev.filter((p) => p.id !== post.id))
+    if (editingPostId === post.id) resetPostForm()
+    showToast('Đã xóa bài viết.')
+  }
+
   const filteredLeads = leads.filter((l) => {
     if (statusFilter !== 'all' && l.status !== statusFilter) return false
     if (search.trim()) {
@@ -488,6 +650,13 @@ export default function WebsiteAdminPage() {
               onClick={() => setTab('gallery')}
             >
               🖼 Thư viện ảnh đám thực tế ({gallery.length})
+            </button>
+            <button
+              type="button"
+              className={`tab-btn ${tab === 'posts' ? 'active' : ''}`}
+              onClick={() => setTab('posts')}
+            >
+              ✍️ Bài viết SEO ({posts.length})
             </button>
             <button
               type="button"
@@ -949,8 +1118,273 @@ export default function WebsiteAdminPage() {
                 </>
               )}
             </div>
+          ) : tab === 'posts' ? (
+            /* Tab 3: Bài viết Cẩm nang SEO */
+            <div style={{ display: 'grid', gap: 18 }}>
+              {postsMissing ? (
+                <div className="card" style={{ padding: 24 }}>
+                  <h3 style={{ marginBottom: 8 }}>
+                    ⚙️ Cần chạy lại SQL để bật mục Bài viết Cẩm nang SEO
+                  </h3>
+                  <p className="text-muted" style={{ marginBottom: 14, lineHeight: 1.6 }}>
+                    Database chưa có bảng <code>site_posts</code>. Anh mở{' '}
+                    <strong>Supabase → SQL Editor</strong>, dán toàn bộ file{' '}
+                    <code>my-app/supabase/website_schema.sql</code> bản mới nhất rồi bấm{' '}
+                    <strong>Run</strong> (sẽ tự tạo bảng và sẵn 3 bài viết mẫu chuẩn SEO), sau đó
+                    bấm kiểm tra lại nhé.
+                  </p>
+                  <button type="button" className="btn btn-primary" onClick={loadData}>
+                    🔄 Kiểm tra lại kết nối
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <form onSubmit={handleSavePost} className="card" style={{ padding: 20 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: 12,
+                        gap: 10,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <h3>
+                        {editingPostId
+                          ? '✏️ Chỉnh sửa bài viết Cẩm nang SEO'
+                          : '✍️ Viết bài Cẩm nang mới (Tăng đề xuất Google)'}
+                      </h3>
+                      {editingPostId && (
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={resetPostForm}
+                        >
+                          ✕ Hủy sửa / Viết bài mới
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="form-grid-2" style={{ marginBottom: 14 }}>
+                      <div className="form-group">
+                        <label>Tiêu đề bài viết (chứa từ khóa tìm kiếm) *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="VD: Kinh nghiệm chọn mẫu Gia tiên đẹp và tiết kiệm"
+                          value={postForm.title}
+                          onChange={(e) => {
+                            const title = e.target.value
+                            setPostForm((prev) => ({
+                              ...prev,
+                              title,
+                              slug: editingPostId ? prev.slug : toSlug(title),
+                            }))
+                          }}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Chuyên mục</label>
+                        <select
+                          value={postForm.category}
+                          onChange={(e) => setPostForm({ ...postForm, category: e.target.value })}
+                        >
+                          {POST_CATEGORIES.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-grid-2" style={{ marginBottom: 14 }}>
+                      <div className="form-group">
+                        <label>Đường dẫn thân thiện (Slug URL)</label>
+                        <input
+                          type="text"
+                          placeholder="kinh-nghiem-chon-mau-gia-tien"
+                          value={postForm.slug}
+                          onChange={(e) => setPostForm({ ...postForm, slug: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Từ khóa SEO (cách nhau bởi dấu phẩy)</label>
+                        <input
+                          type="text"
+                          placeholder="trang trí gia tiên, mâm quả cưới hỏi, backdrop tiệc cưới"
+                          value={postForm.seo_keywords}
+                          onChange={(e) =>
+                            setPostForm({ ...postForm, seo_keywords: e.target.value })
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 14 }}>
+                      <label>Tóm tắt ngắn (hiện ngoài thẻ bài viết &amp; mô tả Google)</label>
+                      <textarea
+                        rows={2}
+                        placeholder="1-2 câu tóm tắt nội dung chính thu hút cô dâu chú rể bấm vào đọc..."
+                        value={postForm.excerpt}
+                        onChange={(e) => setPostForm({ ...postForm, excerpt: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 14 }}>
+                      <label>
+                        Nội dung chi tiết * (Mẹo: dòng bắt đầu bằng <code>## </code> sẽ tự hiển
+                        thị thành tiêu đề mục lớn)
+                      </label>
+                      <textarea
+                        rows={7}
+                        required
+                        placeholder={'Giới thiệu tổng quan...\n\n## 1. Lưu ý quan trọng đầu tiên\nNội dung chi tiết...'}
+                        value={postForm.content}
+                        onChange={(e) => setPostForm({ ...postForm, content: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 16 }}>
+                      <label>Ảnh bìa bài viết (tùy chọn, tự nén &lt; 1MB)</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
+                        <label
+                          className="btn btn-outline btn-sm"
+                          style={{ cursor: 'pointer', marginBottom: 0 }}
+                        >
+                          {uploadingPostCover ? 'Đang nén ảnh...' : '📷 Chọn ảnh bìa'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            hidden
+                            disabled={uploadingPostCover}
+                            onChange={handlePostCoverUpload}
+                          />
+                        </label>
+                        {postForm.cover_image_url && (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            onClick={() => setPostForm((p) => ({ ...p, cover_image_url: '' }))}
+                          >
+                            ✕ Gỡ ảnh bìa
+                          </button>
+                        )}
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13.5, cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={postForm.is_published}
+                            onChange={(e) =>
+                              setPostForm({ ...postForm, is_published: e.target.checked })
+                            }
+                          />
+                          Hiển thị công khai trên Website
+                        </label>
+                      </div>
+                      {postForm.cover_image_url && (
+                        <img
+                          src={postForm.cover_image_url}
+                          alt="Cover preview"
+                          style={{
+                            marginTop: 10,
+                            maxWidth: 320,
+                            maxHeight: 170,
+                            objectFit: 'cover',
+                            borderRadius: 8,
+                            border: '1px solid #e2e8f0',
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={savingPost || uploadingPostCover}
+                    >
+                      {savingPost
+                        ? 'Đang lưu bài viết...'
+                        : editingPostId
+                          ? '💾 Cập nhật bài viết'
+                          : '✍️ Đăng bài viết lên Website'}
+                    </button>
+                  </form>
+
+                  <div className="card" style={{ padding: 20 }}>
+                    <h3 style={{ marginBottom: 14 }}>📚 Danh sách bài viết ({posts.length})</h3>
+                    {posts.length === 0 ? (
+                      <div className="empty-state" style={{ padding: 24 }}>
+                        Chưa có bài viết nào. Anh có thể viết bài đầu tiên ở form phía trên.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 12 }}>
+                        {posts.map((p) => (
+                          <div
+                            key={p.id}
+                            className="sub-card"
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'flex-start',
+                              gap: 14,
+                              flexWrap: 'wrap',
+                              opacity: p.is_published ? 1 : 0.65,
+                            }}
+                          >
+                            <div style={{ flex: 1, minWidth: 240 }}>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+                                <span className="badge badge-green">{p.category}</span>
+                                <span className={`badge ${p.is_published ? 'badge-blue' : 'badge-gray'}`}>
+                                  {p.is_published ? 'Đang đăng' : 'Nháp (ẩn)'}
+                                </span>
+                                <span className="text-xs text-muted">
+                                  {formatDate(p.published_at || p.created_at)}
+                                </span>
+                              </div>
+                              <div className="font-bold" style={{ fontSize: 15, marginBottom: 4 }}>
+                                {p.title}
+                              </div>
+                              {p.excerpt && (
+                                <div className="text-xs text-muted" style={{ lineHeight: 1.5 }}>
+                                  {p.excerpt}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                onClick={() => handleTogglePostPublish(p)}
+                              >
+                                {p.is_published ? '👁 Đang hiện' : '🙈 Đang ẩn'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                onClick={() => handleEditPost(p)}
+                              >
+                                ✏️ Sửa
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                                onClick={() => handleDeletePost(p)}
+                              >
+                                🗑
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           ) : (
-            /* Tab 3: Settings */
+            /* Tab 4: Settings */
             <form onSubmit={handleSaveSettings} className="card" style={{ padding: 20 }}>
               {!isManagerOrAdmin && (
                 <div className="alert alert-error" style={{ marginBottom: 16 }}>
