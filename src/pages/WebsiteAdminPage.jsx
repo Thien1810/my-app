@@ -13,6 +13,8 @@ import {
 import {
   generateSeoArticleWithGemini,
   getSavedGeminiKey,
+  optimizeExistingArticleWithGemini,
+  optimizeHomepageSeoWithGemini,
   saveGeminiKey,
 } from '../lib/aiSeoWriter'
 
@@ -142,6 +144,8 @@ export default function WebsiteAdminPage() {
   const [geminiKey, setGeminiKey] = useState(() => getSavedGeminiKey())
   const [showKeyBox, setShowKeyBox] = useState(() => !getSavedGeminiKey())
   const [aiWriting, setAiWriting] = useState(false)
+  const [aiBatchBusy, setAiBatchBusy] = useState(false)
+  const [aiHomeBusy, setAiHomeBusy] = useState(false)
 
   // Settings state
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -514,6 +518,114 @@ export default function WebsiteAdminPage() {
       }
     } finally {
       setAiWriting(false)
+    }
+  }
+
+  const handleAiOptimizeArticle = async (post) => {
+    setAiWriting(true)
+    setErrorMsg('')
+    try {
+      const opt = await optimizeExistingArticleWithGemini({ apiKey: geminiKey, post })
+      const oldStruct = parseContentToSeoStructure(post.content || '')
+      const mergedSections = opt.sections.map((s, idx) => ({
+        ...s,
+        imageUrl: oldStruct.sections[idx]?.imageUrl || '',
+        imageAlt: oldStruct.sections[idx]?.imageAlt || s.heading || '',
+      }))
+      const nextStruct = {
+        intro: opt.intro,
+        sections: mergedSections.length > 0 ? mergedSections : [emptySection(1)],
+        conclusionQuote: opt.conclusionQuote,
+      }
+      setEditingPostId(post.id)
+      setSeoStruct(nextStruct)
+      setPostEditorMode('structured')
+      setPostForm({
+        title: opt.title,
+        slug: post.slug || toSlug(opt.title),
+        category: post.category || 'Kinh nghiệm cưới',
+        excerpt: opt.excerpt,
+        content: buildMarkdownFromSeoStructure(nextStruct),
+        cover_image_url: post.cover_image_url || '',
+        seo_keywords: opt.seo_keywords || post.seo_keywords || '',
+        is_published: Boolean(post.is_published),
+      })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      showToast('✨ AI đã tối ưu SEO bài viết này! Anh kiểm tra lại rồi bấm "💾 Cập nhật bài viết".')
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setAiWriting(false)
+    }
+  }
+
+  const handleAiOptimizeAllPosts = async () => {
+    if (posts.length === 0) return
+    if (
+      !window.confirm(
+        `AI Studio sẽ tối ưu lại Tiêu đề, Meta Description, Từ khóa & Cấu trúc H2 cho toàn bộ ${posts.length} bài viết và lưu thẳng lên Website. Tiếp tục?`
+      )
+    ) {
+      return
+    }
+    setAiBatchBusy(true)
+    setErrorMsg('')
+    let okCount = 0
+    try {
+      for (const post of posts) {
+        const opt = await optimizeExistingArticleWithGemini({ apiKey: geminiKey, post })
+        const oldStruct = parseContentToSeoStructure(post.content || '')
+        const mergedSections = opt.sections.map((s, idx) => ({
+          ...s,
+          imageUrl: oldStruct.sections[idx]?.imageUrl || '',
+          imageAlt: oldStruct.sections[idx]?.imageAlt || s.heading || '',
+        }))
+        const newContent = buildMarkdownFromSeoStructure({
+          intro: opt.intro,
+          sections: mergedSections,
+          conclusionQuote: opt.conclusionQuote,
+        })
+        const { data, error } = await supabase
+          .from('site_posts')
+          .update({
+            title: opt.title,
+            excerpt: opt.excerpt,
+            seo_keywords: opt.seo_keywords || post.seo_keywords || '',
+            content: newContent,
+          })
+          .eq('id', post.id)
+          .select('*')
+          .single()
+        if (!error && data) {
+          setPosts((prev) => prev.map((p) => (p.id === post.id ? data : p)))
+          okCount += 1
+        }
+      }
+      showToast(`✨ Đã tối ưu SEO hoàn tất ${okCount}/${posts.length} bài viết lên dangwed.com!`)
+    } catch (err) {
+      setErrorMsg(`Đã tối ưu ${okCount} bài, gặp lỗi: ${err.message}`)
+    } finally {
+      setAiBatchBusy(false)
+    }
+  }
+
+  const handleAiOptimizeHome = async () => {
+    if (!isManagerOrAdmin) return
+    setAiHomeBusy(true)
+    setErrorMsg('')
+    try {
+      const opt = await optimizeHomepageSeoWithGemini({ apiKey: geminiKey, settings })
+      setSettings((prev) => ({
+        ...prev,
+        hero_subtitle: opt.hero_subtitle || prev.hero_subtitle,
+        about_title: opt.about_title || prev.about_title,
+        about_body: opt.about_body || prev.about_body,
+      }))
+      showToast('✨ AI đã tối ưu 3 đoạn nội dung SEO cho Trang chủ! Anh bấm "💾 Lưu thay đổi lên Website" để áp dụng.')
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setAiHomeBusy(false)
     }
   }
 
@@ -1957,7 +2069,30 @@ export default function WebsiteAdminPage() {
                   </form>
 
                   <div className="card" style={{ padding: 20 }}>
-                    <h3 style={{ marginBottom: 14 }}>📚 Danh sách bài viết ({posts.length})</h3>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 12,
+                        flexWrap: 'wrap',
+                        marginBottom: 14,
+                      }}
+                    >
+                      <h3 style={{ marginBottom: 0 }}>📚 Danh sách bài viết ({posts.length})</h3>
+                      {posts.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={aiBatchBusy || aiWriting}
+                          onClick={handleAiOptimizeAllPosts}
+                        >
+                          {aiBatchBusy
+                            ? '⏳ AI đang tối ưu tất cả bài...'
+                            : '✨ AI Tối ưu SEO tất cả bài viết'}
+                        </button>
+                      )}
+                    </div>
                     {posts.length === 0 ? (
                       <div className="empty-state" style={{ padding: 24 }}>
                         Chưa có bài viết nào. Anh có thể viết bài đầu tiên ở form phía trên.
@@ -2007,6 +2142,14 @@ export default function WebsiteAdminPage() {
                               <button
                                 type="button"
                                 className="btn btn-outline btn-sm"
+                                disabled={aiWriting || aiBatchBusy}
+                                onClick={() => handleAiOptimizeArticle(p)}
+                              >
+                                ✨ AI Tối ưu
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
                                 onClick={() => handleEditPost(p)}
                               >
                                 ✏️ Sửa
@@ -2034,6 +2177,40 @@ export default function WebsiteAdminPage() {
               {!isManagerOrAdmin && (
                 <div className="alert alert-error" style={{ marginBottom: 16 }}>
                   Chỉ Quản trị (Admin) hoặc Quản lý (Manager) mới có quyền chỉnh sửa nội dung Website.
+                </div>
+              )}
+
+              {isManagerOrAdmin && (
+                <div
+                  className="sub-card"
+                  style={{
+                    marginBottom: 18,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    background: 'linear-gradient(135deg, #f8fafc 0%, #f0fdf4 100%)',
+                    borderLeft: '4px solid #163828',
+                  }}
+                >
+                  <div>
+                    <strong style={{ color: '#163828' }}>
+                      ✨ AI Studio Tối ưu SEO cho Trang chủ
+                    </strong>
+                    <div className="text-xs text-muted">
+                      Tự động viết lại lời giới thiệu Hero &amp; Câu chuyện thương hiệu giàu từ khóa
+                      Google hơn nhưng vẫn giữ phong cách tối giản sang trọng.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={aiHomeBusy}
+                    onClick={handleAiOptimizeHome}
+                  >
+                    {aiHomeBusy ? '⏳ Đang tối ưu...' : '✨ AI Tối ưu Trang chủ ngay'}
+                  </button>
                 </div>
               )}
 

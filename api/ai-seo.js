@@ -1,4 +1,5 @@
 // Vercel Serverless Function: gọi Google Gemini API từ server để giấu kín GEMINI_API_KEY
+// Hỗ trợ 3 chế độ: 'article' (viết bài mới), 'optimize_article' (tối ưu bài có sẵn), 'optimize_home' (tối ưu SEO trang chủ)
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -10,12 +11,61 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'MISSING_SERVER_KEY' })
   }
 
-  const { topic = '', keyword = '', category = 'Kinh nghiệm cưới' } = req.body || {}
-  if (!topic.trim()) {
-    return res.status(400).json({ error: 'Vui lòng nhập chủ đề bài viết.' })
-  }
+  const {
+    mode = 'article',
+    topic = '',
+    keyword = '',
+    category = 'Kinh nghiệm cưới',
+    existingPost = null,
+    currentSettings = null,
+  } = req.body || {}
 
-  const prompt = `Bạn là chuyên gia viết bài SEO ngành trang trí cưới hỏi cao cấp tại Việt Nam cho thương hiệu "Đặng Wedding" (phong cách sang trọng, tối giản, tinh tế; dịch vụ gồm: Trang trí Gia tiên, Mâm quả cưới hỏi, Cổng hoa cưới, Backdrop tiệc cưới, Cho thuê rạp & bàn ghế; Hotline/Zalo: 0918.80.90.96).
+  let prompt = ''
+
+  if (mode === 'optimize_home') {
+    prompt = `Bạn là chuyên gia SEO & Copywriter cao cấp ngành cưới hỏi tại Việt Nam cho thương hiệu "Đặng Wedding" (phong cách sang trọng, tối giản; slogan: "${currentSettings?.slogan || 'Là ngày đẹp nhất'}"; dịch vụ: Trang trí Gia tiên, Mâm quả cưới hỏi, Cổng hoa cưới, Backdrop tiệc cưới, Cho thuê rạp & bàn ghế).
+
+Hãy tối ưu lại 3 đoạn nội dung trang chủ sau để tự nhiên, sang trọng và giàu từ khóa SEO Google nhất (KHÔNG nhắc tên tỉnh/thành phố cụ thể, KHÔNG bịa giá tiền):
+- hero_subtitle hiện tại: "${currentSettings?.hero_subtitle || ''}"
+- about_title hiện tại: "${currentSettings?.about_title || ''}"
+- about_body hiện tại: "${currentSettings?.about_body || ''}"
+
+Trả về DUY NHẤT JSON hợp lệ:
+{
+  "hero_subtitle": "1-2 câu mô tả trang nhã ngay dưới slogan (khoảng 110-155 ký tự, chứa từ khóa trang trí gia tiên, mâm quả cưới hỏi, tiệc cưới)",
+  "about_title": "1 câu tiêu đề giới thiệu thương hiệu tinh tế (khoảng 8-14 từ)",
+  "about_body": "Đoạn giới thiệu 2-3 câu tự nhiên, nhấn mạnh 3+ năm kinh nghiệm, 100+ lễ cưới trọn vẹn và các hạng mục Gia tiên, Mâm quả, Cổng hoa, Backdrop, Rạp bàn ghế"
+}`
+  } else if (mode === 'optimize_article') {
+    if (!existingPost?.title) {
+      return res.status(400).json({ error: 'Thiếu thông tin bài viết cần tối ưu.' })
+    }
+    prompt = `Bạn là chuyên gia SEO Google tại Việt Nam cho thương hiệu "Đặng Wedding".
+Hãy tối ưu lại bài viết sau để đạt 100/100 điểm SEO (giữ nguyên ý nghĩa cốt lõi và mọi đường dẫn ảnh ![...](...) nếu có, KHÔNG bịa giá tiền, KHÔNG nhắc tên địa phương cụ thể):
+
+- Tiêu đề hiện tại: "${existingPost.title}"
+- Chuyên mục: "${existingPost.category || category}"
+- Từ khóa hiện tại: "${existingPost.seo_keywords || ''}"
+- Tóm tắt hiện tại: "${existingPost.excerpt || ''}"
+- Nội dung hiện tại:
+${existingPost.content || ''}
+
+Trả về DUY NHẤT JSON hợp lệ:
+{
+  "title": "Tiêu đề H1 chuẩn SEO dài 45-68 ký tự, chứa từ khóa chính ở đầu",
+  "seo_keywords": "từ khóa chính, từ khóa phụ 1, từ khóa phụ 2",
+  "excerpt": "Meta description hấp dẫn dài 125-155 ký tự, chứa từ khóa chính",
+  "intro": "Đoạn mở bài 2-3 câu chứa từ khóa chính",
+  "sections": [
+    { "heading": "1. Tiêu đề mục H2...", "body": "Nội dung chi tiết hoặc danh sách '- '..." }
+  ],
+  "conclusionQuote": "Lời khuyên / cam kết từ Đặng Wedding cuối bài"
+}`
+  } else {
+    if (!topic.trim()) {
+      return res.status(400).json({ error: 'Vui lòng nhập chủ đề bài viết.' })
+    }
+    prompt = `Bạn là chuyên gia viết bài SEO ngành trang trí cưới hỏi cao cấp tại Việt Nam cho thương hiệu "Đặng Wedding" (phong cách sang trọng, tối giản, tinh tế; dịch vụ gồm: Trang trí Gia tiên, Mâm quả cưới hỏi, Cổng hoa cưới, Backdrop tiệc cưới, Cho thuê rạp & bàn ghế; Hotline/Zalo: 0918.80.90.96).
 
 Hãy viết 1 bài blog chuẩn SEO Google bằng tiếng Việt về chủ đề: "${topic.trim()}".
 Chuyên mục: "${category}".
@@ -38,6 +88,7 @@ Yêu cầu bắt buộc:
   ],
   "conclusionQuote": "Lời khuyên ngắn gọn hoặc cam kết từ Đặng Wedding cuối bài (1-2 câu)"
 }`
+  }
 
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`
@@ -47,7 +98,7 @@ Yêu cầu bắt buộc:
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0.7,
+          temperature: 0.65,
           responseMimeType: 'application/json',
         },
       }),
