@@ -663,6 +663,7 @@ export default function WebsiteAdminPage() {
               prompt,
               steps: comfyCfg.steps,
               cfg: comfyCfg.cfg,
+              workflowJson: comfyCfg.workflowJson,
             })
           : await generateAiWeddingImage({ prompt })
       onSuccess(dataUrl, prompt.trim())
@@ -1655,10 +1656,55 @@ export default function WebsiteAdminPage() {
                                 )}
                               </div>
 
+                              <div style={{ display: 'grid', gap: 6 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                  <span className="text-xs font-bold">
+                                    Workflow API JSON riêng cho Đặng Wedding (tùy chọn):
+                                  </span>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer', marginBottom: 0 }}>
+                                      📂 Nạp file workflow_api.json
+                                      <input
+                                        type="file"
+                                        accept=".json,application/json"
+                                        hidden
+                                        onChange={async (e) => {
+                                          const f = e.target.files?.[0]
+                                          if (!f) return
+                                          const txt = await f.text()
+                                          const next = { ...comfyCfg, workflowJson: txt }
+                                          setComfyCfg(next)
+                                          saveComfyConfig(next)
+                                          showToast('✓ Đã nạp Workflow API JSON riêng cho Đặng Wedding!')
+                                          e.target.value = ''
+                                        }}
+                                      />
+                                    </label>
+                                    {comfyCfg.workflowJson && (
+                                      <button
+                                        type="button"
+                                        className="btn btn-outline btn-sm"
+                                        onClick={() => {
+                                          const next = { ...comfyCfg, workflowJson: '' }
+                                          setComfyCfg(next)
+                                          saveComfyConfig(next)
+                                        }}
+                                      >
+                                        ✕ Dùng mặc định
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                {comfyCfg.workflowJson && (
+                                  <div className="text-xs text-green">
+                                    ✓ Đang dùng Workflow riêng của anh ({comfyCfg.workflowJson.length} ký tự) — tự động chèn prompt &amp; seed mới khi tạo ảnh.
+                                  </div>
+                                )}
+                              </div>
+
                               <div className="text-xs text-muted">
-                                💡 Để <code>app.dangwed.com</code> kết nối được ComfyUI trên máy anh, hãy
-                                thêm cờ <code>--enable-cors-header *</code> khi mở ComfyUI (VD trong file{' '}
-                                <code>run_nvidia_gpu.bat</code>).
+                                💡 Trong ComfyUI, anh bật <em>Enable Dev mode Options</em> → bấm{' '}
+                                <strong>Save (API Format)</strong> để xuất file <code>workflow_api.json</code> rồi nạp vào đây (có thể đặt <code>{'{{PROMPT}}'}</code> ở ô text nếu muốn chỉ định đúng node).
                               </div>
                             </div>
                           )}

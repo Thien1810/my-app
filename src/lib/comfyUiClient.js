@@ -16,6 +16,7 @@ export function getComfyConfig() {
     checkpoint: '',
     steps: 24,
     cfg: 7,
+    workflowJson: '', // Dán JSON Export (API Format) từ ComfyUI để dùng workflow riêng
   }
 }
 
@@ -96,74 +97,123 @@ function blobToCompressedDataUrl(blob, maxWidth = 1000, quality = 0.84) {
   })
 }
 
+function buildCustomWorkflow(workflowJson, positivePrompt, seed) {
+  let raw = String(workflowJson || '').trim()
+  if (!raw) return null
+
+  const hasPlaceholder = raw.includes('{{PROMPT}}')
+  if (hasPlaceholder) {
+    raw = raw.replaceAll('{{PROMPT}}', positivePrompt.replace(/"/g, '\\"'))
+  }
+
+  let wf
+  try {
+    wf = JSON.parse(raw)
+  } catch {
+    throw new Error('File Workflow API JSON không hợp lệ. Trong ComfyUI anh nhớ chọn "Save (API Format)" nhé.')
+  }
+
+  // Tự động thay thế seed ngẫu nhiên và chèn prompt nếu chưa dùng {{PROMPT}}
+  let injectedPrompt = hasPlaceholder
+  for (const nodeId of Object.keys(wf)) {
+    const node = wf[nodeId]
+    if (!node || typeof node !== 'object' || !node.inputs) continue
+
+    if ('seed' in node.inputs && typeof node.inputs.seed === 'number') {
+      node.inputs.seed = seed
+    }
+    if ('noise_seed' in node.inputs && typeof node.inputs.noise_seed === 'number') {
+      node.inputs.noise_seed = seed
+    }
+
+    if (!injectedPrompt) {
+      const cls = String(node.class_type || '').toLowerCase()
+      const txt = String(node.inputs.text || node.inputs.t5xxl || node.inputs.clip_l || '')
+      const isNegative = /ugly|blurry|watermark|bad|deformed|nsfw|worst/i.test(txt)
+      if ((cls.includes('cliptextencode') || cls.includes('prompt')) && !isNegative) {
+        if ('text' in node.inputs) node.inputs.text = positivePrompt
+        if ('t5xxl' in node.inputs) node.inputs.t5xxl = positivePrompt
+        if ('clip_l' in node.inputs) node.inputs.clip_l = positivePrompt
+        injectedPrompt = true
+      }
+    }
+  }
+
+  return wf
+}
+
 export async function generateImageWithComfyUI({
   baseUrl = 'http://127.0.0.1:8188',
   checkpoint = '',
   prompt = '',
   steps = 24,
   cfg = 7,
+  workflowJson = '',
 }) {
   const cleanUrl = normalizeUrl(baseUrl)
-  let ckptName = (checkpoint || '').trim()
-
-  if (!ckptName) {
-    const info = await testComfyConnection(cleanUrl)
-    if (info.checkpoints.length === 0) {
-      throw new Error('Không tìm thấy file model Checkpoint nào trong ComfyUI/models/checkpoints.')
-    }
-    ckptName = info.checkpoints[0]
-  }
-
   const asciiScene = toAsciiPrompt(prompt).slice(0, 160)
   const positive = `editorial luxury Vietnamese wedding decoration photography, minimalist ivory white cream and deep forest green, champagne gold accents, natural sunlight, photorealistic, high-end magazine, ${asciiScene}`
   const negative = 'text, watermark, signature, blurry, low quality, deformed, people, crowd, messy'
   const seed = Math.floor(Math.random() * 1e12)
 
-  // Kích thước chuẩn 16:9 (1024x576 cho SDXL/Flux hoặc 768x432 cho SD1.5)
-  const isSd15 = ckptName.toLowerCase().includes('v1-5') || ckptName.toLowerCase().includes('sd15')
-  const width = isSd15 ? 768 : 1024
-  const height = isSd15 ? 432 : 576
+  let workflow = buildCustomWorkflow(workflowJson, positive, seed)
 
-  const workflow = {
-    '3': {
-      class_type: 'KSampler',
-      inputs: {
-        seed,
-        steps: Number(steps) || 24,
-        cfg: Number(cfg) || 7,
-        sampler_name: 'euler',
-        scheduler: 'normal',
-        denoise: 1,
-        model: ['4', 0],
-        positive: ['6', 0],
-        negative: ['7', 0],
-        latent_image: ['5', 0],
+  if (!workflow) {
+    let ckptName = (checkpoint || '').trim()
+    if (!ckptName) {
+      const info = await testComfyConnection(cleanUrl)
+      if (info.checkpoints.length === 0) {
+        throw new Error('Không tìm thấy file model Checkpoint nào trong ComfyUI/models/checkpoints.')
+      }
+      ckptName = info.checkpoints[0]
+    }
+
+    // Kích thước chuẩn 16:9 (1024x576 cho SDXL/Flux hoặc 768x432 cho SD1.5)
+    const isSd15 = ckptName.toLowerCase().includes('v1-5') || ckptName.toLowerCase().includes('sd15')
+    const width = isSd15 ? 768 : 1024
+    const height = isSd15 ? 432 : 576
+
+    workflow = {
+      '3': {
+        class_type: 'KSampler',
+        inputs: {
+          seed,
+          steps: Number(steps) || 24,
+          cfg: Number(cfg) || 7,
+          sampler_name: 'euler',
+          scheduler: 'normal',
+          denoise: 1,
+          model: ['4', 0],
+          positive: ['6', 0],
+          negative: ['7', 0],
+          latent_image: ['5', 0],
+        },
       },
-    },
-    '4': {
-      class_type: 'CheckpointLoaderSimple',
-      inputs: { ckpt_name: ckptName },
-    },
-    '5': {
-      class_type: 'EmptyLatentImage',
-      inputs: { width, height, batch_size: 1 },
-    },
-    '6': {
-      class_type: 'CLIPTextEncode',
-      inputs: { text: positive, clip: ['4', 1] },
-    },
-    '7': {
-      class_type: 'CLIPTextEncode',
-      inputs: { text: negative, clip: ['4', 1] },
-    },
-    '8': {
-      class_type: 'VAEDecode',
-      inputs: { samples: ['3', 0], vae: ['4', 2] },
-    },
-    '9': {
-      class_type: 'SaveImage',
-      inputs: { filename_prefix: 'dangwed_ai', images: ['8', 0] },
-    },
+      '4': {
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: ckptName },
+      },
+      '5': {
+        class_type: 'EmptyLatentImage',
+        inputs: { width, height, batch_size: 1 },
+      },
+      '6': {
+        class_type: 'CLIPTextEncode',
+        inputs: { text: positive, clip: ['4', 1] },
+      },
+      '7': {
+        class_type: 'CLIPTextEncode',
+        inputs: { text: negative, clip: ['4', 1] },
+      },
+      '8': {
+        class_type: 'VAEDecode',
+        inputs: { samples: ['3', 0], vae: ['4', 2] },
+      },
+      '9': {
+        class_type: 'SaveImage',
+        inputs: { filename_prefix: 'dangwed_ai', images: ['8', 0] },
+      },
+    }
   }
 
   const clientId = `dangwed_${Date.now()}`
@@ -189,9 +239,14 @@ export async function generateImageWithComfyUI({
     if (!hRes.ok) continue
     const hData = await hRes.json()
     const item = hData?.[promptId]
-    if (item?.outputs?.['9']?.images?.length > 0) {
-      outputImg = item.outputs['9'].images[0]
-      break
+    if (item?.outputs) {
+      for (const nodeOut of Object.values(item.outputs)) {
+        if (Array.isArray(nodeOut?.images) && nodeOut.images.length > 0) {
+          outputImg = nodeOut.images[0]
+          break
+        }
+      }
+      if (outputImg) break
     }
   }
 
