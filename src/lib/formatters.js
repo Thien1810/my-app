@@ -94,18 +94,11 @@ export function todayISO() {
 // Vật tư: [TH|TSD]-[NHÓM]-[001]
 // Dự án:  DA-[YYMM]-[001]
 export const ITEM_CATEGORY_PRESETS = [
-  { name: 'Hoa tươi', code: 'HOA', defaultKind: 'consumable', unit: 'bó' },
-  { name: 'Bóng bay', code: 'BONG', defaultKind: 'consumable', unit: 'bịch' },
-  { name: 'Băng keo & Phụ liệu', code: 'PHU', defaultKind: 'consumable', unit: 'cuộn' },
-  { name: 'In ấn & Formex', code: 'IN', defaultKind: 'consumable', unit: 'tấm' },
-  { name: 'Nến & Hiệu ứng', code: 'NEN', defaultKind: 'consumable', unit: 'hộp' },
+  { name: 'Hoa & Lá', code: 'HOA', defaultKind: 'consumable', unit: 'bó' },
+  { name: 'Phụ kiện & Vật tư phụ', code: 'PHU', defaultKind: 'consumable', unit: 'cái' },
   { name: 'Khung & Backdrop', code: 'KHUNG', defaultKind: 'reusable', unit: 'bộ' },
   { name: 'Đèn & Ánh sáng', code: 'DEN', defaultKind: 'reusable', unit: 'cái' },
-  { name: 'Vải, Rèm & Thảm', code: 'VAI', defaultKind: 'reusable', unit: ' tấm' },
-  { name: 'Hoa lụa & Cây giả', code: 'HOALUA', defaultKind: 'reusable', unit: 'cành' },
-  { name: 'Bàn ghế & Bục', code: 'BAN', defaultKind: 'reusable', unit: 'cái' },
-  { name: 'Đạo cụ & Phụ kiện', code: 'DAOCU', defaultKind: 'reusable', unit: 'cái' },
-  { name: 'Dụng cụ thi công', code: 'DC', defaultKind: 'reusable', unit: 'cái' },
+  { name: 'Vải, Rèm & Thảm', code: 'VAI', defaultKind: 'reusable', unit: 'tấm' },
 ]
 
 export function toCategoryCode(category = '') {

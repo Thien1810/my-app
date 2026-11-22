@@ -127,7 +127,7 @@ export default function ItemsPage() {
   const openCreateModal = () => {
     setEditingItem(null)
     setIsCustomCategory(false)
-    const defaultCategory = categories[0] || 'Hoa tươi'
+    const defaultCategory = categories[0] || 'Hoa & Lá'
     const defaultKind = 'consumable'
     const preset = ITEM_CATEGORY_PRESETS.find(
       (p) => p.name.toLowerCase() === defaultCategory.toLowerCase()
@@ -631,7 +631,7 @@ export default function ItemsPage() {
                         style={{ whiteSpace: 'nowrap' }}
                         onClick={() => {
                           setIsCustomCategory(false)
-                          const fallbackCat = categories[0] || 'Hoa tươi'
+                          const fallbackCat = categories[0] || 'Hoa & Lá'
                           handleKindOrCategoryChange(form.kind, fallbackCat)
                         }}
                       >
