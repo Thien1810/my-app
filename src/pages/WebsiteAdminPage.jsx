@@ -25,6 +25,7 @@ import {
   testComfyConnection,
 } from '../lib/comfyUiClient'
 import AiLoadingBanner from '../components/AiLoadingBanner'
+import GiaTienAiStudioModal from '../components/GiaTienAiStudioModal'
 
 const LEAD_STATUS_META = {
   new: { label: 'Mới đăng ký', cls: 'badge-amber' },
@@ -159,6 +160,12 @@ export default function WebsiteAdminPage() {
   const [comfyCfg, setComfyCfg] = useState(() => getComfyConfig())
   const [comfyCheckpoints, setComfyCheckpoints] = useState([])
   const [testingComfy, setTestingComfy] = useState(false)
+  const [aiStudioModal, setAiStudioModal] = useState({
+    open: false,
+    defaultRatio: '16:9',
+    defaultExtra: '',
+    onSuccess: null,
+  })
 
   // Settings state
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -646,37 +653,13 @@ export default function WebsiteAdminPage() {
     }
   }
 
-  const handleAiGenerateImageFor = async ({ defaultPrompt, onSuccess }) => {
-    const prompt = window.prompt(
-      'Nhập mô tả cảnh tiệc cưới muốn AI vẽ (tiếng Việt hoặc tiếng Anh đều được):',
-      defaultPrompt || 'Không gian lễ gia tiên tông trắng kem và xanh rêu sang trọng'
-    )
-    if (!prompt || !prompt.trim()) return
-    setAiImgBusy(true)
-    setErrorMsg('')
-    try {
-      const dataUrl =
-        comfyCfg.provider === 'comfyui'
-          ? await generateImageWithComfyUI({
-              baseUrl: comfyCfg.url,
-              checkpoint: comfyCfg.checkpoint,
-              prompt,
-              steps: comfyCfg.steps,
-              cfg: comfyCfg.cfg,
-              workflowJson: comfyCfg.workflowJson,
-            })
-          : await generateAiWeddingImage({ prompt })
-      onSuccess(dataUrl, prompt.trim())
-      showToast(
-        comfyCfg.provider === 'comfyui'
-          ? '🎨 ComfyUI Local đã vẽ xong ảnh! Nhớ bấm Lưu/Đăng để cập nhật lên Web.'
-          : '🎨 AI đã tạo xong ảnh minh họa! Nhớ bấm Lưu/Đăng để cập nhật lên Web.'
-      )
-    } catch (err) {
-      setErrorMsg(err.message)
-    } finally {
-      setAiImgBusy(false)
-    }
+  const handleAiGenerateImageFor = ({ defaultPrompt, defaultRatio = '16:9', onSuccess }) => {
+    setAiStudioModal({
+      open: true,
+      defaultRatio,
+      defaultExtra: defaultPrompt || '',
+      onSuccess,
+    })
   }
 
   const handleAiOptimizeHome = async () => {
@@ -1305,6 +1288,23 @@ export default function WebsiteAdminPage() {
                             onChange={handleGalleryFiles}
                           />
                         </label>
+                        <button
+                          type="button"
+                          className="btn btn-outline btn-sm"
+                          onClick={() =>
+                            handleAiGenerateImageFor({
+                              defaultPrompt: galForm.title || '',
+                              defaultRatio: '3:2',
+                              onSuccess: (dataUrl) =>
+                                setGalForm((prev) => ({
+                                  ...prev,
+                                  images: [...prev.images, { dataUrl, info: 'ComfyUI Flux.1' }],
+                                })),
+                            })
+                          }
+                        >
+                          🎨 AI Thiết kế Gia Tiên (Flux.1)
+                        </button>
                         {galForm.images.length > 0 && (
                           <button
                             type="button"
@@ -2826,6 +2826,19 @@ export default function WebsiteAdminPage() {
           )}
         </>
       )}
+      <GiaTienAiStudioModal
+        open={aiStudioModal.open}
+        comfyUrl={comfyCfg.url}
+        defaultRatio={aiStudioModal.defaultRatio}
+        defaultExtra={aiStudioModal.defaultExtra}
+        onClose={() => setAiStudioModal((prev) => ({ ...prev, open: false }))}
+        onUseImage={(dataUrl, altText) => {
+          if (aiStudioModal.onSuccess) {
+            aiStudioModal.onSuccess(dataUrl, altText)
+            showToast('🎨 Đã chèn ảnh từ Studio AI Gia Tiên!')
+          }
+        }}
+      />
     </div>
   )
 }
