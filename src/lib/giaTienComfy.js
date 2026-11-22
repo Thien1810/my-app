@@ -254,14 +254,24 @@ export async function runGiaTienComfyWorkflow({
     throw err
   }
 
-  // 5. Poll /history/{prompt_id} mỗi 2 giây (tối đa 120s cho Flux.1 Dev)
+  // 5. Poll /history/{prompt_id} mỗi 2 giây (tối đa 300s cho Flux.1 Dev, bắt lỗi execution_error ngay)
   let outputImg = null
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 150; i++) {
     await new Promise((r) => setTimeout(r, 2000))
     const hRes = await fetch(`${cleanUrl}/history/${promptId}`)
     if (!hRes.ok) continue
     const hData = await hRes.json()
     const item = hData?.[promptId]
+    if (item?.status?.status_str === 'error') {
+      const errMsgEntry = (item.status.messages || []).find((m) => m?.[0] === 'execution_error')
+      const errInfo = errMsgEntry?.[1] || {}
+      const nodeLabel = errInfo.node_type ? ` tại node ${errInfo.node_type}` : ''
+      const rawMsg = String(errInfo.exception_message || 'ComfyUI gặp lỗi khi chạy workflow').trim()
+      const hint = rawMsg.includes('HostBuffer.read_file_slice')
+        ? ' (Gợi ý: thêm cờ --disable-dynamic-vram trong cấu hình khởi động ComfyUI hoặc giải phóng bớt RAM/VRAM).'
+        : ''
+      throw new Error(`ComfyUI báo lỗi${nodeLabel}: ${rawMsg}${hint}`)
+    }
     if (item?.outputs?.['11']?.images?.length > 0) {
       outputImg = item.outputs['11'].images[0]
       break
@@ -269,7 +279,7 @@ export async function runGiaTienComfyWorkflow({
   }
 
   if (!outputImg) {
-    throw new Error('ComfyUI render quá 120 giây chưa xong. Anh kiểm tra cửa sổ ComfyUI giúp em nhé.')
+    throw new Error('ComfyUI render quá 300 giây chưa xong. Anh kiểm tra cửa sổ ComfyUI giúp em nhé.')
   }
 
   const qs = new URLSearchParams({
