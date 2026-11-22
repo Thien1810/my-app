@@ -2,13 +2,16 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatDate, todayISO } from '../lib/formatters'
 import {
+  WATERMARK_COLORS,
   WATERMARK_POSITIONS,
+  WATERMARK_SIZES,
   FB_POST_STATUS,
   getProjectFbData,
   saveProjectFbData,
   attachFbMetaToNote,
   calcProjectFbReminder,
   generateFacebookCaption,
+  prepareBasePhotoDataUrl,
   applyDangWeddingWatermark,
   downloadDataUrlImage,
 } from '../lib/watermarkHelper'
@@ -18,9 +21,11 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
   const [fbUrl, setFbUrl] = useState('')
   const [caption, setCaption] = useState('')
   const [postedAt, setPostedAt] = useState('')
+  const [watermarkColor, setWatermarkColor] = useState('white') // 'white' | 'black'
   const [watermarkPos, setWatermarkPos] = useState('bottom-right')
-  const [watermarkOpacity, setWatermarkOpacity] = useState(0.9)
-  const [images, setImages] = useState([]) // [{ id, watermarkedUrl, rawUrl, width, height }]
+  const [watermarkScale, setWatermarkScale] = useState(0.28)
+  const [watermarkOpacity, setWatermarkOpacity] = useState(0.92)
+  const [images, setImages] = useState([]) // [{ id, name, baseDataUrl, watermarkedUrl, color, width, height }]
   const [processingImg, setProcessingImg] = useState(false)
   const [savingMeta, setSavingMeta] = useState(false)
   const [msg, setMsg] = useState('')
@@ -31,12 +36,12 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
     const data = getProjectFbData(project)
     setStatus(data.status || 'unposted')
     setFbUrl(data.fbUrl || '')
-    setCaption(
-      data.caption || generateFacebookCaption(project, 'luxury')
-    )
+    setCaption(data.caption || generateFacebookCaption(project, 'luxury'))
     setPostedAt(data.postedAt || '')
+    setWatermarkColor(data.watermarkColor || 'white')
     setWatermarkPos(data.watermarkPos || 'bottom-right')
-    setWatermarkOpacity(data.watermarkOpacity ?? 0.9)
+    setWatermarkScale(data.watermarkScale ?? 0.28)
+    setWatermarkOpacity(data.watermarkOpacity ?? 0.92)
     setImages(Array.isArray(data.images) ? data.images : [])
   }, [project])
 
@@ -51,7 +56,9 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
       fbUrl,
       caption,
       postedAt,
+      watermarkColor,
       watermarkPos,
+      watermarkScale,
       watermarkOpacity,
       images,
       ...nextOverrides,
@@ -59,7 +66,75 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
     saveProjectFbData(project?.id, payload)
   }
 
-  // Tải lên 1 hoặc nhiều ảnh -> Tự động gắn Watermark Đặng Wedding
+  // Cập nhật lại Watermark trên toàn bộ ảnh đã tải lên khi đổi Màu (Trắng/Đen), Vị trí, Kích thước, Độ đậm
+  const reRenderAllWatermarks = async ({
+    nextColor = watermarkColor,
+    nextPos = watermarkPos,
+    nextScale = watermarkScale,
+    nextOpacity = watermarkOpacity,
+  } = {}) => {
+    if (images.length === 0) return
+    setProcessingImg(true)
+    try {
+      const updated = []
+      for (const img of images) {
+        const sourceUrl = img.baseDataUrl || img.watermarkedUrl
+        const useColor = nextColor || img.color || 'white'
+        const res = await applyDangWeddingWatermark(sourceUrl, {
+          color: useColor,
+          position: nextPos,
+          scaleRatio: nextScale,
+          opacity: nextOpacity,
+        })
+        updated.push({
+          ...img,
+          color: useColor,
+          watermarkedUrl: res.dataUrl,
+          width: res.width,
+          height: res.height,
+        })
+      }
+      setImages(updated)
+      persistLocal({
+        watermarkColor: nextColor,
+        watermarkPos: nextPos,
+        watermarkScale: nextScale,
+        watermarkOpacity: nextOpacity,
+        images: updated,
+      })
+    } catch {
+      // ignore
+    } finally {
+      setProcessingImg(false)
+    }
+  }
+
+  // Đổi màu Trắng <-> Đen cho riêng 1 tấm ảnh
+  const handleToggleSingleImageColor = async (imgId) => {
+    const target = images.find((i) => i.id === imgId)
+    if (!target) return
+    const nextColor = target.color === 'black' ? 'white' : 'black'
+    const sourceUrl = target.baseDataUrl || target.watermarkedUrl
+    try {
+      const res = await applyDangWeddingWatermark(sourceUrl, {
+        color: nextColor,
+        position: watermarkPos,
+        scaleRatio: watermarkScale,
+        opacity: watermarkOpacity,
+      })
+      const nextImages = images.map((i) =>
+        i.id === imgId
+          ? { ...i, color: nextColor, watermarkedUrl: res.dataUrl }
+          : i
+      )
+      setImages(nextImages)
+      persistLocal({ images: nextImages })
+    } catch (err) {
+      alert(err.message || 'Không thể đổi màu watermark')
+    }
+  }
+
+  // Tải lên 1 hoặc nhiều ảnh -> Tự động gắn Watermark Đặng Wedding (Trắng hoặc Đen)
   const handleUploadFiles = async (e) => {
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
@@ -69,16 +144,19 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
       const added = []
       for (const file of files) {
         if (!file.type.startsWith('image/')) continue
-        // Lưu 1 bản ảnh gốc đã thu nhỏ nhẹ để có thể đổi vị trí watermark khi cần
-        const wmRes = await applyDangWeddingWatermark(file, {
+        const baseRes = await prepareBasePhotoDataUrl(file)
+        const wmRes = await applyDangWeddingWatermark(baseRes.baseDataUrl, {
+          color: watermarkColor,
           position: watermarkPos,
+          scaleRatio: watermarkScale,
           opacity: watermarkOpacity,
-          projectText: project?.code || 'Trang Trí Gia Tiên & Mâm Quả',
         })
         added.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           name: file.name.replace(/\.[^.]+$/, ''),
+          baseDataUrl: baseRes.baseDataUrl,
           watermarkedUrl: wmRes.dataUrl,
+          color: watermarkColor,
           width: wmRes.width,
           height: wmRes.height,
         })
@@ -88,7 +166,11 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
       setImages(nextImages)
       setStatus(nextStatus)
       persistLocal({ images: nextImages, status: nextStatus })
-      setMsg(`✓ Đã tự động gắn Watermark "Đặng Wedding" và nén gọn ${added.length} ảnh!`)
+      setMsg(
+        `✓ Đã tự động đóng dấu Watermark Đặng Wedding (${
+          watermarkColor === 'black' ? 'Bản Đen' : 'Bản Trắng'
+        }) cho ${added.length} ảnh!`
+      )
     } catch (err) {
       alert(err.message || 'Lỗi khi ghép Watermark vào ảnh')
     } finally {
@@ -204,7 +286,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
 
       {msg && <div className="alert alert-success">{msg}</div>}
 
-      {/* PHẦN 1: TẢI ẢNH LÊN & TỰ ĐỘNG ĐÓNG DẤU WATERMARK ĐẶNG WEDDING */}
+      {/* PHẦN 1: TẢI ẢNH LÊN & TỰ ĐỘNG ĐÓNG DẤU WATERMARK ĐẶNG WEDDING (TRẮNG / ĐEN) */}
       <div className="card">
         <div
           className="card-header"
@@ -217,10 +299,10 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           }}
         >
           <div>
-            <h3>1. Hình ảnh đăng Facebook & Tự động ghép Watermark &ldquo;Đặng Wedding&rdquo;</h3>
+            <h3>1. Ghép Watermark Đặng Wedding (Bản Trắng / Bản Đen) & Tải ảnh đăng Facebook</h3>
             <p className="text-xs text-muted">
-              Tải ảnh nghiệm thu tiệc cưới lên (nhận mọi kích thước) → Hệ thống tự động đóng dấu
-              Watermark Logo <strong>Đặng Wedding</strong> & nén gọn dưới 1MB để tải về đăng Fanpage
+              Chọn mẫu <strong>Watermark Trắng</strong> hoặc <strong>Watermark Đen</strong> bên
+              dưới. Có thể đổi màu Trắng ↔ Đen cho cả bộ ảnh hoặc đổi riêng cho từng ảnh!
             </p>
           </div>
           {images.length > 0 && (
@@ -234,25 +316,99 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           )}
         </div>
 
-        {/* Tùy chọn vị trí Watermark & Nút tải ảnh */}
+        {/* Bộ chọn Watermark Trắng / Đen kèm hình minh họa trực quan */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+            gap: 12,
+            marginTop: 10,
+            marginBottom: 14,
+          }}
+        >
+          {WATERMARK_COLORS.map((wm) => {
+            const isSelected = watermarkColor === wm.value
+            const isWhite = wm.value === 'white'
+            return (
+              <div
+                key={wm.value}
+                onClick={() => {
+                  setWatermarkColor(wm.value)
+                  reRenderAllWatermarks({ nextColor: wm.value })
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: 12,
+                  borderRadius: 12,
+                  cursor: 'pointer',
+                  border: isSelected ? '2px solid #16a34a' : '1px solid #cbd5e1',
+                  background: isSelected ? '#f0fdf4' : '#ffffff',
+                }}
+              >
+                <div
+                  style={{
+                    width: 96,
+                    height: 68,
+                    borderRadius: 8,
+                    background: isWhite ? '#1e293b' : '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 6,
+                    flexShrink: 0,
+                  }}
+                >
+                  <img
+                    src={wm.src}
+                    alt={wm.label}
+                    style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                  />
+                </div>
+                <div>
+                  <div className="font-bold text-sm" style={{ color: '#0f172a' }}>
+                    {wm.label}
+                  </div>
+                  <div className="text-xs text-muted" style={{ marginTop: 3 }}>
+                    {isWhite
+                      ? 'Chữ trắng nổi bật trên ảnh tối / nhiều màu'
+                      : 'Chữ đen nổi bật trên ảnh sáng / phông trắng'}
+                  </div>
+                  {isSelected && (
+                    <span
+                      className="badge badge-green"
+                      style={{ marginTop: 5, display: 'inline-block' }}
+                    >
+                      ✓ Đang chọn
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Tùy chọn vị trí, kích thước Watermark & Nút tải ảnh */}
         <div
           className="sub-card"
           style={{
-            marginTop: 10,
             marginBottom: 16,
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: 14,
             alignItems: 'end',
           }}
         >
           <div className="form-group" style={{ margin: 0 }}>
-            <label>Vị trí đóng dấu Watermark Logo Đặng Wedding</label>
+            <label>Vị trí đặt Watermark</label>
             <select
               value={watermarkPos}
               onChange={(e) => {
-                setWatermarkPos(e.target.value)
-                persistLocal({ watermarkPos: e.target.value })
+                const val = e.target.value
+                setWatermarkPos(val)
+                reRenderAllWatermarks({ nextPos: val })
               }}
             >
               {WATERMARK_POSITIONS.map((p) => (
@@ -264,17 +420,35 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           </div>
 
           <div className="form-group" style={{ margin: 0 }}>
-            <label>Độ rõ của Watermark ({Math.round(watermarkOpacity * 100)}%)</label>
+            <label>Kích thước Watermark</label>
+            <select
+              value={watermarkScale}
+              onChange={(e) => {
+                const val = Number(e.target.value)
+                setWatermarkScale(val)
+                reRenderAllWatermarks({ nextScale: val })
+              }}
+            >
+              {WATERMARK_SIZES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group" style={{ margin: 0 }}>
+            <label>Độ rõ ({Math.round(watermarkOpacity * 100)}%)</label>
             <input
               type="range"
               min="0.4"
               max="1"
-              step="0.05"
+              step="0.04"
               value={watermarkOpacity}
               onChange={(e) => {
                 const val = Number(e.target.value)
                 setWatermarkOpacity(val)
-                persistLocal({ watermarkOpacity: val })
+                reRenderAllWatermarks({ nextOpacity: val })
               }}
             />
           </div>
@@ -285,8 +459,8 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
               style={{ cursor: 'pointer', margin: 0, textAlign: 'center' }}
             >
               {processingImg
-                ? '⏳ Đang ghép Watermark Đặng Wedding...'
-                : '📷 Chọn ảnh tiệc cưới để ghép Watermark (Chọn nhiều ảnh)'}
+                ? '⏳ Đang ghép Watermark...'
+                : '📷 Tải ảnh lên để ghép Watermark'}
               <input
                 type="file"
                 accept="image/*"
@@ -302,14 +476,15 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
         {/* Danh sách ảnh đã gắn Watermark */}
         {images.length === 0 ? (
           <div className="empty-state">
-            Chưa có ảnh nào cho bài đăng Facebook của dự án này. Hãy bấm{' '}
-            <strong>&ldquo;📷 Chọn ảnh tiệc cưới để ghép Watermark&rdquo;</strong> ở trên!
+            Chưa có ảnh nào. Hãy chọn mẫu <strong>Watermark Trắng</strong> hoặc{' '}
+            <strong>Watermark Đen</strong> ở trên rồi bấm{' '}
+            <strong>&ldquo;📷 Tải ảnh lên để ghép Watermark&rdquo;</strong>!
           </div>
         ) : (
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
               gap: 14,
             }}
           >
@@ -328,14 +503,16 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
                 <div
                   style={{
                     position: 'relative',
-                    height: 185,
+                    height: 195,
                     background: '#0f172a',
                     cursor: 'zoom-in',
                   }}
                   onClick={() =>
                     setPreviewImg({
                       url: img.watermarkedUrl,
-                      name: `Ảnh #${idx + 1} (Đã gắn Watermark Đặng Wedding)`,
+                      name: `Ảnh #${idx + 1} (Watermark ${
+                        img.color === 'black' ? 'Đen' : 'Trắng'
+                      })`,
                     })
                   }
                 >
@@ -349,15 +526,17 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
                     }}
                   />
                   <span
-                    className="badge badge-green"
+                    className="badge"
                     style={{
                       position: 'absolute',
                       top: 8,
                       left: 8,
-                      boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+                      background: img.color === 'black' ? '#0f172a' : '#ffffff',
+                      color: img.color === 'black' ? '#ffffff' : '#0f172a',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.28)',
                     }}
                   >
-                    ✓ Đã gắn Logo
+                    {img.color === 'black' ? '⚫ Logo Đen' : '⚪ Logo Trắng'}
                   </span>
                 </div>
                 <div
@@ -371,11 +550,19 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
                 >
                   <button
                     type="button"
+                    className="btn btn-sm btn-outline"
+                    title="Đổi màu Watermark Trắng / Đen cho riêng tấm ảnh này"
+                    onClick={() => handleToggleSingleImageColor(img.id)}
+                  >
+                    {img.color === 'black' ? 'Đổi sang ⚪ Trắng' : 'Đổi sang ⚫ Đen'}
+                  </button>
+                  <button
+                    type="button"
                     className="btn btn-sm btn-primary"
                     style={{ flex: 1 }}
                     onClick={() => handleDownloadSingle(img, idx)}
                   >
-                    📥 Tải ảnh về đăng
+                    📥 Tải về
                   </button>
                   <button
                     type="button"
@@ -408,8 +595,8 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           <div>
             <h3>2. Nội dung bài viết (Caption) Facebook & Trạng thái đăng Fanpage</h3>
             <p className="text-xs text-muted">
-              Bấm chọn phong cách viết bài tự động, chỉnh sửa theo ý muốn rồi bấm Copy để dán lên
-              Fanpage Đặng Wedding
+              Có sẵn địa chỉ <strong>Đồng Nai - TP.HCM</strong> &{' '}
+              <strong>SĐT/Zalo 0918.80.90.96</strong>. Bấm Copy để dán lên Fanpage Đặng Wedding
             </p>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -446,7 +633,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
 
         <div className="form-group">
           <textarea
-            rows={9}
+            rows={10}
             value={caption}
             onChange={(e) => {
               setCaption(e.target.value)
