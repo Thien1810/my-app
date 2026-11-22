@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { RoleBadge } from './Badges'
 import NotificationBell from './NotificationBell'
+import ErrorBoundary from './ErrorBoundary'
 
 export default function Layout() {
   const { profile, user, role, isAdmin, isStaff, signOut, setIsPasswordRecovery } = useAuth()
@@ -139,7 +140,9 @@ export default function Layout() {
 
       {/* Main Content */}
       <main className="main-content">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </main>
 
       {/* Mobile Bottom Navigation */}

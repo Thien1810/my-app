@@ -126,20 +126,21 @@ async function callAiPayload(apiKey, payload, directPrompt) {
 }
 
 function normalizeArticleResult(parsed, fallbackTitle = '') {
+  const safe = parsed && typeof parsed === 'object' ? parsed : {}
   return {
-    title: parsed.title || fallbackTitle,
-    seo_keywords: parsed.seo_keywords || '',
-    excerpt: parsed.excerpt || '',
-    intro: parsed.intro || '',
-    sections: Array.isArray(parsed.sections)
-      ? parsed.sections.map((s) => ({
-          heading: s.heading || '',
-          body: s.body || '',
+    title: String(safe.title || fallbackTitle || ''),
+    seo_keywords: String(safe.seo_keywords || ''),
+    excerpt: String(safe.excerpt || ''),
+    intro: String(safe.intro || ''),
+    sections: Array.isArray(safe.sections)
+      ? safe.sections.map((s) => ({
+          heading: String(s?.heading || ''),
+          body: Array.isArray(s?.body) ? s.body.join('\n') : String(s?.body || ''),
           imageUrl: '',
           imageAlt: '',
         }))
       : [],
-    conclusionQuote: parsed.conclusionQuote || '',
+    conclusionQuote: String(safe.conclusionQuote || ''),
   }
 }
 
