@@ -14,7 +14,7 @@ export const SET_CATEGORY_OPTIONS = [
 // Hỗ trợ đọc/ghi tương thích ngay cả khi database chưa chạy ALTER TABLE thêm cột category, image_url
 const META_PREFIX = '__SETMETA__'
 
-function parseTemplateMeta(tpl) {
+export function parseTemplateMeta(tpl) {
   if (!tpl) return { category: 'Gia tiên', image_url: '', cleanNote: '' }
   let category = tpl.category || ''
   let image_url = tpl.image_url || ''

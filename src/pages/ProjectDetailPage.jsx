@@ -22,6 +22,7 @@ import {
   MovementTypeBadge,
 } from '../components/Badges'
 import CurrencyInput from '../components/CurrencyInput'
+import ProjectQuoteTab from '../components/ProjectQuoteTab'
 
 export default function ProjectDetailPage() {
   const { id } = useParams()
@@ -95,7 +96,7 @@ export default function ProjectDetailPage() {
         supabase.from('project_plan').select('*'),
         supabase
           .from('set_templates')
-          .select('*, items:set_template_items(item_id, qty)')
+          .select('*, items:set_template_items(item_id, qty, item:items(id, code, name, unit, kind, cost))')
           .order('name'),
         supabase
           .from('stock_movements')
@@ -263,6 +264,45 @@ export default function ProjectDetailPage() {
       await loadAll()
     } catch (err) {
       setError(err.message || 'Không thể xóa dòng kế hoạch')
+    }
+  }
+
+  const handleApplyQuoteSetsToPlan = async (templateEntries = []) => {
+    setBusyPlan(true)
+    setError('')
+    try {
+      const existingMap = new Map()
+      for (const p of projectPlan) {
+        existingMap.set(Number(p.item_id), Number(p.qty))
+      }
+      for (const entry of templateEntries) {
+        const tpl = templates.find((t) => Number(t.id) === Number(entry.template_id))
+        if (!tpl?.items) continue
+        const mult = Number(entry.mult || 1)
+        for (const ti of tpl.items) {
+          const itemId = Number(ti.item_id)
+          const addQty = Number(ti.qty || 0) * mult
+          if (addQty > 0) {
+            existingMap.set(itemId, (existingMap.get(itemId) || 0) + addQty)
+          }
+        }
+      }
+      const rows = Array.from(existingMap.entries()).map(([item_id, qty]) => ({
+        project_id: Number(projectId),
+        item_id,
+        qty,
+      }))
+      if (rows.length > 0) {
+        const { error: err } = await supabase
+          .from('project_plan')
+          .upsert(rows, { onConflict: 'project_id,item_id' })
+        if (err) throw err
+      }
+      await loadAll()
+    } catch (err) {
+      setError(err.message || 'Lỗi khi nạp vật tư từ báo giá sang kế hoạch')
+    } finally {
+      setBusyPlan(false)
     }
   }
 
@@ -622,6 +662,16 @@ export default function ProjectDetailPage() {
 
       {/* Thanh Tabs */}
       <div className="tabs-bar" style={{ marginBottom: 20 }}>
+        {!isStaff && (
+          <button
+            type="button"
+            className={`tab-btn ${activeTab === 'quote' ? 'active' : ''}`}
+            onClick={() => setActiveTab('quote')}
+          >
+            🧾 Báo giá (Set trang trí)
+          </button>
+        )}
+
         <button
           type="button"
           className={`tab-btn ${activeTab === 'plan' ? 'active' : ''}`}
@@ -672,6 +722,18 @@ export default function ProjectDetailPage() {
           </>
         )}
       </div>
+
+      {/* TAB BÁO GIÁ TỪ HÌNH ẢNH SET TRANG TRÍ */}
+      {activeTab === 'quote' && !isStaff && (
+        <ProjectQuoteTab
+          project={project}
+          templates={templates}
+          contractValue={contractValue}
+          isManagerOrAdmin={isManagerOrAdmin}
+          onSyncContractValue={(val) => setContractValue(val)}
+          onApplySetsToPlan={handleApplyQuoteSetsToPlan}
+        />
+      )}
 
       {/* TAB 1: KẾ HOẠCH VẬT TƯ */}
       {activeTab === 'plan' && (
