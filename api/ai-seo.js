@@ -91,24 +91,33 @@ Yêu cầu bắt buộc:
   }
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`
-    const gRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.65,
-          responseMimeType: 'application/json',
-        },
-      }),
-    })
+    const models = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']
+    let gRes = null
+    let lastErr = ''
 
-    if (!gRes.ok) {
-      const errBody = await gRes.json().catch(() => ({}))
-      return res.status(gRes.status).json({
-        error: errBody?.error?.message || `Gemini HTTP ${gRes.status}`,
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
+      gRes = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.65,
+            responseMimeType: 'application/json',
+          },
+        }),
       })
+      if (gRes.ok) break
+      const errBody = await gRes.json().catch(() => ({}))
+      lastErr = errBody?.error?.message || `Gemini HTTP ${gRes.status}`
+      if (!lastErr.toLowerCase().includes('no longer available') && gRes.status !== 404) {
+        return res.status(gRes.status).json({ error: lastErr })
+      }
+    }
+
+    if (!gRes || !gRes.ok) {
+      return res.status(gRes?.status || 500).json({ error: lastErr || 'Gemini error' })
     }
 
     const data = await gRes.json()
