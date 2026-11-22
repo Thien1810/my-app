@@ -18,6 +18,12 @@ import {
   optimizeHomepageSeoWithGemini,
   saveGeminiKey,
 } from '../lib/aiSeoWriter'
+import {
+  generateImageWithComfyUI,
+  getComfyConfig,
+  saveComfyConfig,
+  testComfyConnection,
+} from '../lib/comfyUiClient'
 import AiLoadingBanner from '../components/AiLoadingBanner'
 
 const LEAD_STATUS_META = {
@@ -149,6 +155,9 @@ export default function WebsiteAdminPage() {
   const [aiBatchBusy, setAiBatchBusy] = useState(false)
   const [aiHomeBusy, setAiHomeBusy] = useState(false)
   const [aiImgBusy, setAiImgBusy] = useState(false)
+  const [comfyCfg, setComfyCfg] = useState(() => getComfyConfig())
+  const [comfyCheckpoints, setComfyCheckpoints] = useState([])
+  const [testingComfy, setTestingComfy] = useState(false)
 
   // Settings state
   const [settings, setSettings] = useState(DEFAULT_SETTINGS)
@@ -612,6 +621,29 @@ export default function WebsiteAdminPage() {
     }
   }
 
+  const handleTestComfy = async () => {
+    setTestingComfy(true)
+    setErrorMsg('')
+    try {
+      const res = await testComfyConnection(comfyCfg.url)
+      setComfyCheckpoints(res.checkpoints)
+      const nextCfg = {
+        ...comfyCfg,
+        provider: 'comfyui',
+        checkpoint: comfyCfg.checkpoint || res.checkpoints[0] || '',
+      }
+      setComfyCfg(nextCfg)
+      saveComfyConfig(nextCfg)
+      showToast(
+        `🔌 Đã kết nối ComfyUI thành công! Tìm thấy ${res.checkpoints.length} model Checkpoint.`
+      )
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setTestingComfy(false)
+    }
+  }
+
   const handleAiGenerateImageFor = async ({ defaultPrompt, onSuccess }) => {
     const prompt = window.prompt(
       'Nhập mô tả cảnh tiệc cưới muốn AI vẽ (tiếng Việt hoặc tiếng Anh đều được):',
@@ -621,9 +653,22 @@ export default function WebsiteAdminPage() {
     setAiImgBusy(true)
     setErrorMsg('')
     try {
-      const dataUrl = await generateAiWeddingImage({ prompt })
+      const dataUrl =
+        comfyCfg.provider === 'comfyui'
+          ? await generateImageWithComfyUI({
+              baseUrl: comfyCfg.url,
+              checkpoint: comfyCfg.checkpoint,
+              prompt,
+              steps: comfyCfg.steps,
+              cfg: comfyCfg.cfg,
+            })
+          : await generateAiWeddingImage({ prompt })
       onSuccess(dataUrl, prompt.trim())
-      showToast('🎨 AI đã tạo xong ảnh minh họa! Nhớ bấm Lưu/Đăng để cập nhật lên Web.')
+      showToast(
+        comfyCfg.provider === 'comfyui'
+          ? '🎨 ComfyUI Local đã vẽ xong ảnh! Nhớ bấm Lưu/Đăng để cập nhật lên Web.'
+          : '🎨 AI đã tạo xong ảnh minh họa! Nhớ bấm Lưu/Đăng để cập nhật lên Web.'
+      )
     } catch (err) {
       setErrorMsg(err.message)
     } finally {
@@ -1439,43 +1484,131 @@ export default function WebsiteAdminPage() {
                         className="btn btn-outline btn-sm"
                         onClick={() => setShowKeyBox((v) => !v)}
                       >
-                        {showKeyBox ? '▲ Ẩn cài đặt API Key' : '🔑 Cài đặt Gemini API Key'}
+                        {showKeyBox
+                          ? '▲ Ẩn cài đặt AI & ComfyUI'
+                          : `🔌 Nguồn AI: ${comfyCfg.provider === 'comfyui' ? 'ComfyUI Local' : 'Cloud'} / API Key`}
                       </button>
                     </div>
 
                     {showKeyBox && (
-                      <div className="sub-card" style={{ marginBottom: 12, background: '#ffffff' }}>
-                        <label className="text-xs font-bold" style={{ display: 'block', marginBottom: 6 }}>
-                          Google Gemini API Key (miễn phí tại{' '}
-                          <a
-                            href="https://aistudio.google.com/apikey"
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: '#15803d', textDecoration: 'underline' }}
-                          >
-                            aistudio.google.com/apikey
-                          </a>
-                          {' '}— chỉ lưu trên trình duyệt của anh):
-                        </label>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <input
-                            type="password"
-                            style={{ flex: 1, minWidth: 220 }}
-                            placeholder="Dán AIzaSy... vào đây"
-                            value={geminiKey}
-                            onChange={(e) => setGeminiKey(e.target.value)}
-                          />
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            onClick={() => {
-                              saveGeminiKey(geminiKey)
-                              setShowKeyBox(false)
-                              showToast('✓ Đã lưu Gemini API Key trên trình duyệt.')
-                            }}
-                          >
-                            💾 Lưu Key
-                          </button>
+                      <div className="sub-card" style={{ marginBottom: 12, background: '#ffffff', display: 'grid', gap: 12 }}>
+                        <div>
+                          <label className="text-xs font-bold" style={{ display: 'block', marginBottom: 6 }}>
+                            1. Google Gemini API Key (để viết bài SEO — đã có key trên Vercel thì không cần nhập):
+                          </label>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <input
+                              type="password"
+                              style={{ flex: 1, minWidth: 220 }}
+                              placeholder="Để trống để dùng Key bảo mật trên Vercel..."
+                              value={geminiKey}
+                              onChange={(e) => setGeminiKey(e.target.value)}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              onClick={() => {
+                                saveGeminiKey(geminiKey)
+                                showToast('✓ Đã lưu cấu hình Gemini API Key.')
+                              }}
+                            >
+                              💾 Lưu Key
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+                          <label className="text-xs font-bold" style={{ display: 'block', marginBottom: 6 }}>
+                            2. Nguồn AI Tạo ảnh (Cloud miễn phí hoặc ComfyUI chạy trên máy anh):
+                          </label>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${comfyCfg.provider === 'cloud' ? 'btn-primary' : 'btn-outline'}`}
+                              onClick={() => {
+                                const next = { ...comfyCfg, provider: 'cloud' }
+                                setComfyCfg(next)
+                                saveComfyConfig(next)
+                              }}
+                            >
+                              ☁️ AI Cloud miễn phí
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${comfyCfg.provider === 'comfyui' ? 'btn-primary' : 'btn-outline'}`}
+                              onClick={() => {
+                                const next = { ...comfyCfg, provider: 'comfyui' }
+                                setComfyCfg(next)
+                                saveComfyConfig(next)
+                              }}
+                            >
+                              🖥️ ComfyUI Local (127.0.0.1:8188)
+                            </button>
+                          </div>
+
+                          {comfyCfg.provider === 'comfyui' && (
+                            <div style={{ display: 'grid', gap: 8 }}>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <input
+                                  type="text"
+                                  style={{ flex: 1, minWidth: 220 }}
+                                  placeholder="http://127.0.0.1:8188"
+                                  value={comfyCfg.url}
+                                  onChange={(e) => {
+                                    const next = { ...comfyCfg, url: e.target.value }
+                                    setComfyCfg(next)
+                                    saveComfyConfig(next)
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  className="btn btn-outline btn-sm"
+                                  disabled={testingComfy}
+                                  onClick={handleTestComfy}
+                                >
+                                  {testingComfy ? 'Đang kiểm tra...' : '🔌 Kiểm tra & Lấy Model'}
+                                </button>
+                              </div>
+
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                {comfyCheckpoints.length > 0 ? (
+                                  <select
+                                    value={comfyCfg.checkpoint}
+                                    style={{ flex: 1, minWidth: 220 }}
+                                    onChange={(e) => {
+                                      const next = { ...comfyCfg, checkpoint: e.target.value }
+                                      setComfyCfg(next)
+                                      saveComfyConfig(next)
+                                    }}
+                                  >
+                                    {comfyCheckpoints.map((ck) => (
+                                      <option key={ck} value={ck}>
+                                        {ck}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    style={{ flex: 1, minWidth: 220 }}
+                                    placeholder="Tên file Checkpoint (để trống sẽ tự chọn cái đầu tiên)"
+                                    value={comfyCfg.checkpoint}
+                                    onChange={(e) => {
+                                      const next = { ...comfyCfg, checkpoint: e.target.value }
+                                      setComfyCfg(next)
+                                      saveComfyConfig(next)
+                                    }}
+                                  />
+                                )}
+                              </div>
+
+                              <div className="text-xs text-muted">
+                                💡 Để <code>app.dangwed.com</code> kết nối được ComfyUI trên máy anh, hãy
+                                thêm cờ <code>--enable-cors-header *</code> khi mở ComfyUI (VD trong file{' '}
+                                <code>run_nvidia_gpu.bat</code>).
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
