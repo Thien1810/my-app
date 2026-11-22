@@ -94,36 +94,61 @@ export function buildMarkdownFromSeoStructure({ intro = '', sections = [], concl
   return parts.join('\n\n')
 }
 
-export function evaluateSeoChecklist({ title = '', excerpt = '', seo_keywords = '', cover_image_url = '', content = '' }) {
+export function evaluateSeoChecklist({
+  title = '',
+  excerpt = '',
+  seo_keywords = '',
+  cover_image_url = '',
+  content = '',
+}) {
   const titleLen = title.trim().length
   const descLen = excerpt.trim().length
   const h2Count = (String(content).match(/^##\s+/gm) || []).length
-  const hasImg = Boolean(cover_image_url) || /!\[[^\]]*\]\([^)]+\)/.test(content)
-  const hasKeywords = seo_keywords.trim().length >= 3
+  const hasImg = Boolean(cover_image_url) || /!\[[^\]]+\]\([^)]+\)/.test(content)
+  const primaryKw = seo_keywords.split(',')[0]?.trim().toLowerCase() || ''
+  const titleHasKw = primaryKw ? title.toLowerCase().includes(primaryKw) : false
+  const bodyWords = String(content)
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length
 
   const checks = [
     {
-      label: `Tiêu đề SEO (${titleLen}/70 ký tự — chuẩn 35–70)`,
+      label: `Tiêu đề H1 (${titleLen}/70 ký tự — chuẩn 35–70)`,
       ok: titleLen >= 25 && titleLen <= 80,
+      pts: 20,
     },
     {
-      label: `Meta Description / Tóm tắt (${descLen}/160 ký tự — chuẩn 80–165)`,
+      label: primaryKw
+        ? `Từ khóa chính "${primaryKw}" xuất hiện trong Tiêu đề`
+        : 'Chưa nhập Từ khóa chính để chấm điểm',
+      ok: Boolean(primaryKw && titleHasKw),
+      pts: 20,
+    },
+    {
+      label: `Meta Description (${descLen}/160 ký tự — chuẩn 80–165)`,
       ok: descLen >= 60 && descLen <= 180,
+      pts: 15,
     },
     {
-      label: 'Có từ khóa tìm kiếm Google',
-      ok: hasKeywords,
-    },
-    {
-      label: `Có cấu trúc mục H2 rõ ràng (${h2Count} mục — khuyên dùng ≥ 2)`,
+      label: `Cấu trúc Heading H2 rõ ràng (${h2Count} mục — chuẩn ≥ 2)`,
       ok: h2Count >= 2,
+      pts: 20,
     },
     {
-      label: 'Có hình ảnh bìa hoặc ảnh minh họa trong bài',
+      label: 'Có ảnh bìa / ảnh minh họa kèm chú thích Alt SEO',
       ok: hasImg,
+      pts: 15,
+    },
+    {
+      label: `Độ dài nội dung (${bodyWords} từ — khuyên dùng ≥ 120 từ)`,
+      ok: bodyWords >= 120,
+      pts: 10,
     },
   ]
 
+  const score100 = checks.reduce((sum, c) => sum + (c.ok ? c.pts : 0), 0)
   const score = checks.filter((c) => c.ok).length
-  return { checks, score, total: checks.length }
+  return { checks, score, total: checks.length, score100, bodyWords }
 }
