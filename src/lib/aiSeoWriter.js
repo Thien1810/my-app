@@ -74,7 +74,6 @@ async function callAiPayload(apiKey, payload, directPrompt) {
               temperature: 0.6,
               maxOutputTokens: 1600,
               responseMimeType: 'application/json',
-              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
         })

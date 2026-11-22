@@ -127,7 +127,6 @@ Yêu cầu bắt buộc:
               temperature: 0.6,
               maxOutputTokens: 1600,
               responseMimeType: 'application/json',
-              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
         })
