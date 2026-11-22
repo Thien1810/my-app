@@ -1,6 +1,10 @@
 // Vercel Serverless Function: gọi Google Gemini API từ server để giấu kín GEMINI_API_KEY
 // Hỗ trợ 3 chế độ: 'article' (viết bài mới), 'optimize_article' (tối ưu bài có sẵn), 'optimize_home' (tối ưu SEO trang chủ)
 
+export const config = {
+  maxDuration: 60,
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
@@ -91,27 +95,44 @@ Yêu cầu bắt buộc:
   }
 
   try {
-    const models = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']
+    const models = ['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.5-flash']
     let gRes = null
     let lastErr = ''
 
     for (const model of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
-      gRes = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.65,
-            responseMimeType: 'application/json',
-          },
-        }),
-      })
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 14000)
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
+        gRes = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.6,
+              maxOutputTokens: 1600,
+              responseMimeType: 'application/json',
+              thinkingConfig: { thinkingBudget: 0 },
+            },
+          }),
+        })
+      } catch (fetchErr) {
+        lastErr = fetchErr?.name === 'AbortError' ? `${model} timeout (14s)` : fetchErr.message
+        continue
+      } finally {
+        clearTimeout(timer)
+      }
+
       if (gRes.ok) break
       const errBody = await gRes.json().catch(() => ({}))
       lastErr = errBody?.error?.message || `Gemini HTTP ${gRes.status}`
-      if (!lastErr.toLowerCase().includes('no longer available') && gRes.status !== 404) {
+      if (
+        !lastErr.toLowerCase().includes('no longer available') &&
+        !lastErr.toLowerCase().includes('thinking') &&
+        gRes.status !== 404
+      ) {
         return res.status(gRes.status).json({ error: lastErr })
       }
     }

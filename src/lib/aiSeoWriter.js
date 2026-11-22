@@ -26,17 +26,29 @@ async function callAiPayload(apiKey, payload, directPrompt) {
   const key = (apiKey || '').trim()
 
   if (!key) {
-    const srvRes = await fetch('/api/ai-seo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    const srvData = await srvRes.json().catch(() => ({}))
-    if (srvRes.ok) return srvData
-    if (srvData?.error === 'MISSING_SERVER_KEY') {
-      throw new Error('Vui lòng nhập Google Gemini API Key hoặc cấu hình GEMINI_API_KEY trên Vercel.')
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 22000)
+    try {
+      const srvRes = await fetch('/api/ai-seo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({ topic: payload.topic, ...payload }),
+      })
+      const srvData = await srvRes.json().catch(() => ({}))
+      if (srvRes.ok) return srvData
+      if (srvData?.error === 'MISSING_SERVER_KEY') {
+        throw new Error('Vui lòng nhập Google Gemini API Key hoặc cấu hình GEMINI_API_KEY trên Vercel.')
+      }
+      throw new Error(`Lỗi AI Server: ${srvData?.error || `HTTP ${srvRes.status}`}`)
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        throw new Error('AI phản hồi quá lâu (>22s). Anh bấm thử lại giúp em 1 lần nữa nhé.')
+      }
+      throw err
+    } finally {
+      clearTimeout(timer)
     }
-    throw new Error(`Lỗi AI Server: ${srvData?.error || `HTTP ${srvRes.status}`}`)
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(key)}`
