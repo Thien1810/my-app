@@ -113,14 +113,36 @@ export function toCategoryCode(category = '') {
   return words[0].slice(0, 5)
 }
 
-export function generateItemCode(kind = 'consumable', category = '', existingItems = []) {
+export function findDuplicateCode(code = '', list = [], excludeId = null) {
+  const clean = (code || '').trim().toUpperCase()
+  if (!clean) return null
+  return (
+    list.find(
+      (entry) =>
+        entry.id !== excludeId &&
+        (entry.code || '').trim().toUpperCase() === clean
+    ) || null
+  )
+}
+
+export function generateItemCode(
+  kind = 'consumable',
+  category = '',
+  existingItems = [],
+  excludeId = null
+) {
   const kindPrefix = kind === 'reusable' ? 'TSD' : 'TH'
   const catCode = toCategoryCode(category)
   const prefix = `${kindPrefix}-${catCode}-`
 
+  const usedSet = new Set(
+    existingItems
+      .filter((i) => i.id !== excludeId && i.code)
+      .map((i) => i.code.trim().toUpperCase())
+  )
+
   let maxNum = 0
-  for (const item of existingItems) {
-    const c = (item.code || '').toUpperCase().trim()
+  for (const c of usedSet) {
     if (c.startsWith(prefix)) {
       const numPart = parseInt(c.slice(prefix.length), 10)
       if (!Number.isNaN(numPart) && numPart > maxNum) {
@@ -128,20 +150,35 @@ export function generateItemCode(kind = 'consumable', category = '', existingIte
       }
     }
   }
-  const nextNum = String(maxNum + 1).padStart(3, '0')
-  return `${prefix}${nextNum}`
+
+  let candidateNum = maxNum + 1
+  let candidate = `${prefix}${String(candidateNum).padStart(3, '0')}`
+  while (usedSet.has(candidate)) {
+    candidateNum += 1
+    candidate = `${prefix}${String(candidateNum).padStart(3, '0')}`
+  }
+  return candidate
 }
 
-export function generateProjectCode(startDate = '', existingProjects = []) {
+export function generateProjectCode(
+  startDate = '',
+  existingProjects = [],
+  excludeId = null
+) {
   const d = startDate ? new Date(startDate) : new Date()
   const validDate = Number.isNaN(d.getTime()) ? new Date() : d
   const yy = String(validDate.getFullYear()).slice(-2)
   const mm = String(validDate.getMonth() + 1).padStart(2, '0')
   const prefix = `DA-${yy}${mm}-`
 
+  const usedSet = new Set(
+    existingProjects
+      .filter((p) => p.id !== excludeId && p.code)
+      .map((p) => p.code.trim().toUpperCase())
+  )
+
   let maxNum = 0
-  for (const p of existingProjects) {
-    const c = (p.code || '').toUpperCase().trim()
+  for (const c of usedSet) {
     if (c.startsWith(prefix)) {
       const numPart = parseInt(c.slice(prefix.length), 10)
       if (!Number.isNaN(numPart) && numPart > maxNum) {
@@ -149,8 +186,14 @@ export function generateProjectCode(startDate = '', existingProjects = []) {
       }
     }
   }
-  const nextNum = String(maxNum + 1).padStart(3, '0')
-  return `${prefix}${nextNum}`
+
+  let candidateNum = maxNum + 1
+  let candidate = `${prefix}${String(candidateNum).padStart(3, '0')}`
+  while (usedSet.has(candidate)) {
+    candidateNum += 1
+    candidate = `${prefix}${String(candidateNum).padStart(3, '0')}`
+  }
+  return candidate
 }
 
 export function translateAuthError(message = '') {

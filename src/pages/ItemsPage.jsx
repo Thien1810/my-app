@@ -8,6 +8,7 @@ import {
   KIND_LABELS,
   ITEM_CATEGORY_PRESETS,
   generateItemCode,
+  findDuplicateCode,
 } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { KindBadge } from '../components/Badges'
@@ -137,13 +138,49 @@ export default function ItemsPage() {
     setModalOpen(true)
   }
 
+  const duplicateItem = useMemo(
+    () => findDuplicateCode(form.code, items, editingItem?.id),
+    [form.code, items, editingItem]
+  )
+
   const handleSave = async (e) => {
     e.preventDefault()
+    if (duplicateItem) {
+      setError(`Mã "${form.code}" đã trùng với vật tư "${duplicateItem.name}". Vui lòng bấm "⚡ Sinh mã" để lấy mã kế tiếp.`)
+      return
+    }
     setSaving(true)
     setError('')
     try {
+      let finalCode = form.code.trim().toUpperCase() || null
+
+      // Kiểm tra lại trên database phòng trường hợp nhiều người cùng nhập một lúc
+      if (finalCode) {
+        let checkQuery = supabase
+          .from('items')
+          .select('id, code, name')
+          .ilike('code', finalCode)
+        if (editingItem?.id) {
+          checkQuery = checkQuery.neq('id', editingItem.id)
+        }
+        const { data: dupRows } = await checkQuery
+        if (dupRows && dupRows.length > 0) {
+          const freshRes = await supabase.from('items').select('id, code')
+          const nextAvailable = generateItemCode(
+            form.kind,
+            form.category,
+            freshRes.data || items,
+            editingItem?.id
+          )
+          setForm((prev) => ({ ...prev, code: nextAvailable }))
+          throw new Error(
+            `Mã "${finalCode}" vừa được dùng cho "${dupRows[0].name}". Hệ thống đã tự động đổi sang mã mới chưa trùng: ${nextAvailable}. Hãy bấm Lưu vật tư một lần nữa!`
+          )
+        }
+      }
+
       const payload = {
-        code: form.code.trim() || null,
+        code: finalCode,
         name: form.name.trim(),
         category: form.category.trim() || null,
         kind: form.kind,
@@ -482,15 +519,20 @@ export default function ItemsPage() {
                       placeholder="VD: TH-HOA-001"
                       value={form.code}
                       onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                      style={
+                        duplicateItem
+                          ? { borderColor: '#dc2626', backgroundColor: '#fef2f2' }
+                          : undefined
+                      }
                     />
                     <button
                       type="button"
                       className="btn btn-outline btn-sm"
-                      title="Sinh mã tự động theo Loại & Danh mục"
+                      title="Sinh mã tự động không trùng"
                       onClick={() =>
                         setForm({
                           ...form,
-                          code: generateItemCode(form.kind, form.category, items),
+                          code: generateItemCode(form.kind, form.category, items, editingItem?.id),
                         })
                       }
                       style={{ whiteSpace: 'nowrap' }}
@@ -498,6 +540,28 @@ export default function ItemsPage() {
                       ⚡ Sinh mã
                     </button>
                   </div>
+                  {duplicateItem ? (
+                    <div className="text-xs text-red" style={{ marginTop: 4 }}>
+                      ⚠️ Trùng mã với: <strong>{duplicateItem.name}</strong>.{' '}
+                      <button
+                        type="button"
+                        className="btn-link"
+                        style={{ fontSize: '0.78rem', padding: 0 }}
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            code: generateItemCode(form.kind, form.category, items, editingItem?.id),
+                          })
+                        }
+                      >
+                        Đổi sang mã kế tiếp
+                      </button>
+                    </div>
+                  ) : form.code.trim() ? (
+                    <div className="text-xs text-green" style={{ marginTop: 4 }}>
+                      ✓ Mã hợp lệ, chưa trùng trong hệ thống
+                    </div>
+                  ) : null}
                 </div>
                 <div className="form-group">
                   <label>Đơn vị tính *</label>
@@ -586,7 +650,11 @@ export default function ItemsPage() {
                 >
                   Hủy
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={saving || Boolean(duplicateItem)}
+                >
                   {saving ? 'Đang lưu...' : 'Lưu vật tư'}
                 </button>
               </div>

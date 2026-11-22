@@ -7,6 +7,7 @@ import {
   formatDate,
   PROJECT_STATUS_LABELS,
   generateProjectCode,
+  findDuplicateCode,
   todayISO,
 } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
@@ -151,13 +152,47 @@ export default function ProjectsPage() {
     })
   }
 
+  const duplicateProject = useMemo(
+    () => findDuplicateCode(form.code, projects, editingProject?.id),
+    [form.code, projects, editingProject]
+  )
+
   const handleSaveProject = async (e) => {
     e.preventDefault()
+    if (duplicateProject) {
+      setError(`Mã dự án "${form.code}" đã trùng với dự án "${duplicateProject.name}". Vui lòng bấm "⚡ Sinh mã" để lấy mã kế tiếp.`)
+      return
+    }
     setSaving(true)
     setError('')
     try {
+      const finalCode = form.code.trim().toUpperCase() || null
+
+      if (finalCode) {
+        let checkQuery = supabase
+          .from('projects')
+          .select('id, code, name')
+          .ilike('code', finalCode)
+        if (editingProject?.id) {
+          checkQuery = checkQuery.neq('id', editingProject.id)
+        }
+        const { data: dupRows } = await checkQuery
+        if (dupRows && dupRows.length > 0) {
+          const freshRes = await supabase.from('projects').select('id, code')
+          const nextAvailable = generateProjectCode(
+            form.start_date,
+            freshRes.data || projects,
+            editingProject?.id
+          )
+          setForm((prev) => ({ ...prev, code: nextAvailable }))
+          throw new Error(
+            `Mã dự án "${finalCode}" vừa được dùng cho "${dupRows[0].name}". Hệ thống đã tự động đổi sang mã mới chưa trùng: ${nextAvailable}. Hãy bấm Lưu dự án một lần nữa!`
+          )
+        }
+      }
+
       const payload = {
-        code: form.code.trim() || null,
+        code: finalCode,
         name: form.name.trim(),
         customer_id: form.customer_id ? Number(form.customer_id) : null,
         location: form.location.trim() || null,
@@ -409,15 +444,24 @@ export default function ProjectsPage() {
                       placeholder="VD: DA-2611-001"
                       value={form.code}
                       onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
+                      style={
+                        duplicateProject
+                          ? { borderColor: '#dc2626', backgroundColor: '#fef2f2' }
+                          : undefined
+                      }
                     />
                     <button
                       type="button"
                       className="btn btn-outline btn-sm"
-                      title="Sinh mã dự án tự động theo tháng thi công"
+                      title="Sinh mã dự án tự động không trùng"
                       onClick={() =>
                         setForm({
                           ...form,
-                          code: generateProjectCode(form.start_date, projects),
+                          code: generateProjectCode(
+                            form.start_date,
+                            projects,
+                            editingProject?.id
+                          ),
                         })
                       }
                       style={{ whiteSpace: 'nowrap' }}
@@ -425,6 +469,32 @@ export default function ProjectsPage() {
                       ⚡ Sinh mã
                     </button>
                   </div>
+                  {duplicateProject ? (
+                    <div className="text-xs text-red" style={{ marginTop: 4 }}>
+                      ⚠️ Trùng mã với dự án: <strong>{duplicateProject.name}</strong>.{' '}
+                      <button
+                        type="button"
+                        className="btn-link"
+                        style={{ fontSize: '0.78rem', padding: 0 }}
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            code: generateProjectCode(
+                              form.start_date,
+                              projects,
+                              editingProject?.id
+                            ),
+                          })
+                        }
+                      >
+                        Đổi sang mã kế tiếp
+                      </button>
+                    </div>
+                  ) : form.code.trim() ? (
+                    <div className="text-xs text-green" style={{ marginTop: 4 }}>
+                      ✓ Mã dự án hợp lệ, chưa trùng
+                    </div>
+                  ) : null}
                 </div>
                 <div className="form-group">
                   <label>Trạng thái *</label>
@@ -570,7 +640,11 @@ export default function ProjectsPage() {
                 >
                   Hủy
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={saving || Boolean(duplicateProject)}
+                >
                   {saving ? 'Đang lưu...' : 'Lưu dự án'}
                 </button>
               </div>
