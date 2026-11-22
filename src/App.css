@@ -1487,3 +1487,49 @@
     position: static;
   }
 }
+
+/* AI Loading Banner & Spinner */
+.ai-loading-banner {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.ai-loading-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ai-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid #bbf7d0;
+  border-top-color: #15803d;
+  animation: aiSpin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.ai-loading-track {
+  width: 100%;
+  height: 6px;
+  background: #dcfce7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ai-loading-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #16a34a, #15803d);
+  transition: width 0.5s ease;
+}
+
+@keyframes aiSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

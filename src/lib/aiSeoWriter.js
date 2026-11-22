@@ -170,3 +170,13 @@ export async function optimizeHomepageSeoWithGemini({ apiKey, settings }) {
     directPrompt
   )
 }
+
+export async function generateFacebookCaptionWithAi({ apiKey, fbContext }) {
+  const directPrompt = `Viết 1 bài đăng Fanpage Facebook sang trọng, tinh tế cho Đặng Wedding (SĐT/Zalo 0918.80.90.96, dangwed.com) về dự án "${fbContext?.projectName || ''}", khách "${fbContext?.customerName || ''}", mẫu "${fbContext?.setNames || ''}". Trả về JSON {caption}.`
+  const data = await callAiPayload(
+    apiKey,
+    { mode: 'facebook_caption', fbContext },
+    directPrompt
+  )
+  return data?.caption || ''
+}

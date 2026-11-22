@@ -22,11 +22,24 @@ export default async function handler(req, res) {
     category = 'Kinh nghiệm cưới',
     existingPost = null,
     currentSettings = null,
+    fbContext = null,
   } = req.body || {}
 
   let prompt = ''
 
-  if (mode === 'optimize_home') {
+  if (mode === 'facebook_caption') {
+    prompt = `Bạn là chuyên viên truyền thông của thương hiệu trang trí cưới hỏi cao cấp "Đặng Wedding" (Hotline/Zalo: 0918.80.90.96, Website: https://dangwed.com).
+Hãy viết 1 bài đăng Facebook (Caption) thật tinh tế, sang trọng, giàu cảm xúc và thu hút khách đặt lịch cho đám cưới sau:
+- Tên dự án / buổi lễ: "${fbContext?.projectName || 'Lễ Gia Tiên & Tiệc Cưới'}"
+- Tên cô dâu chú rể / khách hàng: "${fbContext?.customerName || 'Cô dâu & Chú rể'}"
+- Mẫu set trang trí đã dùng: "${fbContext?.setNames || 'Theo concept riêng'}"
+- Phong cách mong muốn: "${fbContext?.tone || 'Sang trọng, tối giản, ấm áp'}"
+
+Yêu cầu:
+- Trình bày đẹp mắt để đăng Fanpage Facebook (có icon nhẹ nhàng tinh tế, chia đoạn rõ ràng, cuối bài có thông tin liên hệ Hotline/Zalo 0918.80.90.96, Website dangwed.com và 5-7 hashtag phù hợp).
+- Không bịa giá tiền.
+- Trả về DUY NHẤT JSON hợp lệ: { "caption": "nội dung bài viết Facebook hoàn chỉnh..." }`
+  } else if (mode === 'optimize_home') {
     prompt = `Bạn là chuyên gia SEO & Copywriter cao cấp ngành cưới hỏi tại Việt Nam cho thương hiệu "Đặng Wedding" (phong cách sang trọng, tối giản; slogan: "${currentSettings?.slogan || 'Là ngày đẹp nhất'}"; dịch vụ: Trang trí Gia tiên, Mâm quả cưới hỏi, Cổng hoa cưới, Backdrop tiệc cưới, Cho thuê rạp & bàn ghế).
 
 Hãy tối ưu lại 3 đoạn nội dung trang chủ sau để tự nhiên, sang trọng và giàu từ khóa SEO Google nhất (KHÔNG nhắc tên tỉnh/thành phố cụ thể, KHÔNG bịa giá tiền):

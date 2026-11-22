@@ -15,6 +15,8 @@ import {
   applyDangWeddingWatermark,
   downloadDataUrlImage,
 } from '../lib/watermarkHelper'
+import { generateFacebookCaptionWithAi, getSavedGeminiKey } from '../lib/aiSeoWriter'
+import AiLoadingBanner from './AiLoadingBanner'
 
 export default function ProjectFacebookTab({ project, templates = [], onProjectUpdated }) {
   const [status, setStatus] = useState('unposted')
@@ -28,6 +30,8 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
   const [images, setImages] = useState([]) // [{ id, name, baseDataUrl, watermarkedUrl, color, width, height }]
   const [processingImg, setProcessingImg] = useState(false)
   const [savingMeta, setSavingMeta] = useState(false)
+  const [aiCaptionBusy, setAiCaptionBusy] = useState(false)
+  const [aiErr, setAiErr] = useState('')
   const [msg, setMsg] = useState('')
   const [previewImg, setPreviewImg] = useState(null)
 
@@ -210,6 +214,33 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
     const text = generateFacebookCaption(project, style, setNames)
     setCaption(text)
     persistLocal({ caption: text })
+  }
+
+  const handleAiGenerateFacebookCaption = async () => {
+    setAiCaptionBusy(true)
+    setAiErr('')
+    setMsg('')
+    try {
+      const setNames = templates.slice(0, 3).map((t) => t.name).join(', ')
+      const text = await generateFacebookCaptionWithAi({
+        apiKey: getSavedGeminiKey(),
+        fbContext: {
+          projectName: project?.name || '',
+          customerName: project?.customer?.name || '',
+          setNames,
+          tone: 'Sang trọng, tối giản, tinh tế, ấm áp',
+        },
+      })
+      if (text) {
+        setCaption(text)
+        persistLocal({ caption: text })
+        setMsg('✨ AI Studio đã viết xong bài đăng Facebook mới cho dự án này!')
+      }
+    } catch (err) {
+      setAiErr(err.message)
+    } finally {
+      setAiCaptionBusy(false)
+    }
   }
 
   const handleCopyCaption = async () => {
@@ -602,6 +633,14 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
               type="button"
+              className="btn btn-sm btn-primary"
+              disabled={aiCaptionBusy}
+              onClick={handleAiGenerateFacebookCaption}
+            >
+              {aiCaptionBusy ? '⏳ AI đang viết...' : '🤖 AI Viết bài Facebook'}
+            </button>
+            <button
+              type="button"
               className="btn btn-sm btn-outline"
               onClick={() => handleGenerateCaption('luxury')}
             >
@@ -632,6 +671,16 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
         </div>
 
         <div className="form-group">
+          {aiErr && (
+            <div className="alert alert-error" style={{ marginBottom: 10 }}>
+              {aiErr}
+            </div>
+          )}
+          <AiLoadingBanner
+            active={aiCaptionBusy}
+            label="AI Studio đang viết bài đăng Fanpage Facebook cho dự án này..."
+            estimatedSeconds={8}
+          />
           <textarea
             rows={10}
             value={caption}

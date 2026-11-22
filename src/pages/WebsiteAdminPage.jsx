@@ -17,6 +17,7 @@ import {
   optimizeHomepageSeoWithGemini,
   saveGeminiKey,
 } from '../lib/aiSeoWriter'
+import AiLoadingBanner from '../components/AiLoadingBanner'
 
 const LEAD_STATUS_META = {
   new: { label: 'Mới đăng ký', cls: 'badge-amber' },
@@ -1480,11 +1481,17 @@ export default function WebsiteAdminPage() {
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={aiWriting}
+                      disabled={aiWriting || aiBatchBusy}
                       onClick={handleAiGeneratePost}
                     >
-                      {aiWriting ? '⏳ AI đang viết bài SEO (khoảng 5 giây)...' : '✨ AI Viết bài chuẩn SEO ngay'}
+                      {aiWriting ? '⏳ AI đang viết bài SEO...' : '✨ AI Viết bài chuẩn SEO ngay'}
                     </button>
+
+                    <AiLoadingBanner
+                      active={aiWriting}
+                      label="AI Studio đang viết & chuẩn hóa bài SEO Google..."
+                      estimatedSeconds={15}
+                    />
                   </div>
 
                   <form onSubmit={handleSavePost}>
@@ -2093,6 +2100,11 @@ export default function WebsiteAdminPage() {
                         </button>
                       )}
                     </div>
+                    <AiLoadingBanner
+                      active={aiBatchBusy}
+                      label={`AI Studio đang tối ưu SEO hàng loạt (${posts.length} bài viết)...`}
+                      estimatedSeconds={posts.length * 12}
+                    />
                     {posts.length === 0 ? (
                       <div className="empty-state" style={{ padding: 24 }}>
                         Chưa có bài viết nào. Anh có thể viết bài đầu tiên ở form phía trên.
@@ -2211,6 +2223,13 @@ export default function WebsiteAdminPage() {
                   >
                     {aiHomeBusy ? '⏳ Đang tối ưu...' : '✨ AI Tối ưu Trang chủ ngay'}
                   </button>
+                  <div style={{ width: '100%' }}>
+                    <AiLoadingBanner
+                      active={aiHomeBusy}
+                      label="AI Studio đang tối ưu SEO nội dung Trang chủ..."
+                      estimatedSeconds={8}
+                    />
+                  </div>
                 </div>
               )}
 
