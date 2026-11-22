@@ -13,6 +13,7 @@ import {
 import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
 import CurrencyInput from '../components/CurrencyInput'
+import { calcProjectFbReminder, stripFbMetaFromNote } from '../lib/watermarkHelper'
 
 const INITIAL_PROJECT_FORM = {
   code: '',
@@ -136,7 +137,7 @@ export default function ProjectsPage() {
       status: p.status || 'quote',
       contract_value: financesMap.get(p.id) ?? 0,
       member_ids: membersMap.get(p.id) || [],
-      note: p.note || '',
+      note: stripFbMetaFromNote(p.note || ''),
     })
     setModalOpen(true)
   }
@@ -378,6 +379,32 @@ export default function ProjectsPage() {
                       <Link to={`/du-an/${p.id}`} className="table-link font-bold">
                         {p.name}
                       </Link>
+                      {(() => {
+                        const fbRem = calcProjectFbReminder(p)
+                        if (fbRem.fbData?.status === 'posted') {
+                          return (
+                            <div style={{ marginTop: 3 }}>
+                              <span className="badge badge-green" style={{ fontSize: '0.72rem' }}>
+                                📱 Đã đăng FB
+                              </span>
+                            </div>
+                          )
+                        }
+                        if (fbRem.isOverdue5Days) {
+                          return (
+                            <div style={{ marginTop: 3 }}>
+                              <Link
+                                to={`/du-an/${p.id}?tab=facebook`}
+                                className="badge badge-danger"
+                                style={{ fontSize: '0.72rem', textDecoration: 'none' }}
+                              >
+                                🔔 Quá {fbRem.daysPassed} ngày chưa đăng FB
+                              </Link>
+                            </div>
+                          )
+                        }
+                        return null
+                      })()}
                     </td>
                     <td>{p.customer?.name || '—'}</td>
                     <td>{p.location || '—'}</td>

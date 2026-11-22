@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import {
@@ -23,9 +23,12 @@ import {
 } from '../components/Badges'
 import CurrencyInput from '../components/CurrencyInput'
 import ProjectQuoteTab from '../components/ProjectQuoteTab'
+import ProjectFacebookTab from '../components/ProjectFacebookTab'
+import { calcProjectFbReminder } from '../lib/watermarkHelper'
 
 export default function ProjectDetailPage() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
   const projectId = Number(id)
   const { isManagerOrAdmin, canEditCatalog, isStaff } = useAuth()
 
@@ -43,8 +46,11 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // Default tab: staff goes straight to 'return' or 'plan'
-  const [activeTab, setActiveTab] = useState(isStaff ? 'return' : 'plan')
+  // Default tab: check ?tab=facebook, or staff goes straight to 'return' or 'plan'
+  const requestedTab = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState(
+    requestedTab || (isStaff ? 'return' : 'plan')
+  )
 
   // Tab 1: Kế hoạch vật tư
   const [planItemId, setPlanItemId] = useState('')
@@ -596,6 +602,8 @@ export default function ProjectDetailPage() {
     (p) => conflicts[p.item_id]?.hasShortage
   ).length
 
+  const fbReminder = calcProjectFbReminder(project)
+
   return (
     <div className="page-container">
       {/* Header dự án */}
@@ -710,6 +718,24 @@ export default function ProjectDetailPage() {
           📥 Thu hồi vật tư
         </button>
 
+        <button
+          type="button"
+          className={`tab-btn ${activeTab === 'facebook' ? 'active' : ''}`}
+          onClick={() => setActiveTab('facebook')}
+        >
+          📱 Đăng Facebook & Watermark
+          {fbReminder.isOverdue5Days && (
+            <span className="badge badge-danger" style={{ marginLeft: 6 }}>
+              🔔 Quá {fbReminder.daysPassed} ngày
+            </span>
+          )}
+          {!fbReminder.isOverdue5Days && fbReminder.fbData?.status === 'posted' && (
+            <span className="badge badge-green" style={{ marginLeft: 6 }}>
+              ✓ Đã đăng
+            </span>
+          )}
+        </button>
+
         {isManagerOrAdmin && (
           <>
             <button
@@ -739,6 +765,15 @@ export default function ProjectDetailPage() {
           isManagerOrAdmin={canEditCatalog}
           onSyncContractValue={(val) => setContractValue(val)}
           onApplySetsToPlan={handleApplyQuoteSetsToPlan}
+        />
+      )}
+
+      {/* TAB ĐĂNG FACEBOOK & GHÉP WATERMARK ĐẶNG WEDDING */}
+      {activeTab === 'facebook' && (
+        <ProjectFacebookTab
+          project={project}
+          templates={templates}
+          onProjectUpdated={loadAll}
         />
       )}
 
