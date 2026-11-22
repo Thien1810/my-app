@@ -297,3 +297,21 @@ insert into public.profiles (id, email, full_name, role)
 select id, email, coalesce(raw_user_meta_data->>'full_name', split_part(email, '@', 1)), 'admin'
 from auth.users
 on conflict (id) do update set role = 'admin';
+
+-- Hàm hỗ trợ Quản trị xóa hoàn toàn tài khoản người dùng (cả trong profiles và auth.users)
+create or replace function public.admin_delete_user(target_user_id uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.has_role(array['admin']) then
+    raise exception 'Chỉ Quản trị viên mới có quyền xóa người dùng.';
+  end if;
+  if target_user_id = auth.uid() then
+    raise exception 'Không thể tự xóa tài khoản của chính mình.';
+  end if;
+  delete from public.project_members where user_id = target_user_id;
+  update public.projects set lead_id = null where lead_id = target_user_id;
+  update public.stock_movements set created_by = null where created_by = target_user_id;
+  delete from public.profiles where id = target_user_id;
+  delete from auth.users where id = target_user_id;
+end $$;
+grant execute on function public.admin_delete_user(uuid) to authenticated;

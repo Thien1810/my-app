@@ -53,6 +53,46 @@ export default function UsersPage() {
     }
   }
 
+  const handleDeleteUser = async (p) => {
+    if (p.id === user?.id) {
+      setError('Bạn không thể tự xóa chính tài khoản Quản trị đang đăng nhập của mình.')
+      return
+    }
+    if (
+      !window.confirm(
+        `Bạn có chắc chắn muốn XÓA tài khoản "${p.full_name || p.email}" (${p.email}) khỏi hệ thống?`
+      )
+    ) {
+      return
+    }
+    setSavingId(p.id)
+    setError('')
+    setSuccess('')
+    try {
+      // Thử gọi RPC xóa cả trong auth.users nếu database đã cài hàm admin_delete_user
+      const rpcRes = await supabase.rpc('admin_delete_user', { target_user_id: p.id })
+      if (rpcRes.error) {
+        // Fallback: gỡ khóa ngoại ở projects, project_members, stock_movements rồi xóa trong profiles
+        await supabase.from('project_members').delete().eq('user_id', p.id)
+        await supabase.from('projects').update({ lead_id: null }).eq('lead_id', p.id)
+        await supabase
+          .from('stock_movements')
+          .update({ created_by: null })
+          .eq('created_by', p.id)
+
+        const { error: delErr } = await supabase.from('profiles').delete().eq('id', p.id)
+        if (delErr) throw delErr
+      }
+
+      setSuccess(`Đã xóa người dùng "${p.full_name || p.email}" thành công!`)
+      await loadProfiles()
+    } catch (err) {
+      setError(err.message || 'Không thể xóa người dùng')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
   const handleExport = () => {
     const rows = profiles.map((p) => ({
       'Họ và tên': p.full_name || '',
@@ -106,6 +146,7 @@ export default function UsersPage() {
                   <th>Vai trò hiện tại</th>
                   <th>Đổi vai trò</th>
                   <th>Ngày tạo</th>
+                  <th className="text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody>
@@ -151,6 +192,21 @@ export default function UsersPage() {
                         </select>
                       </td>
                       <td>{formatDate(p.created_at)}</td>
+                      <td className="text-right">
+                        {!isMe ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                            disabled={savingId === p.id}
+                            onClick={() => handleDeleteUser(p)}
+                          >
+                            Xóa
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted">—</span>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}

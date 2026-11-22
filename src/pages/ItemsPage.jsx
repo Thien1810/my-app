@@ -35,7 +35,7 @@ const INITIAL_FORM = {
 }
 
 export default function ItemsPage() {
-  const { canEditCatalog } = useAuth()
+  const { canEditCatalog, canDeleteCatalog } = useAuth()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -278,6 +278,32 @@ export default function ItemsPage() {
       await loadItems()
     } catch (err) {
       setError(err.message || 'Không thể cập nhật trạng thái vật tư')
+    }
+  }
+
+  const handleDeleteItem = async (item) => {
+    if (
+      !window.confirm(
+        `Bạn có chắc chắn muốn XÓA VĨNH VIỄN vật tư "${item.name}" (${item.code || `#${item.id}`})?\n\nLưu ý: Mọi lịch sử phiếu kho, kế hoạch dự án và mẫu set gắn với vật tư này cũng sẽ bị xóa.`
+      )
+    ) {
+      return
+    }
+    setError('')
+    try {
+      // Xóa các bản ghi phụ thuộc trước để không vướng khóa ngoại (Foreign Key)
+      await supabase.from('project_plan').delete().eq('item_id', item.id)
+      await supabase.from('set_template_items').delete().eq('item_id', item.id)
+      await supabase.from('stock_movements').delete().eq('item_id', item.id)
+
+      const { error: err } = await supabase.from('items').delete().eq('id', item.id)
+      if (err) throw err
+      await loadItems()
+    } catch (err) {
+      setError(
+        err.message ||
+          'Không thể xóa vật tư (chỉ Quản trị / Quản lý mới có quyền xóa hoặc vật tư đang có phiếu kho mà bạn không có quyền xóa).'
+      )
     }
   }
 
@@ -547,6 +573,15 @@ export default function ItemsPage() {
                                 {item.active ? 'Ẩn' : 'Mở'}
                               </button>
                             </>
+                          )}
+                          {canDeleteCatalog && (
+                            <button
+                              className="btn btn-sm btn-outline"
+                              style={{ color: '#dc2626', borderColor: '#fecaca' }}
+                              onClick={() => handleDeleteItem(item)}
+                            >
+                              Xóa
+                            </button>
                           )}
                         </div>
                       </td>
