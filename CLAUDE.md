@@ -66,3 +66,9 @@ Dự án **chưa có test tự động**. Tiêu chí hoàn thành tối thiểu 
 - Ưu đãi: **doanh số** = giá gói gốc (ví dụ 10.000.000); **ưu đãi** = phần giảm cho khách (1.000.000); **doanh thu** = doanh số − ưu đãi (9.000.000). Chi phí tính trên doanh thu để ra biên lợi nhuận. **Đã chốt: `contract_value` lưu 9.000.000 (= doanh thu, là số khách thực trả, là số hiện trên báo giá).** Doanh số = contract_value + ưu đãi. Vì vậy FINANCE_SPEC (I) giữ nguyên, `calc.js` doanh thu không đổi. Cần làm: (1) thêm cột ưu đãi vào DB (hiện ưu đãi chỉ nằm trong localStorage của `ProjectQuoteTab`, mất khi đổi máy); (2) sửa `ProjectQuoteTab` (dòng `finalTotal = contract - discount` sẽ trừ ưu đãi lần hai); (3) dự án cũ đang lưu contract_value là giá gốc, cần quyết định chuyển đổi; (4) đổi test "cần xác nhận" ở calc.test.js.
 - Số lượng âm: chặn ngay ở form nhập, không cho nhập số âm.
 - Chi phí Ads: chỉ nhận diện qua bảng `ads_spend`, bỏ cách `kind.includes('ads')`.
+
+## Trạng thái lỗi tính tiền (cập nhật 2026-11-24)
+- ĐÃ SỬA: mất vật tư tiêu hao tính 2 lần (95b0684); nhận diện Ads bằng kind.includes('ads') và adsCostTotal đã bỏ khỏi calc.js, Ads chỉ ghi ở ads_spend (20c49ae); số lượng âm bị chặn ở các form nhập (f3ec3f8, trừ tab "Điều chỉnh" ở MovementsPage vẫn cho âm, chờ anh Thiện quyết).
+- CÒN LẠI: chi phí khác âm làm giảm tổng chi phí; ROAS chia trên toàn bộ doanh thu (it.todo); Ads bị trừ 2 lần ở P&L (it.todo, sửa khi làm lại sổ Ads); ưu đãi chưa lưu DB, báo giá và ảnh PNG đang trừ ưu đãi lần hai (cần làm lại khối tiền dự án).
+- Dữ liệu localStorage cũ (ưu đãi, sổ Ads nhập tay) là số thử, bỏ hết, không chuyển.
+- SQL tài chính đã tách 2 file (be7ec41), CHƯA chạy lên Supabase.
