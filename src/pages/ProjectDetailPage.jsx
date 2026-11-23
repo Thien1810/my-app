@@ -40,6 +40,7 @@ export default function ProjectDetailPage() {
   const [movements, setMovements] = useState([])
   const [otherCosts, setOtherCosts] = useState([])
   const [contractValue, setContractValue] = useState(0)
+  const [quoteDiscount, setQuoteDiscount] = useState(0)
   const [members, setMembers] = useState([])
 
   const [loading, setLoading] = useState(true)
@@ -130,10 +131,12 @@ export default function ProjectDetailPage() {
       if (canEditCatalog) {
         const finRes = await supabase
           .from('project_finance')
-          .select('contract_value')
+          .select(isManagerOrAdmin ? 'contract_value, discount' : 'contract_value')
           .eq('project_id', projectId)
           .maybeSingle()
+        if (finRes.error) throw finRes.error
         setContractValue(Number(finRes.data?.contract_value || 0))
+        setQuoteDiscount(isManagerOrAdmin ? Number(finRes.data?.discount || 0) : 0)
       }
 
       if (isManagerOrAdmin) {
@@ -785,8 +788,13 @@ export default function ProjectDetailPage() {
           project={project}
           templates={templates}
           contractValue={contractValue}
-          isManagerOrAdmin={canEditCatalog}
+          discount={isManagerOrAdmin ? quoteDiscount : 0}
+          isManagerOrAdmin={isManagerOrAdmin}
           onSyncContractValue={(val) => setContractValue(val)}
+          onSyncFinance={({ contractValue: cv, discount: d }) => {
+            setContractValue(Number(cv) || 0)
+            setQuoteDiscount(Number(d) || 0)
+          }}
           onApplySetsToPlan={handleApplyQuoteSetsToPlan}
         />
       )}

@@ -196,9 +196,11 @@ export async function exportQuoteToPng({
   }
 
   // Totals Footer (Contract Value)
+  // contractValue đã là doanh thu (số khách thực trả): KHÔNG trừ ưu đãi lần nữa.
   const baseContract = Number(contractValue || 0)
-  const disc = Number(discount || 0)
-  const finalTotal = Math.max(0, baseContract - disc)
+  const disc = Math.max(0, Number(discount || 0))
+  const finalTotal = baseContract
+  const packagePrice = baseContract + disc
 
   drawRoundedRect(ctx, 56, curY + 6, W - 112, 112, 14, '#f0fdf4', '#86efac', 1.5)
 
@@ -223,16 +225,16 @@ export async function exportQuoteToPng({
   if (disc > 0) {
     ctx.fillStyle = '#475569'
     ctx.font = '14px "Segoe UI", sans-serif'
-    ctx.fillText(`Giá trị hợp đồng: ${formatCurrency(baseContract)}`, 740, curY + 36)
+    ctx.fillText(`Giá gói: ${formatCurrency(packagePrice)}`, 740, curY + 36)
     ctx.fillStyle = '#dc2626'
-    ctx.fillText(`Ưu đãi / Giảm giá: -${formatCurrency(disc)}`, 740, curY + 60)
+    ctx.fillText(`Ưu đãi: -${formatCurrency(disc)}`, 740, curY + 60)
     ctx.fillStyle = '#14532d'
     ctx.font = 'bold 21px "Segoe UI", sans-serif'
     ctx.fillText(`GIÁ TRỊ THANH TOÁN: ${formatCurrency(finalTotal)}`, 740, curY + 94)
   } else {
     ctx.fillStyle = '#14532d'
     ctx.font = 'bold 22px "Segoe UI", sans-serif'
-    ctx.fillText(`GIÁ TRỊ HỢP ĐỒNG: ${formatCurrency(baseContract)}`, 720, curY + 70)
+    ctx.fillText(`GIÁ TRỊ HỢP ĐỒNG: ${formatCurrency(finalTotal)}`, 720, curY + 70)
   }
 
   // Download PNG

@@ -1,35 +1,35 @@
 import { useState, useEffect, useMemo } from 'react'
-import { supabase } from '../lib/supabase'
 import { formatCurrency, formatNumber } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { compressImageUnder1MB } from '../lib/imageCompressor'
 import { parseTemplateMeta, SET_CATEGORY_OPTIONS } from '../pages/TemplatesPage'
 import { exportQuoteToPng } from '../lib/quoteExporter'
-import CurrencyInput from './CurrencyInput'
+import ContractValueFields from './ContractValueFields'
+import { saveProjectFinance } from '../lib/financeApi'
 
 export default function ProjectQuoteTab({
   project,
   templates = [],
   contractValue = 0,
+  discount = 0,
   isManagerOrAdmin = false,
   onSyncContractValue,
+  onSyncFinance,
   onApplySetsToPlan,
 }) {
   const storageKey = `dw_quote_project_${project?.id}`
 
   const [quoteLines, setQuoteLines] = useState([])
-  const [localContractVal, setLocalContractVal] = useState(Number(contractValue || 0))
-  const [discount, setDiscount] = useState(0)
+  // Bản nháp khi sửa: doanh số (giá gói) và ưu đãi; doanh thu = doanh số - ưu đãi
+  const [draftFinance, setDraftFinance] = useState(null)
+  const [financeValid, setFinanceValid] = useState(true)
   const [quoteNote, setQuoteNote] = useState('')
   const [filterSetCat, setFilterSetCat] = useState('all')
   const [exportingPng, setExportingPng] = useState(false)
   const [savingContract, setSavingContract] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [saveError, setSaveError] = useState('')
   const [previewImg, setPreviewImg] = useState(null)
-
-  useEffect(() => {
-    setLocalContractVal(Number(contractValue || 0))
-  }, [contractValue])
 
   // Chuẩn hóa danh sách mẫu set có hình ảnh và phân loại
   const enrichedTemplates = useMemo(() => {
@@ -57,7 +57,6 @@ export default function ProjectQuoteTab({
       if (saved) {
         const parsed = JSON.parse(saved)
         setQuoteLines(Array.isArray(parsed.lines) ? parsed.lines : [])
-        setDiscount(Number(parsed.discount || 0))
         setQuoteNote(parsed.quoteNote || '')
       }
     } catch {
@@ -65,13 +64,12 @@ export default function ProjectQuoteTab({
     }
   }, [project?.id, storageKey])
 
-  const persistQuote = (nextLines, nextDiscount, nextNote) => {
+  const persistQuote = (nextLines, nextNote) => {
     try {
       localStorage.setItem(
         storageKey,
         JSON.stringify({
           lines: nextLines,
-          discount: nextDiscount,
           quoteNote: nextNote,
           updatedAt: new Date().toISOString(),
         })
@@ -106,7 +104,7 @@ export default function ProjectQuoteTab({
     }
     const next = [...quoteLines, newLine]
     setQuoteLines(next)
-    persistQuote(next, discount, quoteNote)
+    persistQuote(next, quoteNote)
   }
 
   const handleAddCustomLine = () => {
@@ -121,19 +119,19 @@ export default function ProjectQuoteTab({
     }
     const next = [...quoteLines, newLine]
     setQuoteLines(next)
-    persistQuote(next, discount, quoteNote)
+    persistQuote(next, quoteNote)
   }
 
   const handleUpdateLine = (uid, field, value) => {
     const next = quoteLines.map((l) => (l.uid === uid ? { ...l, [field]: value } : l))
     setQuoteLines(next)
-    persistQuote(next, discount, quoteNote)
+    persistQuote(next, quoteNote)
   }
 
   const handleRemoveLine = (uid) => {
     const next = quoteLines.filter((l) => l.uid !== uid)
     setQuoteLines(next)
-    persistQuote(next, discount, quoteNote)
+    persistQuote(next, quoteNote)
   }
 
   const handleLineImageUpload = async (uid, file) => {
@@ -146,25 +144,31 @@ export default function ProjectQuoteTab({
     }
   }
 
-  const finalTotal = Math.max(0, Number(localContractVal || 0) - Number(discount || 0))
+  // contractValue (props) = doanh thu, số khách thực trả. Không trừ ưu đãi thêm lần nào.
+  const finalTotal = Number(contractValue || 0)
+  const safeDiscount = Math.max(0, Number(discount || 0))
+  const packagePrice = finalTotal + safeDiscount
 
-  const handleSaveContractValue = async (valToSave) => {
-    if (!isManagerOrAdmin) return
+  const handleSaveFinance = async () => {
+    if (!isManagerOrAdmin || !draftFinance || !financeValid) return
     setSavingContract(true)
     setSyncMsg('')
+    setSaveError('')
     try {
-      const { error } = await supabase.from('project_finance').upsert(
-        {
-          project_id: project.id,
-          contract_value: Number(valToSave || 0),
-        },
-        { onConflict: 'project_id' }
-      )
+      const revenue = draftFinance.grossSales - draftFinance.discount
+      const { data, error } = await saveProjectFinance(project.id, {
+        contractValue: revenue,
+        discount: draftFinance.discount,
+      })
       if (error) throw error
-      if (onSyncContractValue) onSyncContractValue(Number(valToSave || 0))
-      setSyncMsg(`✓ Đã lưu Giá trị hợp đồng: ${formatCurrency(valToSave)}`)
+      const cv = Number(data?.contract_value ?? revenue)
+      const d = Number(data?.discount ?? draftFinance.discount)
+      setDraftFinance(null)
+      if (onSyncFinance) onSyncFinance({ contractValue: cv, discount: d })
+      if (onSyncContractValue) onSyncContractValue(cv)
+      setSyncMsg(`✓ Đã lưu giá trị hợp đồng (doanh thu): ${formatCurrency(cv)}`)
     } catch (err) {
-      alert(err.message || 'Không thể lưu giá trị hợp đồng')
+      setSaveError(err?.message || 'Không thể lưu giá trị hợp đồng và ưu đãi.')
     } finally {
       setSavingContract(false)
     }
@@ -194,8 +198,8 @@ export default function ProjectQuoteTab({
       await exportQuoteToPng({
         project,
         quoteLines,
-        contractValue: localContractVal,
-        discount,
+        contractValue: finalTotal,
+        discount: safeDiscount,
         quoteNote,
       })
     } finally {
@@ -210,10 +214,24 @@ export default function ProjectQuoteTab({
       'Hạng mục / Mẫu Set Trang Trí': l.name,
       'Danh sách vật tư / Mô tả': l.note || '',
     }))
+    if (safeDiscount > 0) {
+      rows.push({
+        STT: '',
+        'Phân loại': '',
+        'Hạng mục / Mẫu Set Trang Trí': 'GIÁ GÓI',
+        'Danh sách vật tư / Mô tả': formatCurrency(packagePrice),
+      })
+      rows.push({
+        STT: '',
+        'Phân loại': '',
+        'Hạng mục / Mẫu Set Trang Trí': 'ƯU ĐÃI',
+        'Danh sách vật tư / Mô tả': `-${formatCurrency(safeDiscount)}`,
+      })
+    }
     rows.push({
       STT: '',
       'Phân loại': '',
-      'Hạng mục / Mẫu Set Trang Trí': 'GIÁ TRỊ HỢP ĐỒNG TRỌN GÓI',
+      'Hạng mục / Mẫu Set Trang Trí': safeDiscount > 0 ? 'GIÁ TRỊ THANH TOÁN' : 'GIÁ TRỊ HỢP ĐỒNG TRỌN GÓI',
       'Danh sách vật tư / Mô tả': formatCurrency(finalTotal),
     })
     exportToExcel(
@@ -563,52 +581,52 @@ export default function ProjectQuoteTab({
                   value={quoteNote}
                   onChange={(e) => {
                     setQuoteNote(e.target.value)
-                    persistQuote(quoteLines, discount, e.target.value)
+                    persistQuote(quoteLines, e.target.value)
                   }}
                 />
               </div>
 
               {isManagerOrAdmin && (
-                <>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label>Giá trị hợp đồng trọn gói (₫)</label>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <CurrencyInput
-                        value={localContractVal}
-                        onChange={(num) => setLocalContractVal(num)}
-                        placeholder="VD: 15.000.000"
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-outline btn-sm"
-                        style={{ whiteSpace: 'nowrap' }}
-                        disabled={savingContract}
-                        onClick={() => handleSaveContractValue(localContractVal)}
-                      >
-                        {savingContract ? 'Đang lưu...' : 'Lưu giá HĐ'}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label>Ưu đãi / Giảm giá (₫)</label>
-                    <CurrencyInput
-                      value={discount}
-                      onChange={(num) => {
-                        setDiscount(num)
-                        persistQuote(quoteLines, num, quoteNote)
-                      }}
-                      placeholder="VD: 500.000"
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                      gap: 12,
+                      alignItems: 'start',
+                    }}
+                  >
+                    <ContractValueFields
+                      key={`${project?.id}-${finalTotal}-${safeDiscount}`}
+                      grossSales={packagePrice}
+                      discount={safeDiscount}
+                      canEdit
+                      canSeeDiscount
+                      onChange={(v) => setDraftFinance(v)}
+                      onValidChange={(ok) => setFinanceValid(ok)}
                     />
                   </div>
-                </>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    style={{ whiteSpace: 'nowrap', marginTop: 8 }}
+                    disabled={savingContract || !financeValid || !draftFinance}
+                    onClick={handleSaveFinance}
+                  >
+                    {savingContract ? 'Đang lưu...' : 'Lưu giá HĐ & ưu đãi'}
+                  </button>
+                  {saveError && (
+                    <div style={{ color: '#dc2626', fontSize: '0.85em', marginTop: 4 }}>
+                      {saveError}
+                    </div>
+                  )}
+                </div>
               )}
 
               <div style={{ textAlign: 'right' }}>
-                {discount > 0 && (
+                {safeDiscount > 0 && (
                   <div className="text-xs text-muted">
-                    Giá hợp đồng: {formatCurrency(localContractVal)} • Ưu đãi: -
-                    {formatCurrency(discount)}
+                    Giá gói: {formatCurrency(packagePrice)} • Ưu đãi: -{formatCurrency(safeDiscount)}
                   </div>
                 )}
                 <div
@@ -619,7 +637,7 @@ export default function ProjectQuoteTab({
                     marginTop: 4,
                   }}
                 >
-                  Giá trị hợp đồng: {formatCurrency(finalTotal)}
+                  {safeDiscount > 0 ? 'Giá trị thanh toán' : 'Giá trị hợp đồng'}: {formatCurrency(finalTotal)}
                 </div>
               </div>
             </div>
