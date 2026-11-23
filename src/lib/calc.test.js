@@ -113,11 +113,158 @@ describe('calcProjectItemStats', () => {
     expect(row.netConsumed).toBe(0)
   })
 
-  it('vật tư không có trong kho thì tạo bản ghi tạm, coi như tiêu hao giá 0', () => {
+  it('hành vi hiện tại, đang sai: vật tư không có trong kho thì tạo bản ghi tạm, coi như tiêu hao giá 0 (chi phí vật tư bị mất khỏi quyết toán)', () => {
     const [row] = calcProjectItemStats([{ item_id: 99, type: 'issue', qty: 2 }], new Map())
     expect(row.item.name).toBe('Vật tư #99')
     expect(row.item.kind).toBe('consumable')
     expect(row.netConsumed).toBe(2)
+
+    const r = calcProjectFinancialSummary({
+      movements: [{ item_id: 99, type: 'issue', qty: 2 }],
+      itemStockMap: new Map(),
+      contractValue: 1000000,
+    })
+    expect(r.consumableCost).toBe(0)
+    expect(r.totalCost).toBe(0)
+    expect(r.profit).toBe(1000000)
+  })
+})
+
+describe('calcProjectFinancialSummary — giá trị biên', () => {
+  it('expected_uses = 0: không tính khấu hao, đánh dấu thiếu số lần dùng, vẫn tính hỏng/mất', () => {
+    const item = { ...KHUNG, expected_uses: 0 }
+    const r = calcProjectFinancialSummary({
+      movements: [
+        { item_id: 2, type: 'issue', qty: 2 },
+        { item_id: 2, type: 'return_damaged', qty: 1 },
+      ],
+      itemStockMap: makeStockMap([item]),
+    })
+    expect(r.depreciationCost).toBe(0)
+    expect(r.damagedLostCost).toBe(1000000)
+    expect(r.missingExpectedUsesItems).toEqual(['Khung backdrop'])
+    expect(r.itemBreakdown[0].missingExpectedUses).toBe(true)
+  })
+
+  it('tiêu hao có SL dư lớn hơn SL xuất: chi phí bị chặn về 0, không âm, không cảnh báo dữ liệu bất thường', () => {
+    const r = calcProjectFinancialSummary({
+      movements: [
+        { item_id: 1, type: 'issue', qty: 5 },
+        { item_id: 1, type: 'return_good', qty: 8 },
+      ],
+      itemStockMap: makeStockMap([HOA]),
+    })
+    expect(r.consumableCost).toBe(0)
+    expect(r.itemBreakdown[0].netConsumed).toBe(0)
+  })
+
+  it('tái sử dụng thu hồi nhiều hơn SL xuất: outstanding bị chặn về 0', () => {
+    const [row] = calcProjectItemStats(
+      [
+        { item_id: 2, type: 'issue', qty: 2 },
+        { item_id: 2, type: 'return_good', qty: 3 },
+      ],
+      makeStockMap([KHUNG])
+    )
+    expect(row.outstanding).toBe(0)
+  })
+
+  it('hành vi hiện tại, đang sai: SL âm không bị chặn, sinh chi phí âm làm tăng lợi nhuận', () => {
+    const r = calcProjectFinancialSummary({
+      movements: [
+        { item_id: 2, type: 'issue', qty: -2 },
+        { item_id: 1, type: 'return_lost', qty: -3 },
+      ],
+      itemStockMap: makeStockMap([HOA, KHUNG]),
+      contractValue: 1000000,
+    })
+    expect(r.depreciationCost).toBe(-100000)
+    expect(r.damagedLostCost).toBe(-30000)
+    expect(r.totalCost).toBe(-130000)
+    expect(r.profit).toBe(1130000)
+  })
+
+  it('hành vi hiện tại, đang sai: chi phí khác có số tiền âm làm giảm tổng chi phí', () => {
+    const r = calcProjectFinancialSummary({
+      movements: [],
+      itemStockMap: new Map(),
+      otherCosts: [{ kind: 'Nhân công', amount: -200000 }],
+    })
+    expect(r.otherCostTotal).toBe(-200000)
+    expect(r.totalCost).toBe(-200000)
+  })
+
+  it('hợp đồng = 0: lợi nhuận = -tổng chi phí', () => {
+    const r = calcProjectFinancialSummary({
+      movements: [{ item_id: 1, type: 'issue', qty: 3 }],
+      itemStockMap: makeStockMap([HOA]),
+      contractValue: 0,
+    })
+    expect(r.contractValue).toBe(0)
+    expect(r.profit).toBe(-30000)
+  })
+
+  it('hợp đồng null/undefined/chuỗi số: ép về số (null, undefined -> 0)', () => {
+    const run = (contractValue) =>
+      calcProjectFinancialSummary({ movements: [], itemStockMap: new Map(), contractValue })
+    expect(run(null).contractValue).toBe(0)
+    expect(run(undefined).contractValue).toBe(0)
+    expect(run('5000000').contractValue).toBe(5000000)
+  })
+})
+
+describe('calcProjectFinancialSummary — ưu đãi / giảm giá', () => {
+  // Ưu đãi chỉ nằm ở ProjectQuoteTab (lưu localStorage) và quoteExporter; calc.js không nhận tham số này.
+  it('cần xác nhận: calc.js không trừ ưu đãi, lợi nhuận tính trên giá trị hợp đồng gốc; tham số discount truyền vào bị bỏ qua', () => {
+    const r = calcProjectFinancialSummary({
+      movements: [],
+      itemStockMap: new Map(),
+      contractValue: 10000000,
+      discount: 1000000,
+    })
+    expect(r.contractValue).toBe(10000000)
+    expect(r.profit).toBe(10000000)
+    expect(r).not.toHaveProperty('discount')
+  })
+})
+
+describe('calcProjectFinancialSummary — dự án tổng hợp', () => {
+  it('tiêu hao + tái sử dụng có hỏng và mất + chi phí khác: kiểm tra từng thành phần, tổng chi phí và lợi nhuận', () => {
+    const r = calcProjectFinancialSummary({
+      movements: [
+        { item_id: 1, type: 'issue', qty: 20 },
+        { item_id: 1, type: 'return_good', qty: 5 },
+        { item_id: 2, type: 'issue', qty: 4 },
+        { item_id: 2, type: 'return_good', qty: 2 },
+        { item_id: 2, type: 'return_damaged', qty: 1 },
+        { item_id: 2, type: 'return_lost', qty: 1 },
+      ],
+      itemStockMap: makeStockMap([HOA, KHUNG]),
+      otherCosts: [{ kind: 'Nhân công', amount: 800000 }],
+      contractValue: 8000000,
+    })
+    expect(r.consumableCost).toBe(150000) // (20 - 5) * 10.000
+    expect(r.depreciationCost).toBe(200000) // 4 * 1.000.000 / 20
+    expect(r.damagedLostCost).toBe(2000000) // (1 + 1) * 1.000.000
+    expect(r.otherCostTotal).toBe(800000)
+    expect(r.totalCost).toBe(3150000)
+    expect(r.profit).toBe(4850000)
+    expect(r.itemBreakdown).toHaveLength(2)
+    expect(r.missingExpectedUsesItems).toEqual([])
+  })
+
+  it('hành vi hiện tại, đang sai: tiêu hao có báo mất bị tính 2 lần (đã nằm trong xuất - dư, lại cộng thêm vào hỏng/mất)', () => {
+    const r = calcProjectFinancialSummary({
+      movements: [
+        { item_id: 1, type: 'issue', qty: 20 },
+        { item_id: 1, type: 'return_good', qty: 5 },
+        { item_id: 1, type: 'return_lost', qty: 2 },
+      ],
+      itemStockMap: makeStockMap([HOA]),
+    })
+    expect(r.consumableCost).toBe(150000)
+    expect(r.damagedLostCost).toBe(20000)
+    expect(r.totalCost).toBe(170000)
   })
 })
 
