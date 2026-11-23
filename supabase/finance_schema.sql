@@ -75,7 +75,10 @@ create table if not exists public.fixed_cost_templates (
 create table if not exists public.ads_spend (
   id bigint generated always as identity primary key,
   spend_date date not null,
-  month text generated always as (to_char(spend_date, 'YYYY-MM')) stored,
+  -- extract/lpad là immutable; to_char(date) không dùng được trong cột generated (lỗi 42P17)
+  month text generated always as (
+    lpad(extract(year from spend_date)::int::text, 4, '0') || '-' || lpad(extract(month from spend_date)::int::text, 2, '0')
+  ) stored,
   channel text not null check (channel in ('meta','tiktok','google','other')),
   source text not null default 'manual' check (source in ('meta_api','manual','legacy')),
   warehouse_code text references public.warehouses(code),
