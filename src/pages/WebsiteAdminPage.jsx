@@ -28,7 +28,6 @@ import AiLoadingBanner from '../components/AiLoadingBanner'
 import GiaTienAiStudioModal from '../components/GiaTienAiStudioModal'
 import {
   parseLeadAdsSource,
-  attachProjectAttributionToNote,
   inferHubFromLocation,
 } from '../lib/metaAdsClient'
 
@@ -337,10 +336,11 @@ export default function WebsiteAdminPage() {
         ? 'xuan_loc'
         : inferHubFromLocation(lead.location || '')
 
-      const finalNote = attachProjectAttributionToNote(noteParts.join('\n'), {
-        source: detectedSource,
-        hub: detectedHub,
-      })
+      // Nguồn khách và đầu kho ghi vào CỘT projects.lead_source / projects.warehouse_code (không còn thẻ [DW_ATTR] trong note)
+      const finalNote = noteParts.join('\n')
+      const VALID_LEAD_SOURCES = ['meta_ads', 'tiktok_ads', 'google_seo', 'referral', 'partner']
+      const leadSourceCol = VALID_LEAD_SOURCES.includes(detectedSource) ? detectedSource : 'unknown'
+      const warehouseCodeCol = detectedHub === 'xuan_loc' || detectedHub === 'vinh_loc' ? detectedHub : null
 
       const projectName = `${lead.service_interest || 'Tiệc cưới'} - ${lead.customer_name}`
 
@@ -354,7 +354,8 @@ export default function WebsiteAdminPage() {
           start_date: lead.event_date || null,
           end_date: lead.event_date || null,
           status: 'quote',
-          contract_value: 0,
+          lead_source: leadSourceCol,
+          warehouse_code: warehouseCodeCol,
           note: finalNote,
         })
         .select('id')

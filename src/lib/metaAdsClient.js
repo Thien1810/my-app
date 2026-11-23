@@ -196,6 +196,37 @@ export function inferHubFromLocation(locationStr = '') {
 
 export function extractProjectAttribution(project) {
   const rawNote = String(project?.note || '')
+
+  // Ưu tiên cột thật projects.lead_source / projects.warehouse_code
+  const colSource = project?.lead_source
+  const colHub = project?.warehouse_code
+  const colSrcObj =
+    colSource && colSource !== 'unknown' ? PROJECT_LEAD_SOURCES.find((s) => s.id === colSource) : null
+  const colHubObj = colHub ? WAREHOUSE_HUBS.find((h) => h.id === colHub) : null
+  const hasLegacyTag = /\[DW_ATTR:(\{.*?\})\]/.test(rawNote)
+  // Cột còn 'unknown' + chưa có đầu kho nhưng note còn thẻ cũ: dùng thẻ cũ làm dự phòng
+  if (!colSrcObj && !colHubObj && hasLegacyTag) return extractLegacyAttribution(project)
+  if (colSrcObj || colHubObj || colSource === 'unknown') {
+    const hubObj =
+      colHubObj ||
+      WAREHOUSE_HUBS.find((h) => h.id === inferHubFromLocation(`${project?.location || ''} ${rawNote}`)) ||
+      WAREHOUSE_HUBS[0]
+    return {
+      source: colSrcObj ? colSrcObj.id : 'unknown',
+      sourceLabel: colSrcObj ? colSrcObj.label : 'Chưa xác định',
+      isPaidAds: colSrcObj ? colSrcObj.isPaidAds : false,
+      hub: hubObj.id,
+      hubLabel: hubObj.label,
+      hubShortLabel: hubObj.shortLabel,
+      isExplicit: !!colSrcObj,
+    }
+  }
+  return extractLegacyAttribution(project)
+}
+
+// Dự phòng: thẻ [DW_ATTR] trong note hoặc suy luận cũ (dự án chưa có cột)
+function extractLegacyAttribution(project) {
+  const rawNote = String(project?.note || '')
   const match = /\[DW_ATTR:(\{.*?\})\]/.exec(rawNote)
   if (match && match[1]) {
     try {

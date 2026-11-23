@@ -19,9 +19,7 @@ import {
   WAREHOUSE_HUBS,
   PROJECT_LEAD_SOURCES,
   extractProjectAttribution,
-  attachProjectAttributionToNote,
   stripProjectAttributionFromNote,
-  inferHubFromLocation,
 } from '../lib/metaAdsClient'
 
 const INITIAL_PROJECT_FORM = {
@@ -37,10 +35,12 @@ const INITIAL_PROJECT_FORM = {
   gross_sales: 0,
   discount: 0,
   member_ids: [],
-  lead_source: 'meta_ads',
+  lead_source: 'unknown',
   warehouse_hub: 'xuan_loc',
   note: '',
 }
+
+const LEAD_SOURCE_OPTIONS = [{ id: 'unknown', label: 'Chưa xác định' }, ...PROJECT_LEAD_SOURCES]
 
 export default function ProjectsPage() {
   const { isManagerOrAdmin, canEditCatalog, isAdmin } = useAuth()
@@ -156,7 +156,14 @@ export default function ProjectsPage() {
     setFinanceValid(true)
     setFinanceDirty(false)
     setModalError('')
+    // Ưu tiên cột lead_source/warehouse_code; chưa có mới dùng suy luận cũ từ note làm gợi ý
+    const hasColumnAttr = (p.lead_source && p.lead_source !== 'unknown') || !!p.warehouse_code
     const attr = extractProjectAttribution(p)
+    const initialSource = hasColumnAttr
+      ? p.lead_source || 'unknown'
+      : attr.isExplicit
+      ? attr.source
+      : 'unknown'
     setForm({
       code: p.code || '',
       name: p.name || '',
@@ -170,8 +177,8 @@ export default function ProjectsPage() {
       discount: discountsMap.get(p.id) ?? 0,
       gross_sales: (financesMap.get(p.id) ?? 0) + (discountsMap.get(p.id) ?? 0),
       member_ids: membersMap.get(p.id) || [],
-      lead_source: attr.source || 'meta_ads',
-      warehouse_hub: attr.hub || 'xuan_loc',
+      lead_source: initialSource,
+      warehouse_hub: p.warehouse_code || attr.hub || 'xuan_loc',
       note: stripProjectAttributionFromNote(stripFbMetaFromNote(p.note || '')),
     })
     setModalOpen(true)
@@ -204,6 +211,15 @@ export default function ProjectsPage() {
       setError('Ưu đãi không hợp lệ (âm hoặc lớn hơn doanh số). Vui lòng sửa trước khi lưu.')
       return
     }
+    if (
+      isManagerOrAdmin &&
+      form.status !== 'quote' &&
+      form.status !== 'cancelled' &&
+      (form.lead_source || 'unknown') === 'unknown'
+    ) {
+      setModalError('Hãy chọn nguồn khách trước khi chuyển dự án khỏi trạng thái báo giá.')
+      return
+    }
     setSaving(true)
     setError('')
     setModalError('')
@@ -233,11 +249,6 @@ export default function ProjectsPage() {
         }
       }
 
-      const finalNoteWithAttr = attachProjectAttributionToNote(form.note.trim(), {
-        source: form.lead_source || 'meta_ads',
-        hub: form.warehouse_hub || inferHubFromLocation(form.location),
-      })
-
       const payload = {
         code: finalCode,
         name: form.name.trim(),
@@ -247,7 +258,11 @@ export default function ProjectsPage() {
         end_date: form.end_date || null,
         lead_id: form.lead_id || null,
         status: form.status,
-        note: finalNoteWithAttr || null,
+        note: stripProjectAttributionFromNote(form.note.trim()) || null,
+      }
+      if (isManagerOrAdmin) {
+        payload.lead_source = form.lead_source || 'unknown'
+        payload.warehouse_code = form.warehouse_hub || null
       }
 
       let projectId = editingProject?.id
@@ -741,7 +756,7 @@ export default function ProjectsPage() {
                       value={form.lead_source}
                       onChange={(e) => setForm({ ...form, lead_source: e.target.value })}
                     >
-                      {PROJECT_LEAD_SOURCES.map((s) => (
+                      {LEAD_SOURCE_OPTIONS.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.label}
                         </option>
