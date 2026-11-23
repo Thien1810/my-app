@@ -95,8 +95,10 @@ create table if not exists public.ads_spend (
   created_by uuid default auth.uid() references public.profiles(id),
   created_at timestamptz not null default now()
 );
-create unique index if not exists uq_ads_spend_external
-  on public.ads_spend (channel, external_id, spend_date) where external_id is not null;
+drop index if exists public.uq_ads_spend_external;
+-- Không dùng chỉ mục một phần (where ...): upsert onConflict của PostgREST không khớp được. external_id NULL không bao giờ trùng nhau nên vẫn đúng.
+create unique index uq_ads_spend_external
+  on public.ads_spend (channel, external_id, spend_date);
 create index if not exists idx_ads_spend_month on public.ads_spend (month);
 
 -- ---------- 6. CHUYỂN KHO TÀI SẢN (căn cứ chia chi phí cứng) ----------
