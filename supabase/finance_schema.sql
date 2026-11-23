@@ -25,21 +25,13 @@ alter table public.projects drop constraint if exists projects_lead_source_check
 alter table public.projects add constraint projects_lead_source_check
   check (lead_source in ('unknown','meta_ads','tiktok_ads','google_seo','referral','partner'));
 
--- Chuyển dữ liệu cũ từ thẻ [DW_ATTR:{"source":"..","hub":".."}] trong note
-update public.projects
-set lead_source = coalesce(
-      nullif(substring(note from '\[DW_ATTR:\{[^}]*"source":"([a-z_]+)"'), ''), lead_source),
-    warehouse_code = coalesce(
-      warehouse_code,
-      nullif(substring(note from '\[DW_ATTR:\{[^}]*"hub":"([a-z_]+)"'), ''))
-where note like '%[DW_ATTR:%'
-  and lead_source = 'unknown';
+-- Chuyển dữ liệu cũ từ thẻ [DW_ATTR:...] trong note sang cột: xem supabase/finance_data_migration.sql (BƯỚC 1-3).
 
--- Xóa thẻ [DW_ATTR:...] khỏi note sau khi đã chuyển (chỉ chạy sau khi kiểm tra cột mới)
-update public.projects
-set note = nullif(trim(regexp_replace(note, E'\\n?\\[DW_ATTR:\\{[^}]*\\}\\]', '', 'g')), '')
-where note like '%[DW_ATTR:%'
-  and lead_source <> 'unknown';
+-- Ưu đãi (giảm giá cho khách). contract_value = doanh thu thực khách trả (đã trừ ưu đãi);
+-- doanh số = contract_value + discount.
+alter table public.project_finance add column if not exists discount numeric(14,2) not null default 0;
+alter table public.project_finance drop constraint if exists project_finance_discount_check;
+alter table public.project_finance add constraint project_finance_discount_check check (discount >= 0);
 
 -- ---------- 3. TẠM ỨNG / TIỀN CỌC (không phải doanh thu) ----------
 create table if not exists public.project_advances (
@@ -118,6 +110,7 @@ create table if not exists public.stock_transfers (
   check (from_wh <> to_wh)
 );
 create index if not exists idx_stock_transfers_item on public.stock_transfers (item_id);
+-- TODO: chưa kiểm tra qty chuyển có vượt tồn kho của kho nguồn (from_wh) hay không; hiện chỉ check qty > 0 và from_wh <> to_wh.
 
 -- Giá trị tài sản tái sử dụng hiện đang đặt ở mỗi kho.
 -- Giả định: toàn bộ tài sản ban đầu nằm ở kho is_main, sau đó cộng/trừ theo phiếu chuyển kho.
@@ -186,7 +179,11 @@ create trigger trg_ads_spend_lock before insert or update or delete on public.ad
 create or replace function public.block_ads_in_project_costs() returns trigger
 language plpgsql as $$
 begin
-  if lower(new.kind) ~ '(ads|quảng cáo|marketing)' then
+  -- 'ads' chỉ khớp khi là từ riêng (không có chữ cái liền trước/sau); [[:alpha:]] gồm cả chữ có dấu.
+  -- Ví dụ (kiểm tra bằng mắt, chưa chạy trên DB):
+  --   CHẶN:        'Chi phí Ads', 'Ads Facebook', 'Quảng cáo', 'quang cao', 'Marketing'
+  --   KHÔNG CHẶN:  'Thuê pads/loa', 'Nhân công'
+  if lower(new.kind) ~ '(^|[^[:alpha:]])ads($|[^[:alpha:]])|quảng cáo|quang cao|marketing' then
     raise exception 'Chi phí Ads ghi ở Sổ Ads (Báo cáo > P&L), không ghi vào Chi phí khác của dự án.';
   end if;
   return new;
@@ -195,18 +192,7 @@ drop trigger if exists trg_block_ads_project_costs on public.project_costs;
 create trigger trg_block_ads_project_costs before insert or update on public.project_costs
   for each row execute function public.block_ads_in_project_costs();
 
--- Xem trước các dòng Ads cũ nằm trong project_costs (CHẠY SELECT NÀY, kiểm tra, rồi mới quyết định di chuyển)
--- select id, project_id, kind, amount, cost_date, note from public.project_costs
--- where lower(kind) ~ '(ads|quảng cáo|marketing)' or note ilike '%[ADS-SYNC:%';
-
--- Di chuyển (bỏ comment sau khi đã kiểm tra). Không có thông tin kho/kênh nên gắn channel 'other', source 'legacy'.
--- Phải tắt trigger chặn trước khi xóa dòng cũ không cần; INSERT/DELETE ở đây không bị trigger chặn.
--- insert into public.ads_spend (spend_date, channel, source, spend, note)
--- select cost_date, 'other', 'legacy', amount, 'Chuyển từ project_costs #' || id || ' — ' || coalesce(note, '')
--- from public.project_costs
--- where lower(kind) ~ '(ads|quảng cáo|marketing)' or note ilike '%[ADS-SYNC:%';
--- delete from public.project_costs
--- where lower(kind) ~ '(ads|quảng cáo|marketing)' or note ilike '%[ADS-SYNC:%';
+-- Di chuyển dữ liệu Ads cũ (project_costs -> ads_spend): xem supabase/finance_data_migration.sql (BƯỚC 4-5).
 
 -- ---------- 9. PHÂN QUYỀN (RLS) ----------
 alter table public.warehouses            enable row level security;
