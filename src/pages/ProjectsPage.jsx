@@ -65,6 +65,8 @@ export default function ProjectsPage() {
   const [editingProject, setEditingProject] = useState(null)
   const [form, setForm] = useState(INITIAL_PROJECT_FORM)
   const [saving, setSaving] = useState(false)
+  const [modalError, setModalError] = useState('')
+  const [financeDirty, setFinanceDirty] = useState(false)
 
   const loadData = async () => {
     setLoading(true)
@@ -138,6 +140,8 @@ export default function ProjectsPage() {
   const openCreateModal = () => {
     setEditingProject(null)
     setFinanceValid(true)
+    setFinanceDirty(false)
+    setModalError('')
     const today = todayISO()
     setForm({
       ...INITIAL_PROJECT_FORM,
@@ -150,6 +154,8 @@ export default function ProjectsPage() {
   const openEditModal = (p) => {
     setEditingProject(p)
     setFinanceValid(true)
+    setFinanceDirty(false)
+    setModalError('')
     const attr = extractProjectAttribution(p)
     setForm({
       code: p.code || '',
@@ -200,6 +206,7 @@ export default function ProjectsPage() {
     }
     setSaving(true)
     setError('')
+    setModalError('')
     try {
       const finalCode = form.code.trim().toUpperCase() || null
 
@@ -258,20 +265,25 @@ export default function ProjectsPage() {
           .single()
         if (err) throw err
         projectId = data.id
+        // Từ giờ các lần Lưu tiếp theo là CẬP NHẬT dự án vừa tạo (tránh tạo trùng)
+        setEditingProject({ ...payload, id: data.id })
       }
 
-      // Lưu tài chính dự án (chỉ Admin/Manager): contract_value = doanh thu, discount = ưu đãi
-      if (isManagerOrAdmin && projectId) {
+      // Lưu tài chính dự án (chỉ Admin/Manager, chỉ khi người dùng thực sự sửa ô tiền)
+      // Lỗi ở đây không được chặn bước thành viên / loadData bên dưới.
+      let financeErrorMsg = ''
+      if (isManagerOrAdmin && projectId && financeDirty) {
         const gross = Number(form.gross_sales || 0)
         const disc = Number(form.discount || 0)
-        const { error: finErr } = await saveProjectFinance(projectId, {
-          contractValue: gross - disc,
-          discount: disc,
-        })
-        if (finErr) {
-          throw new Error(
-            `Dự án đã lưu nhưng chưa lưu được doanh số/ưu đãi: ${finErr.message || 'lỗi không xác định'}. Hãy mở lại dự án để sửa và lưu lần nữa.`
-          )
+        try {
+          const { error: finErr } = await saveProjectFinance(projectId, {
+            contractValue: gross - disc,
+            discount: disc,
+          })
+          if (finErr) throw finErr
+          setFinanceDirty(false)
+        } catch (finEx) {
+          financeErrorMsg = `Dự án đã lưu nhưng chưa lưu được doanh số/ưu đãi${finEx?.message ? ` (${finEx.message})` : ''}. Bấm Lưu lần nữa để thử lại.`
         }
       }
 
@@ -288,10 +300,16 @@ export default function ProjectsPage() {
         }
       }
 
-      setModalOpen(false)
       await loadData()
+      if (financeErrorMsg) {
+        // loadData() xóa error ngoài modal, nên báo lỗi trong modal và giữ modal mở
+        setModalError(financeErrorMsg)
+      } else {
+        setModalOpen(false)
+      }
     } catch (err) {
       setError(err.message || 'Lỗi khi lưu dự án')
+      setModalError(err.message || 'Lỗi khi lưu dự án')
     } finally {
       setSaving(false)
     }
@@ -689,14 +707,15 @@ export default function ProjectsPage() {
                     canEdit={isManagerOrAdmin}
                     canSeeDiscount={isManagerOrAdmin}
                     onValidChange={setFinanceValid}
-                    onChange={({ grossSales, discount, revenue }) =>
+                    onChange={({ grossSales, discount, revenue }) => {
+                      setFinanceDirty(true)
                       setForm((prev) => ({
                         ...prev,
                         gross_sales: grossSales,
                         discount,
                         contract_value: revenue,
                       }))
-                    }
+                    }}
                   />
                 </div>
               )}
@@ -757,6 +776,12 @@ export default function ProjectsPage() {
                   placeholder="Yêu cầu đặc biệt từ khách hàng, giờ bàn giao sảnh..."
                 />
               </div>
+
+              {modalError && (
+                <div className="alert alert-error" style={{ marginBottom: 12 }}>
+                  {modalError}
+                </div>
+              )}
 
               <div className="modal-footer">
                 <button
