@@ -63,6 +63,6 @@ Dự án **chưa có test tự động**. Tiêu chí hoàn thành tối thiểu 
 - Việc lớn thì trình bày kế hoạch trước, chờ duyệt rồi mới sửa.
 
 ## Quyết định đã chốt (anh Thiện, 2026-11-24)
-- Ưu đãi: **doanh số** = giá gói gốc (ví dụ 10.000.000); **ưu đãi** = phần giảm cho khách (1.000.000); **doanh thu** = doanh số − ưu đãi (9.000.000). Chi phí được tính trên doanh thu để ra biên lợi nhuận. Cần thêm trường ưu đãi; hiện `calc.js` chưa có (test đang khẳng định không có `discount`). FINANCE_SPEC.md (I) đang ghi doanh thu = Σ contract_value, phải đối chiếu lại khi làm.
+- Ưu đãi: **doanh số** = giá gói gốc (ví dụ 10.000.000); **ưu đãi** = phần giảm cho khách (1.000.000); **doanh thu** = doanh số − ưu đãi (9.000.000). Chi phí tính trên doanh thu để ra biên lợi nhuận. **Đã chốt: `contract_value` lưu 9.000.000 (= doanh thu, là số khách thực trả, là số hiện trên báo giá).** Doanh số = contract_value + ưu đãi. Vì vậy FINANCE_SPEC (I) giữ nguyên, `calc.js` doanh thu không đổi. Cần làm: (1) thêm cột ưu đãi vào DB (hiện ưu đãi chỉ nằm trong localStorage của `ProjectQuoteTab`, mất khi đổi máy); (2) sửa `ProjectQuoteTab` (dòng `finalTotal = contract - discount` sẽ trừ ưu đãi lần hai); (3) dự án cũ đang lưu contract_value là giá gốc, cần quyết định chuyển đổi; (4) đổi test "cần xác nhận" ở calc.test.js.
 - Số lượng âm: chặn ngay ở form nhập, không cho nhập số âm.
 - Chi phí Ads: chỉ nhận diện qua bảng `ads_spend`, bỏ cách `kind.includes('ads')`.
