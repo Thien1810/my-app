@@ -50,3 +50,14 @@ Dự án **chưa có test tự động**. Tiêu chí hoàn thành tối thiểu 
 - `CONTEXT-DU-AN.md`: bối cảnh và nghiệp vụ đầy đủ (nguồn chính).
 - `HUONG-DAN.md`: cài đặt kỹ thuật. `HUONG-DAN-SU-DUNG.md`: cẩm nang cho đội ngũ.
 - Thư mục `..\.agents\rules\project-context.md`: bản quy tắc cũ của Antigravity (trùng nội dung với `CONTEXT-DU-AN.md`).
+
+## Khi nén ngữ cảnh (compact), phải giữ lại
+- Danh sách lỗi tính tiền đã tìm ra và trạng thái: mất vật tư tiêu hao bị tính 2 lần, Ads bị trừ 2 lần, ROAS chia trên toàn bộ doanh thu, số lượng âm không bị chặn, chi phí khác âm làm giảm tổng chi phí, nhận diện Ads bằng kind.includes('ads').
+- Các test đang it.todo hoặc gắn nhãn "hành vi hiện tại, đang sai" trong src/lib/calc.test.js.
+- Các quyết định của anh Thiện (dùng Supabase làm nguồn dữ liệu duy nhất; câu hỏi ưu đãi trong giá trị hợp đồng nếu đã được trả lời).
+- Nhánh đang làm: claude-migration. Chưa push, chưa chạy SQL nào lên Supabase.
+
+## Tiết kiệm token
+- Mỗi lỗi một phiên: xong thì /clear. Dùng /compact khi phiên dài.
+- Chỉ đọc đúng file cần, không quét cả project.
+- Việc lớn thì trình bày kế hoạch trước, chờ duyệt rồi mới sửa.
