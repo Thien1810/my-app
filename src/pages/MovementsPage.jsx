@@ -120,6 +120,11 @@ export default function MovementsPage() {
     setError('')
     setSuccess('')
 
+    if (purchaseLines.some((l) => Number(l.qty) < 0)) {
+      setError('Số lượng không được là số âm. Vui lòng kiểm tra lại các dòng vật tư.')
+      return
+    }
+
     const validLines = purchaseLines.filter(
       (l) => l.item_id && Number(l.qty) > 0
     )
@@ -169,7 +174,11 @@ export default function MovementsPage() {
       return
     }
     if (activeTab !== 'adjust' && qtyNum <= 0) {
-      setError('Số lượng phải lớn hơn 0.')
+      setError(
+        qtyNum < 0
+          ? 'Số lượng không được là số âm.'
+          : 'Số lượng phải lớn hơn 0.'
+      )
       return
     }
 
@@ -493,6 +502,7 @@ export default function MovementsPage() {
                   <input
                     type="number"
                     step="any"
+                    min={activeTab === 'adjust' ? undefined : '0.01'}
                     required
                     placeholder={activeTab === 'adjust' ? 'VD: 5 hoặc -3' : 'VD: 2'}
                     value={singleQty}

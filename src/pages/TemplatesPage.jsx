@@ -162,9 +162,13 @@ export default function TemplatesPage() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    setSaving(true)
     setError('')
     setSuccess('')
+    if (lines.some((l) => Number(l.qty) < 0)) {
+      setError('Số lượng vật tư không được là số âm. Vui lòng kiểm tra lại.')
+      return
+    }
+    setSaving(true)
     try {
       let templateId = editingTemplate?.id
       const cleanNote = note.trim()

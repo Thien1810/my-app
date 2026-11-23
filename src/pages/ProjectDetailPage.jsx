@@ -215,10 +215,14 @@ export default function ProjectDetailPage() {
   // --- TAB 1: KẾ HOẠCH VẬT TƯ ---
   const handleAddPlanItem = async (e) => {
     e.preventDefault()
-    if (!planItemId || Number(planQty) <= 0) return
-    setBusyPlan(true)
     setError('')
     setSuccess('')
+    if (Number(planQty) < 0) {
+      setError('Số lượng không được là số âm.')
+      return
+    }
+    if (!planItemId || Number(planQty) <= 0) return
+    setBusyPlan(true)
     try {
       const existing = projectPlan.find((p) => Number(p.item_id) === Number(planItemId))
       const newQty = existing
@@ -246,7 +250,16 @@ export default function ProjectDetailPage() {
 
   const handleUpdatePlanQty = async (itemId, qty) => {
     const num = Number(qty)
-    if (num <= 0) return
+    if (Number.isNaN(num) || num <= 0) {
+      setSuccess('')
+      setError(
+        num < 0
+          ? 'Số lượng kế hoạch không được là số âm.'
+          : 'Số lượng kế hoạch phải lớn hơn 0.'
+      )
+      return
+    }
+    setError('')
     try {
       const { error: err } = await supabase
         .from('project_plan')
@@ -399,6 +412,11 @@ export default function ProjectDetailPage() {
 
   const handleManualIssue = async (e) => {
     e.preventDefault()
+    if (issueLines.some((l) => Number(l.qty) < 0)) {
+      setSuccess('')
+      setError('Số lượng xuất không được là số âm. Vui lòng kiểm tra lại các dòng vật tư.')
+      return
+    }
     const valid = issueLines.filter((l) => l.item_id && Number(l.qty) > 0)
     if (valid.length === 0) {
       setError('Vui lòng chọn ít nhất 1 vật tư và nhập số lượng > 0.')
@@ -468,6 +486,11 @@ export default function ProjectDetailPage() {
       const good = Number(inp.good || 0)
       const damaged = Number(inp.damaged || 0)
       const lost = Number(inp.lost || 0)
+
+      if (good < 0 || damaged < 0 || lost < 0) {
+        setError(`Số lượng thu hồi không được là số âm (vật tư: ${row.item.name}).`)
+        return
+      }
 
       if (good > 0) {
         rowsToInsert.push({
