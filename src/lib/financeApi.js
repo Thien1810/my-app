@@ -1,0 +1,273 @@
+// =====================================================================
+// FINANCE API - MỘT chỗ duy nhất truy cập dữ liệu tài chính trên Supabase.
+// Tầng dữ liệu thuần: không UI, không React, không localStorage, không token Meta.
+//
+// KIỂU TRẢ VỀ (nhất quán cho mọi hàm async): { data, error } theo chuẩn supabase-js.
+// - Không throw, không nuốt lỗi. Lỗi từ Supabase được trả nguyên trong `error`.
+// - Lỗi kiểm tra đầu vào (validate) cũng có dạng { data: null, error: { message } } (tiếng Việt).
+// - Hàm thuần (summarizeAdvances, isMonthLockedLocal) trả giá trị trực tiếp, không có error.
+//
+// GHI CHÚ NGHIỆP VỤ: project_finance.contract_value = doanh thu thực (đã trừ ưu đãi);
+// doanh số = contract_value + discount.
+// =====================================================================
+import { supabase } from './supabase'
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
+
+const fail = (message) => ({ data: null, error: { message } })
+const NO_CLIENT = 'Chưa cấu hình Supabase.'
+
+// Kiểm tra số hợp lệ (hữu hạn)
+const isNum = (v) => typeof v === 'number' ? Number.isFinite(v) : v !== '' && v !== null && Number.isFinite(Number(v))
+
+// Lấy client, hoặc null nếu chưa cấu hình
+const db = () => supabase
+
+// ---------------------------------------------------------------------
+// 1. project_finance
+// ---------------------------------------------------------------------
+
+// Lấy contract_value và discount của một dự án (data = null nếu chưa có dòng).
+export async function getProjectFinance(projectId) {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('project_finance').select('contract_value, discount').eq('project_id', projectId).maybeSingle()
+}
+
+// Lưu (upsert theo project_id) giá trị hợp đồng và ưu đãi; chặn số âm.
+export async function saveProjectFinance(projectId, { contractValue, discount }) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!isNum(contractValue) || Number(contractValue) < 0) return fail('Giá trị hợp đồng không được âm.')
+  if (!isNum(discount) || Number(discount) < 0) return fail('Ưu đãi không được âm.')
+  return db()
+    .from('project_finance')
+    .upsert(
+      { project_id: projectId, contract_value: Number(contractValue), discount: Number(discount) },
+      { onConflict: 'project_id' },
+    )
+    .select('contract_value, discount')
+    .single()
+}
+
+// ---------------------------------------------------------------------
+// 2. ads_spend
+// ---------------------------------------------------------------------
+
+// Danh sách chi Ads theo tháng 'YYYY-MM' (mới nhất trước).
+export async function listAdsSpend({ month } = {}) {
+  if (!db()) return fail(NO_CLIENT)
+  if (month && !MONTH_RE.test(month)) return fail('Tháng phải có dạng YYYY-MM.')
+  let q = db().from('ads_spend').select('*').order('spend_date', { ascending: false }).order('id', { ascending: false })
+  if (month) q = q.eq('month', month)
+  return q
+}
+
+// Thêm một dòng chi Ads; chặn spend < 0.
+export async function createAdsSpend(row) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!isNum(row?.spend) || Number(row.spend) < 0) return fail('Chi phí Ads không được âm.')
+  return db().from('ads_spend').insert(row).select().single()
+}
+
+// Sửa một dòng chi Ads theo id; chặn spend < 0 nếu có sửa spend.
+export async function updateAdsSpend(id, patch) {
+  if (!db()) return fail(NO_CLIENT)
+  if (patch && 'spend' in patch && (!isNum(patch.spend) || Number(patch.spend) < 0)) return fail('Chi phí Ads không được âm.')
+  return db().from('ads_spend').update(patch).eq('id', id).select().single()
+}
+
+// Xóa một dòng chi Ads theo id.
+export async function deleteAdsSpend(id) {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('ads_spend').delete().eq('id', id)
+}
+
+// Upsert hàng loạt (đồng bộ Meta): chỉ nhận dòng có external_id, khớp channel+external_id+spend_date.
+export async function upsertAdsSpendBatch(rows) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!Array.isArray(rows) || rows.length === 0) return { data: [], error: null }
+  if (rows.some((r) => !r?.external_id)) return fail('Mọi dòng đồng bộ phải có external_id.')
+  if (rows.some((r) => !isNum(r.spend) || Number(r.spend) < 0)) return fail('Chi phí Ads không được âm.')
+  return db().from('ads_spend').upsert(rows, { onConflict: 'channel,external_id,spend_date' }).select()
+}
+
+// ---------------------------------------------------------------------
+// 3. fixed_costs và fixed_cost_templates
+// ---------------------------------------------------------------------
+
+// Danh sách chi phí cứng của một tháng 'YYYY-MM'.
+export async function listFixedCosts({ month }) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!MONTH_RE.test(month || '')) return fail('Tháng phải có dạng YYYY-MM.')
+  return db().from('fixed_costs').select('*').eq('month', month).order('id')
+}
+
+// Thêm một dòng chi phí cứng; chặn amount <= 0.
+export async function createFixedCost(row) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!isNum(row?.amount) || Number(row.amount) <= 0) return fail('Số tiền chi phí cứng phải lớn hơn 0.')
+  return db().from('fixed_costs').insert(row).select().single()
+}
+
+// Sửa một dòng chi phí cứng; chặn amount <= 0 nếu có sửa amount.
+export async function updateFixedCost(id, patch) {
+  if (!db()) return fail(NO_CLIENT)
+  if (patch && 'amount' in patch && (!isNum(patch.amount) || Number(patch.amount) <= 0)) return fail('Số tiền chi phí cứng phải lớn hơn 0.')
+  return db().from('fixed_costs').update(patch).eq('id', id).select().single()
+}
+
+// Xóa một dòng chi phí cứng theo id.
+export async function deleteFixedCost(id) {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('fixed_costs').delete().eq('id', id)
+}
+
+// Danh sách mẫu chi phí cứng (theo sort_order).
+export async function listFixedCostTemplates() {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('fixed_cost_templates').select('*').order('sort_order').order('id')
+}
+
+// Thêm một mẫu chi phí cứng; chặn amount <= 0.
+export async function createFixedCostTemplate(row) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!isNum(row?.amount) || Number(row.amount) <= 0) return fail('Số tiền mẫu phải lớn hơn 0.')
+  return db().from('fixed_cost_templates').insert(row).select().single()
+}
+
+// Sửa một mẫu chi phí cứng; chặn amount <= 0 nếu có sửa amount.
+export async function updateFixedCostTemplate(id, patch) {
+  if (!db()) return fail(NO_CLIENT)
+  if (patch && 'amount' in patch && (!isNum(patch.amount) || Number(patch.amount) <= 0)) return fail('Số tiền mẫu phải lớn hơn 0.')
+  return db().from('fixed_cost_templates').update(patch).eq('id', id).select().single()
+}
+
+// Xóa một mẫu chi phí cứng theo id.
+export async function deleteFixedCostTemplate(id) {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('fixed_cost_templates').delete().eq('id', id)
+}
+
+// Tạo các dòng fixed_costs của tháng từ templates; từ chối nếu tháng đã có dòng (tránh nhân đôi).
+export async function applyFixedCostTemplates(month) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!MONTH_RE.test(month || '')) return fail('Tháng phải có dạng YYYY-MM.')
+  const existing = await db().from('fixed_costs').select('id', { count: 'exact', head: true }).eq('month', month)
+  if (existing.error) return { data: null, error: existing.error }
+  if (existing.count > 0) return fail(`Tháng ${month} đã có chi phí cứng, không áp mẫu lại để tránh nhân đôi.`)
+  const tpl = await listFixedCostTemplates()
+  if (tpl.error) return tpl
+  if (!tpl.data.length) return fail('Chưa có mẫu chi phí cứng nào.')
+  const rows = tpl.data.map((t) => ({
+    month,
+    category: t.category,
+    title: t.title,
+    warehouse_code: t.warehouse_code,
+    amount: t.amount,
+  }))
+  return db().from('fixed_costs').insert(rows).select()
+}
+
+// ---------------------------------------------------------------------
+// 4. project_advances
+// ---------------------------------------------------------------------
+
+// Danh sách tạm ứng/cọc của một dự án (cũ nhất trước).
+export async function listProjectAdvances(projectId) {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('project_advances').select('*').eq('project_id', projectId).order('received_date').order('id')
+}
+
+// Thêm một khoản tạm ứng/hoàn/mất cọc; amount phải khác 0.
+export async function createProjectAdvance(row) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!isNum(row?.amount) || Number(row.amount) === 0) return fail('Số tiền tạm ứng phải khác 0.')
+  return db().from('project_advances').insert(row).select().single()
+}
+
+// Sửa một khoản tạm ứng theo id; amount (nếu sửa) phải khác 0.
+export async function updateProjectAdvance(id, patch) {
+  if (!db()) return fail(NO_CLIENT)
+  if (patch && 'amount' in patch && (!isNum(patch.amount) || Number(patch.amount) === 0)) return fail('Số tiền tạm ứng phải khác 0.')
+  return db().from('project_advances').update(patch).eq('id', id).select().single()
+}
+
+// Xóa một khoản tạm ứng theo id.
+export async function deleteProjectAdvance(id) {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('project_advances').delete().eq('id', id)
+}
+
+// Hàm thuần: received = Σ advance - Σ refund (forfeit không tính); outstanding = contractValue - received.
+// Dùng giá trị tuyệt đối của amount vì schema cho phép refund lưu số âm hoặc dương.
+export function summarizeAdvances(rows, contractValue) {
+  let advance = 0
+  let refund = 0
+  for (const r of rows || []) {
+    const a = Math.abs(Number(r.amount) || 0)
+    if (r.kind === 'advance') advance += a
+    else if (r.kind === 'refund') refund += a
+  }
+  const received = advance - refund
+  return { received, outstanding: (Number(contractValue) || 0) - received }
+}
+
+// ---------------------------------------------------------------------
+// 5. month_locks
+// ---------------------------------------------------------------------
+
+// Danh sách các tháng đã khóa sổ.
+export async function listMonthLocks() {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('month_locks').select('*').order('month', { ascending: false })
+}
+
+// Khóa sổ một tháng, kèm share_snapshot lấy từ view warehouse_share lúc khóa (lỗi snapshot thì không khóa).
+export async function lockMonth(month, note) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!MONTH_RE.test(month || '')) return fail('Tháng phải có dạng YYYY-MM.')
+  const share = await listWarehouseShare()
+  if (share.error) return share
+  return db().from('month_locks').insert({ month, note: note || null, share_snapshot: share.data }).select().single()
+}
+
+// Hàm thuần: tháng có nằm trong danh sách locks (đã tải) hay không.
+export function isMonthLockedLocal(locks, month) {
+  return (locks || []).some((l) => l.month === month)
+}
+
+// ---------------------------------------------------------------------
+// 6. stock_transfers
+// ---------------------------------------------------------------------
+
+// Danh sách phiếu chuyển kho (mới nhất trước).
+export async function listStockTransfers() {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('stock_transfers').select('*').order('transferred_at', { ascending: false }).order('id', { ascending: false })
+}
+
+// Tạo phiếu chuyển kho; chặn qty <= 0 và from_wh == to_wh.
+export async function createStockTransfer({ item_id, from_wh, to_wh, qty, transferred_at, note }) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!isNum(qty) || Number(qty) <= 0) return fail('Số lượng chuyển kho phải lớn hơn 0.')
+  if (!from_wh || !to_wh) return fail('Phải chọn kho đi và kho đến.')
+  if (from_wh === to_wh) return fail('Kho đi và kho đến phải khác nhau.')
+  const row = { item_id, from_wh, to_wh, qty: Number(qty), note: note || null }
+  if (transferred_at) row.transferred_at = transferred_at
+  return db().from('stock_transfers').insert(row).select().single()
+}
+
+// ---------------------------------------------------------------------
+// 7. Đọc view / bảng kho
+// ---------------------------------------------------------------------
+
+// Tỷ trọng chia chi phí chung theo kho (view warehouse_share).
+export async function listWarehouseShare() {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('warehouse_share').select('code, name, asset_value, share').order('code')
+}
+
+// Danh sách kho đang hoạt động.
+export async function listWarehouses() {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('warehouses').select('*').eq('active', true).order('code')
+}
