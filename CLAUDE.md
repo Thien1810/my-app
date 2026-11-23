@@ -72,3 +72,9 @@ Dự án **chưa có test tự động**. Tiêu chí hoàn thành tối thiểu 
 - CÒN LẠI: chi phí khác âm làm giảm tổng chi phí; ROAS chia trên toàn bộ doanh thu (it.todo); Ads bị trừ 2 lần ở P&L (it.todo, sửa khi làm lại sổ Ads); ưu đãi chưa lưu DB, báo giá và ảnh PNG đang trừ ưu đãi lần hai (cần làm lại khối tiền dự án).
 - Dữ liệu localStorage cũ (ưu đãi, sổ Ads nhập tay) là số thử, bỏ hết, không chuyển.
 - SQL tài chính đã tách 2 file (be7ec41), CHƯA chạy lên Supabase.
+
+## Tiến độ làm lại luồng tiền (cập nhật 2026-11-24, cuối buổi)
+- XONG và đã commit: tách SQL thành finance_schema.sql + finance_data_migration.sql, anh Thiện đã chạy finance_schema.sql trên Supabase (chưa xác nhận kết quả 4 câu kiểm tra) và đã chạy thêm 2 dòng sửa chỉ mục uq_ads_spend_external; financeApi.js (tầng dữ liệu); doanh số/ưu đãi/doanh thu (ContractValueFields, ProjectsPage, ProjectQuoteTab, quoteExporter, calc.js trả thêm grossSales, discount, marginPct); chặn số âm ở form; bỏ adsCostTotal.
+- CÒN LẠI (theo thứ tự đề xuất): (1) WebsiteAdminPage.jsx ~dòng 357 chèn contract_value vào bảng projects (cột không tồn tại, nút chuyển lead thành dự án có thể đang lỗi) và vẫn ghi [DW_ATTR] thay vì cột lead_source/warehouse_code; (2) sổ Ads dùng bảng ads_spend thay localStorage (dw_ads_spend_logs_v1) và tách MetaAdsManagerTab bằng một hook dữ liệu chung + 3 panel, sửa ROAS (chỉ doanh thu đám từ Ads) và điểm hòa vốn (bỏ số 4.000.000 cứng); (3) chi phí khác âm; (4) trang chi tiết dự án hiện doanh số, ưu đãi, biên cho admin; (5) tạm ứng/còn phải thu, chuyển kho, khóa sổ.
+- CHỜ ANH THIỆN QUYẾT: ẩn ưu đãi với thủ kho ở mức DB (hiện RLS project_finance cho thủ kho đọc/ghi cả bảng, chỉ giao diện giấu ưu đãi).
+- Quy trình: em làm bộ não, giao worker (Sonnet viết, Haiku đọc, Opus review độc lập), mình tự đọc diff và chạy test/lint/build trước khi commit.
