@@ -65,11 +65,6 @@ export default function MetaAdsManagerTab({ projectProfitReport = [] }) {
     date: todayISO(),
   })
 
-  // Bảo vệ nghiêm ngặt: Chỉ Quản lý (manager) & Quản trị (admin) mới được xem
-  if (!isManagerOrAdmin) {
-    return null
-  }
-
   const handleSaveConfig = (e) => {
     e.preventDefault()
     const saved = saveMetaAdsConfig(config)
@@ -403,6 +398,12 @@ export default function MetaAdsManagerTab({ projectProfitReport = [] }) {
       bySource,
     }
   }, [filteredProjectsReport, filteredAdsRows, filteredFixedCosts])
+
+  // Bảo vệ nghiêm ngặt: Chỉ Quản lý (manager) & Quản trị (admin) mới được xem.
+  // Đặt sau toàn bộ hook để thứ tự gọi hook luôn cố định (rules-of-hooks).
+  if (!isManagerOrAdmin) {
+    return null
+  }
 
   const copyText = (txt, label) => {
     navigator.clipboard?.writeText(txt)
