@@ -17,6 +17,11 @@ function defaultDate(month) {
   return today.slice(0, 7) === month ? today : `${month}-01`
 }
 
+function monthEnd(month) {
+  const [y, m] = month.split('-').map(Number)
+  return `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
+}
+
 export default function AdsLedgerPanel({
   month,
   scope = 'all',
@@ -28,7 +33,7 @@ export default function AdsLedgerPanel({
   onRemove,
 }) {
   const [form, setForm] = useState({
-    date: '',
+    date: defaultDate(month),
     channel: 'meta',
     warehouse: '',
     campaign_name: '',
@@ -37,6 +42,8 @@ export default function AdsLedgerPanel({
     spend: '',
   })
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  // Đổi tháng: container đặt key={month} nên form khởi tạo lại, ngày mặc định luôn thuộc tháng đang xem.
   const readOnly = isLocked || !canWrite
 
   const whName = (code) => warehouses.find((w) => w.code === code)?.name || code
@@ -45,23 +52,34 @@ export default function AdsLedgerPanel({
 
   const submit = async (e) => {
     e.preventDefault()
-    if (readOnly) return
+    if (readOnly || submitting) return
+    const date = form.date || defaultDate(month)
+    if (date.slice(0, 7) !== month) {
+      setError(`Ngày phải thuộc tháng ${month}.`)
+      return
+    }
     const spend = Number(form.spend || 0)
     if (!(spend > 0)) {
       setError('Số tiền đã chi phải lớn hơn 0.')
       return
     }
     setError('')
-    const ok = await onAdd({
-      spend_date: form.date || defaultDate(month),
-      channel: form.channel,
-      warehouse_code: form.warehouse || null,
-      campaign_name: form.campaign_name.trim() || null,
-      messages: Number(form.messages || 0),
-      leads: Number(form.leads || 0),
-      spend,
-      source: 'manual',
-    })
+    setSubmitting(true)
+    let ok
+    try {
+      ok = await onAdd({
+        spend_date: date,
+        channel: form.channel,
+        warehouse_code: form.warehouse || null,
+        campaign_name: form.campaign_name.trim() || null,
+        messages: Number(form.messages || 0),
+        leads: Number(form.leads || 0),
+        spend,
+        source: 'manual',
+      })
+    } finally {
+      setSubmitting(false)
+    }
     if (ok !== false) setForm((p) => ({ ...p, campaign_name: '', messages: '', leads: '', spend: '' }))
   }
 
@@ -92,6 +110,8 @@ export default function AdsLedgerPanel({
             <input
               type="date"
               disabled={readOnly}
+              min={`${month}-01`}
+              max={monthEnd(month)}
               value={form.date || defaultDate(month)}
               onChange={(e) => setForm({ ...form, date: e.target.value })}
             />
@@ -153,8 +173,8 @@ export default function AdsLedgerPanel({
                 value={form.spend}
                 onChange={(num) => setForm({ ...form, spend: num })}
               />
-              <button type="submit" disabled={readOnly} className="btn btn-outline btn-sm" style={{ whiteSpace: 'nowrap' }}>
-                + Ghi sổ Ads
+              <button type="submit" disabled={readOnly || submitting} className="btn btn-outline btn-sm" style={{ whiteSpace: 'nowrap' }}>
+                {submitting ? 'Đang lưu...' : '+ Ghi sổ Ads'}
               </button>
             </div>
           </div>

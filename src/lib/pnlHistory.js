@@ -74,3 +74,11 @@ export function calcBySource({ projects, month, scope = 'all' } = {}) {
     })
   return [...map.values()].sort((a, b) => b.revenue - a.revenue)
 }
+
+// Tháng đã khóa sổ dùng tỷ trọng kho chụp lúc khóa (share_snapshot); ngược lại dùng tỷ trọng hiện tại.
+export function resolveShares({ locks, month, shares } = {}) {
+  const lock = (locks || []).find((l) => l && l.month === month)
+  const snap = lock && lock.share_snapshot
+  if (Array.isArray(snap) && snap.length > 0) return snap
+  return shares || []
+}

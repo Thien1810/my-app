@@ -23,6 +23,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [exportingRaw, setExportingRaw] = useState(false)
   const [error, setError] = useState('')
+  const [dataIncomplete, setDataIncomplete] = useState(false)
 
   const [items, setItems] = useState([])
   const [projects, setProjects] = useState([])
@@ -34,6 +35,7 @@ export default function ReportsPage() {
   const loadAll = async () => {
     setLoading(true)
     setError('')
+    setDataIncomplete(false)
     try {
       const [itemsRes, projRes, planRes, movesRes] = await Promise.all([
         supabase.from('item_stock').select('*').order('name'),
@@ -53,6 +55,10 @@ export default function ReportsPage() {
       setPlans(planRes.data || [])
       setMovements(movesRes.data || [])
 
+      const partialErrors = []
+      if (planRes.error) partialErrors.push(`kế hoạch vật tư (${planRes.error.message})`)
+      if (movesRes.error) partialErrors.push(`phiếu kho (${movesRes.error.message})`)
+
       if (isManagerOrAdmin) {
         const [finRes, costRes] = await Promise.all([
           supabase.from('project_finance').select('*'),
@@ -60,6 +66,12 @@ export default function ReportsPage() {
         ])
         setFinances(finRes.data || [])
         setCosts(costRes.data || [])
+        if (finRes.error) partialErrors.push(`tài chính dự án (${finRes.error.message})`)
+        if (costRes.error) partialErrors.push(`chi phí dự án (${costRes.error.message})`)
+      }
+      if (partialErrors.length) {
+        setDataIncomplete(true)
+        setError(`Không tải đủ dữ liệu báo cáo: ${partialErrors.join('; ')}. Số liệu có thể thiếu.`)
       }
     } catch (err) {
       setError(err.message || 'Không thể tải dữ liệu báo cáo')
@@ -800,7 +812,7 @@ export default function ReportsPage() {
 
           {/* 4B. BÁO CÁO P&L RÒNG, CHI PHÍ CỨNG & ADS (Admin/Manager) */}
           {activeTab === 'pnl' && isManagerOrAdmin && (
-            <MetaAdsManagerTab projectProfitReport={projectProfitReport} />
+            <MetaAdsManagerTab projectProfitReport={projectProfitReport} dataIncomplete={dataIncomplete} />
           )}
 
           {/* 5. VẬT TƯ DÙNG NHIỀU NHẤT */}

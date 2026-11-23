@@ -20,6 +20,7 @@ export default function FixedCostsPanel({
   // warehouse = null nghĩa là chưa chọn, dùng mặc định theo scope
   const [form, setForm] = useState({ category: FIXED_COST_CATEGORIES[0], title: '', warehouse: null, amount: '' })
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const readOnly = isLocked || !canWrite
 
   const whValue = form.warehouse === null ? defaultWh : form.warehouse
@@ -27,22 +28,34 @@ export default function FixedCostsPanel({
   const visible = rows.filter((r) => scope === 'all' || !r.warehouse_code || r.warehouse_code === scope)
   const total = visible.reduce((s, r) => s + (Number(r.amount) || 0), 0)
 
+  const guard = async (fn) => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      return await fn()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const submit = async (e) => {
     e.preventDefault()
-    if (readOnly) return
+    if (readOnly || submitting) return
     const amount = Number(form.amount || 0)
     if (!(amount > 0)) {
       setError('Số tiền chi phí cứng phải lớn hơn 0.')
       return
     }
     setError('')
-    const ok = await onAdd({
-      month,
-      category: form.category,
-      title: form.title.trim() || form.category,
-      warehouse_code: whValue || null,
-      amount,
-    })
+    const ok = await guard(() =>
+      onAdd({
+        month,
+        category: form.category,
+        title: form.title.trim() || form.category,
+        warehouse_code: whValue || null,
+        amount,
+      }),
+    )
     if (ok !== false) setForm((p) => ({ ...p, title: '', amount: '' }))
   }
 
@@ -59,17 +72,17 @@ export default function FixedCostsPanel({
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {templates.length > 0 && (
-            <button type="button" disabled={readOnly} className="btn btn-outline btn-sm" onClick={onApplyTemplates}>
-              ⚡ Áp mẫu hàng tháng
+            <button type="button" disabled={readOnly || submitting} className="btn btn-outline btn-sm" onClick={() => guard(onApplyTemplates)}>
+              {submitting ? 'Đang lưu...' : '⚡ Áp mẫu hàng tháng'}
             </button>
           )}
           <button
             type="button"
-            disabled={readOnly || rows.length === 0}
+            disabled={readOnly || submitting || rows.length === 0}
             className="btn btn-outline btn-sm"
-            onClick={onSaveAsTemplate}
+            onClick={() => guard(onSaveAsTemplate)}
           >
-            💾 Lưu tháng này thành mẫu
+            {submitting ? 'Đang lưu...' : '💾 Lưu tháng này thành mẫu'}
           </button>
         </div>
       </div>
@@ -118,8 +131,8 @@ export default function FixedCostsPanel({
                 value={form.amount}
                 onChange={(num) => setForm({ ...form, amount: num })}
               />
-              <button type="submit" disabled={readOnly} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
-                + Thêm phí cứng
+              <button type="submit" disabled={readOnly || submitting} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
+                {submitting ? 'Đang lưu...' : '+ Thêm phí cứng'}
               </button>
             </div>
           </div>

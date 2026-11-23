@@ -193,6 +193,9 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
             </tbody>
           </table>
         </div>
+        <div className="text-xs text-muted" style={{ marginTop: 8 }}>
+          Thu nhập khác (tiền cọc bị mất) chưa được tính ở bản này; sẽ nối khi có giao diện tạm ứng.
+        </div>
 
         <div className="kpi-grid" style={{ marginTop: 16 }}>
           <div className="kpi-card">

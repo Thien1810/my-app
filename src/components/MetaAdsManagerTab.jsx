@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { todayISO } from '../lib/formatters'
 import { useFinanceData } from '../lib/useFinanceData'
 import { calcPnl } from '../lib/pnl'
-import { toPnlProjects, buildPnlHistory, calcBySource } from '../lib/pnlHistory'
+import { toPnlProjects, buildPnlHistory, calcBySource, resolveShares } from '../lib/pnlHistory'
 import PnlPanel from './finance/PnlPanel'
 import FixedCostsPanel from './finance/FixedCostsPanel'
 import AdsLedgerPanel from './finance/AdsLedgerPanel'
@@ -101,13 +101,35 @@ function TargetUtmSection({ onCopied }) {
   )
 }
 
-export default function MetaAdsManagerTab({ projectProfitReport = [] }) {
+// Dọn dữ liệu cũ trong trình duyệt (gồm token Meta, trái quy tắc không lưu token ở client).
+const LEGACY_KEYS = [
+  'dw_meta_ads_config_v1',
+  'dw_ads_spend_logs_v1',
+  'dw_fixed_overhead_costs_v1',
+  'dw_fixed_overhead_template_v1',
+]
+
+export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomplete = false }) {
   const { isManagerOrAdmin } = useAuth()
+
+  useEffect(() => {
+    for (const k of LEGACY_KEYS) {
+      try {
+        localStorage.removeItem(k)
+      } catch {
+        // bỏ qua lỗi
+      }
+    }
+  }, [])
 
   const [selectedMonth, setSelectedMonth] = useState(() => todayISO().slice(0, 7))
   const [viewScope, setViewScope] = useState('all') // 'all' | mã kho
 
   const {
+    loading,
+    loadErrors,
+    hasLoadError,
+    locks,
     adsRows,
     fixedCosts,
     templates,
@@ -121,6 +143,11 @@ export default function MetaAdsManagerTab({ projectProfitReport = [] }) {
 
   const projects = useMemo(() => toPnlProjects(projectProfitReport), [projectProfitReport])
 
+  const effectiveShares = useMemo(
+    () => resolveShares({ locks, month: selectedMonth, shares }),
+    [locks, selectedMonth, shares],
+  )
+
   const pnl = useMemo(() => {
     const history = buildPnlHistory({ projects, month: selectedMonth, scope: viewScope })
     // Tạm ứng/forfeit (advances) sẽ nối sau khi có giao diện tạm ứng.
@@ -130,11 +157,11 @@ export default function MetaAdsManagerTab({ projectProfitReport = [] }) {
       projects,
       adsRows,
       fixedCosts,
-      shares,
+      shares: effectiveShares,
       advances: [],
       history,
     })
-  }, [projects, selectedMonth, viewScope, adsRows, fixedCosts, shares])
+  }, [projects, selectedMonth, viewScope, adsRows, fixedCosts, effectiveShares])
 
   const bySource = useMemo(
     () => calcBySource({ projects, month: selectedMonth, scope: viewScope }),
@@ -185,6 +212,7 @@ export default function MetaAdsManagerTab({ projectProfitReport = [] }) {
             {isLocked && (
               <span className="badge badge-amber">🔒 Đã khóa sổ</span>
             )}
+            {loading && <span style={{ fontSize: 13, opacity: 0.9 }}>Đang nạp...</span>}
           </div>
           <div style={{ fontSize: 13, opacity: 0.9, marginTop: 4 }}>
             Đồng bộ tự động từ Meta sẽ được bổ sung sau (token không lưu trên trình duyệt).
@@ -245,6 +273,14 @@ export default function MetaAdsManagerTab({ projectProfitReport = [] }) {
         </div>
       )}
 
+      {(hasLoadError || dataIncomplete) && (
+        <div className="alert alert-warning">
+          Số liệu chưa đầy đủ (không nạp được:{' '}
+          {[...loadErrors, ...(dataIncomplete ? ['dữ liệu dự án/kho/chi phí ở trang Báo cáo'] : [])].join(', ')}).
+          Lợi nhuận và chi phí có thể sai, đừng dùng để quyết định.
+        </div>
+      )}
+
       <PnlPanel
         pnl={pnl}
         bySource={bySource}
@@ -268,6 +304,7 @@ export default function MetaAdsManagerTab({ projectProfitReport = [] }) {
       />
 
       <AdsLedgerPanel
+        key={selectedMonth}
         month={selectedMonth}
         scope={viewScope}
         rows={adsRows}

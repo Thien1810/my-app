@@ -26,6 +26,7 @@ export function useFinanceData({ month }) {
   const [warehouses, setWarehouses] = useState([])
   const [locks, setLocks] = useState([])
   const [notice, setNotice] = useState(null)
+  const [loadErrors, setLoadErrors] = useState([])
   const [reloadKey, setReloadKey] = useState(0)
 
   const fixedCostsRef = useRef([])
@@ -57,8 +58,20 @@ export function useFinanceData({ month }) {
       setShares(share.data || [])
       setWarehouses(wh.data || [])
       setLocks(lk.data || [])
-      const firstErr = results.find((r) => r.error)
-      if (firstErr) setNotice({ type: 'error', text: `Lỗi nạp dữ liệu tài chính: ${firstErr.error.message}` })
+      const names = ['Sổ Ads', 'Chi phí cứng', 'Mẫu', 'Tỷ trọng kho', 'Danh sách kho', 'Khóa sổ']
+      const failed = results.map((r, i) => (r.error ? names[i] : null)).filter(Boolean)
+      setLoadErrors(failed)
+      if (failed.length) {
+        const firstErr = results.find((r) => r.error)
+        setNotice({
+          type: 'error',
+          source: 'load',
+          text: `Lỗi nạp dữ liệu tài chính (${failed.join(', ')}): ${firstErr.error.message}`,
+        })
+      } else {
+        // Nạp thành công: chỉ xóa thông báo lỗi do nạp cũ, giữ thông báo của thao tác.
+        setNotice((n) => (n && n.source === 'load' ? null : n))
+      }
       setLoading(false)
     }
     load()
@@ -141,6 +154,8 @@ export function useFinanceData({ month }) {
     warehouses,
     locks,
     isLocked: isMonthLockedLocal(locks, month),
+    loadErrors,
+    hasLoadError: loadErrors.length > 0,
     notice,
     setNotice,
     reload,

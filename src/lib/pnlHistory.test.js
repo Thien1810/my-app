@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toPnlProjects, buildPnlHistory, calcBySource } from './pnlHistory'
+import { toPnlProjects, buildPnlHistory, calcBySource, resolveShares } from './pnlHistory'
 
 const P = (o) => ({
   id: 'x',
@@ -92,5 +92,23 @@ describe('calcBySource', () => {
     const projects = [P({ warehouse_code: 'XL' }), P({ warehouse_code: 'VL', lead_source: 'partner' })]
     const out = calcBySource({ projects, month: '2026-03', scope: 'VL' })
     expect(out.map((r) => r.source)).toEqual(['partner'])
+  })
+})
+
+describe('resolveShares', () => {
+  const shares = [{ code: 'XL', share: 0.6 }]
+  const snap = [{ code: 'XL', share: 0.3 }, { code: 'VL', share: 0.7 }]
+  it('co snapshot thi dung snapshot', () => {
+    expect(resolveShares({ locks: [{ month: '2026-03', share_snapshot: snap }], month: '2026-03', shares })).toEqual(snap)
+  })
+  it('khong co dong khoa thi dung shares hien tai', () => {
+    expect(resolveShares({ locks: [], month: '2026-03', shares })).toEqual(shares)
+  })
+  it('snapshot rong/null thi dung shares hien tai', () => {
+    expect(resolveShares({ locks: [{ month: '2026-03', share_snapshot: [] }], month: '2026-03', shares })).toEqual(shares)
+    expect(resolveShares({ locks: [{ month: '2026-03', share_snapshot: null }], month: '2026-03', shares })).toEqual(shares)
+  })
+  it('thang khac thi bo qua snapshot', () => {
+    expect(resolveShares({ locks: [{ month: '2026-02', share_snapshot: snap }], month: '2026-03', shares })).toEqual(shares)
   })
 })
