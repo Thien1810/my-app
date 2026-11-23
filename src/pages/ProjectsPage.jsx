@@ -12,7 +12,8 @@ import {
 } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
-import CurrencyInput from '../components/CurrencyInput'
+import ContractValueFields from '../components/ContractValueFields'
+import { saveProjectFinance } from '../lib/financeApi'
 import { calcProjectFbReminder, stripFbMetaFromNote } from '../lib/watermarkHelper'
 import {
   WAREHOUSE_HUBS,
@@ -32,7 +33,9 @@ const INITIAL_PROJECT_FORM = {
   end_date: '',
   lead_id: '',
   status: 'quote',
-  contract_value: 0,
+  contract_value: 0, // doanh thu = doanh số - ưu đãi
+  gross_sales: 0,
+  discount: 0,
   member_ids: [],
   lead_source: 'meta_ads',
   warehouse_hub: 'xuan_loc',
@@ -45,6 +48,8 @@ export default function ProjectsPage() {
   const [customers, setCustomers] = useState([])
   const [profiles, setProfiles] = useState([])
   const [financesMap, setFinancesMap] = useState(new Map())
+  const [discountsMap, setDiscountsMap] = useState(new Map())
+  const [financeValid, setFinanceValid] = useState(true)
   const [membersMap, setMembersMap] = useState(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -88,12 +93,19 @@ export default function ProjectsPage() {
       setMembersMap(mMap)
 
       if (canEditCatalog) {
-        const finRes = await supabase.from('project_finance').select('*')
+        // Chỉ Admin/Manager mới đọc cột ưu đãi; Thủ kho chỉ lấy doanh thu
+        const finRes = await supabase
+          .from('project_finance')
+          .select(isManagerOrAdmin ? 'project_id, contract_value, discount' : 'project_id, contract_value')
+        if (finRes.error) throw finRes.error
         const fMap = new Map()
+        const dMap = new Map()
         for (const f of finRes.data || []) {
           fMap.set(Number(f.project_id), Number(f.contract_value || 0))
+          if (isManagerOrAdmin) dMap.set(Number(f.project_id), Number(f.discount || 0))
         }
         setFinancesMap(fMap)
+        setDiscountsMap(dMap)
       }
     } catch (err) {
       setError(err.message || 'Không thể tải danh sách dự án')
@@ -104,7 +116,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     loadData()
-  }, [canEditCatalog])
+  }, [canEditCatalog, isManagerOrAdmin])
 
   const filteredProjects = useMemo(() => {
     return projects.filter((p) => {
@@ -125,6 +137,7 @@ export default function ProjectsPage() {
 
   const openCreateModal = () => {
     setEditingProject(null)
+    setFinanceValid(true)
     const today = todayISO()
     setForm({
       ...INITIAL_PROJECT_FORM,
@@ -136,6 +149,7 @@ export default function ProjectsPage() {
 
   const openEditModal = (p) => {
     setEditingProject(p)
+    setFinanceValid(true)
     const attr = extractProjectAttribution(p)
     setForm({
       code: p.code || '',
@@ -147,6 +161,8 @@ export default function ProjectsPage() {
       lead_id: p.lead_id || '',
       status: p.status || 'quote',
       contract_value: financesMap.get(p.id) ?? 0,
+      discount: discountsMap.get(p.id) ?? 0,
+      gross_sales: (financesMap.get(p.id) ?? 0) + (discountsMap.get(p.id) ?? 0),
       member_ids: membersMap.get(p.id) || [],
       lead_source: attr.source || 'meta_ads',
       warehouse_hub: attr.hub || 'xuan_loc',
@@ -176,6 +192,10 @@ export default function ProjectsPage() {
     e.preventDefault()
     if (duplicateProject) {
       setError(`Mã dự án "${form.code}" đã trùng với dự án "${duplicateProject.name}". Vui lòng bấm "⚡ Sinh mã" để lấy mã kế tiếp.`)
+      return
+    }
+    if (isManagerOrAdmin && !financeValid) {
+      setError('Ưu đãi không hợp lệ (âm hoặc lớn hơn doanh số). Vui lòng sửa trước khi lưu.')
       return
     }
     setSaving(true)
@@ -240,15 +260,19 @@ export default function ProjectsPage() {
         projectId = data.id
       }
 
-      // Lưu tài chính dự án (Admin/Manager/Storekeeper)
-      if (canEditCatalog && projectId) {
-        await supabase.from('project_finance').upsert(
-          {
-            project_id: projectId,
-            contract_value: Number(form.contract_value || 0),
-          },
-          { onConflict: 'project_id' }
-        )
+      // Lưu tài chính dự án (chỉ Admin/Manager): contract_value = doanh thu, discount = ưu đãi
+      if (isManagerOrAdmin && projectId) {
+        const gross = Number(form.gross_sales || 0)
+        const disc = Number(form.discount || 0)
+        const { error: finErr } = await saveProjectFinance(projectId, {
+          contractValue: gross - disc,
+          discount: disc,
+        })
+        if (finErr) {
+          throw new Error(
+            `Dự án đã lưu nhưng chưa lưu được doanh số/ưu đãi: ${finErr.message || 'lỗi không xác định'}. Hãy mở lại dự án để sửa và lưu lần nữa.`
+          )
+        }
       }
 
       // Cập nhật thành viên tham gia dự án
@@ -654,17 +678,28 @@ export default function ProjectsPage() {
                   </select>
                 </div>
 
-                {canEditCatalog && (
-                  <div className="form-group">
-                    <label>Giá trị hợp đồng (₫)</label>
-                    <CurrencyInput
-                      value={form.contract_value}
-                      onChange={(num) => setForm({ ...form, contract_value: num })}
-                      placeholder="VD: 15.000.000"
-                    />
-                  </div>
-                )}
               </div>
+
+              {canEditCatalog && (
+                <div className="form-grid-2">
+                  <ContractValueFields
+                    key={editingProject?.id ?? 'new'}
+                    grossSales={form.gross_sales}
+                    discount={form.discount}
+                    canEdit={isManagerOrAdmin}
+                    canSeeDiscount={isManagerOrAdmin}
+                    onValidChange={setFinanceValid}
+                    onChange={({ grossSales, discount, revenue }) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        gross_sales: grossSales,
+                        discount,
+                        contract_value: revenue,
+                      }))
+                    }
+                  />
+                </div>
+              )}
 
               {isManagerOrAdmin && (
                 <div className="form-grid-2">

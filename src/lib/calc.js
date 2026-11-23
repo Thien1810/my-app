@@ -135,6 +135,7 @@ export function calcProjectFinancialSummary({
   itemStockMap,
   otherCosts = [],
   contractValue = 0,
+  discount = 0,
 }) {
   const itemStats = calcProjectItemStats(movements, itemStockMap)
 
@@ -187,9 +188,16 @@ export function calcProjectFinancialSummary({
   const totalCost = consumableCost + depreciationCost + damagedLostCost + otherCostTotal
   const contract = Number(contractValue || 0)
   const profit = contract - totalCost
+  // contractValue = doanh thu (khách thực trả); ưu đãi âm/không hợp lệ coi là 0
+  const disc = Math.max(0, Number(discount) || 0)
+  const grossSales = contract + disc
+  const marginPct = contract > 0 ? (profit / contract) * 100 : 0
 
   return {
     contractValue: contract,
+    discount: disc,
+    grossSales,
+    marginPct,
     consumableCost,
     depreciationCost,
     damagedLostCost,

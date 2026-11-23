@@ -214,17 +214,38 @@ describe('calcProjectFinancialSummary — giá trị biên', () => {
 })
 
 describe('calcProjectFinancialSummary — ưu đãi / giảm giá', () => {
-  // Ưu đãi chỉ nằm ở ProjectQuoteTab (lưu localStorage) và quoteExporter; calc.js không nhận tham số này.
-  it('cần xác nhận: calc.js không trừ ưu đãi, lợi nhuận tính trên giá trị hợp đồng gốc; tham số discount truyền vào bị bỏ qua', () => {
+  // contractValue = doanh thu (đã trừ ưu đãi); doanh số = contractValue + discount.
+  it('doanh thu 9.000.000 + ưu đãi 1.000.000: doanh số 10.000.000, lãi tính trên doanh thu, biên lợi nhuận đúng', () => {
     const r = calcProjectFinancialSummary({
-      movements: [],
-      itemStockMap: new Map(),
-      contractValue: 10000000,
+      movements: [{ item_id: 1, type: 'issue', qty: 3 }],
+      itemStockMap: makeStockMap([HOA]),
+      contractValue: 9000000,
       discount: 1000000,
     })
-    expect(r.contractValue).toBe(10000000)
-    expect(r.profit).toBe(10000000)
-    expect(r).not.toHaveProperty('discount')
+    expect(r.grossSales).toBe(10000000)
+    expect(r.contractValue).toBe(9000000)
+    expect(r.discount).toBe(1000000)
+    expect(r.profit).toBe(9000000 - r.totalCost)
+    expect(r.marginPct).toBeCloseTo(((9000000 - r.totalCost) / 9000000) * 100, 6)
+  })
+
+  it('ưu đãi âm hoặc thiếu: coi là 0, doanh số = doanh thu', () => {
+    const base = { movements: [], itemStockMap: new Map(), contractValue: 5000000 }
+    const neg = calcProjectFinancialSummary({ ...base, discount: -200000 })
+    expect(neg.discount).toBe(0)
+    expect(neg.grossSales).toBe(5000000)
+    const missing = calcProjectFinancialSummary(base)
+    expect(missing.discount).toBe(0)
+    expect(missing.grossSales).toBe(5000000)
+  })
+
+  it('doanh thu = 0: biên lợi nhuận = 0', () => {
+    const r = calcProjectFinancialSummary({
+      movements: [{ item_id: 1, type: 'issue', qty: 3 }],
+      itemStockMap: makeStockMap([HOA]),
+      contractValue: 0,
+    })
+    expect(r.marginPct).toBe(0)
   })
 })
 
