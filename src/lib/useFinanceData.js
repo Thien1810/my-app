@@ -1,0 +1,149 @@
+// Hook nạp và ghi dữ liệu tài chính theo tháng (Supabase qua financeApi). Không dùng localStorage.
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  listAdsSpend,
+  createAdsSpend,
+  deleteAdsSpend,
+  listFixedCosts,
+  createFixedCost,
+  deleteFixedCost,
+  listFixedCostTemplates,
+  createFixedCostTemplate,
+  deleteFixedCostTemplate,
+  applyFixedCostTemplates,
+  listWarehouseShare,
+  listWarehouses,
+  listMonthLocks,
+  isMonthLockedLocal,
+} from './financeApi'
+
+export function useFinanceData({ month }) {
+  const [loading, setLoading] = useState(true)
+  const [adsRows, setAdsRows] = useState([])
+  const [fixedCosts, setFixedCosts] = useState([])
+  const [templates, setTemplates] = useState([])
+  const [shares, setShares] = useState([])
+  const [warehouses, setWarehouses] = useState([])
+  const [locks, setLocks] = useState([])
+  const [notice, setNotice] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  const fixedCostsRef = useRef([])
+  const templatesRef = useRef([])
+  const monthRef = useRef(month)
+  useEffect(() => {
+    monthRef.current = month
+    fixedCostsRef.current = fixedCosts
+    templatesRef.current = templates
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      const results = await Promise.all([
+        listAdsSpend({ month }),
+        listFixedCosts({ month }),
+        listFixedCostTemplates(),
+        listWarehouseShare(),
+        listWarehouses(),
+        listMonthLocks(),
+      ])
+      if (cancelled) return // tháng đã đổi hoặc unmount: bỏ kết quả cũ
+      const [ads, fixed, tpl, share, wh, lk] = results
+      setAdsRows(ads.data || [])
+      setFixedCosts(fixed.data || [])
+      setTemplates(tpl.data || [])
+      setShares(share.data || [])
+      setWarehouses(wh.data || [])
+      setLocks(lk.data || [])
+      const firstErr = results.find((r) => r.error)
+      if (firstErr) setNotice({ type: 'error', text: `Lỗi nạp dữ liệu tài chính: ${firstErr.error.message}` })
+      setLoading(false)
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [month, reloadKey])
+
+  const reload = useCallback(() => setReloadKey((k) => k + 1), [])
+
+  // Chạy một lệnh ghi: lỗi -> notice lỗi nguyên văn; thành công -> notice + nạp lại.
+  const run = useCallback(
+    async (fn, successText) => {
+      const { error } = await fn()
+      if (error) {
+        setNotice({ type: 'error', text: error.message })
+        return false
+      }
+      setNotice({ type: 'success', text: successText })
+      reload()
+      return true
+    },
+    [reload],
+  )
+
+  const actions = {
+    addAdsRow: (row) => run(() => createAdsSpend(row), 'Đã ghi dòng chi phí Ads vào sổ.'),
+    removeAdsRow: (id) => run(() => deleteAdsSpend(id), 'Đã xóa dòng chi phí Ads.'),
+    addFixedCost: (row) => run(() => createFixedCost(row), 'Đã ghi khoản chi phí cứng.'),
+    removeFixedCost: (id) => run(() => deleteFixedCost(id), 'Đã xóa khoản chi phí cứng.'),
+    applyTemplates: () =>
+      run(() => applyFixedCostTemplates(monthRef.current), `Đã áp mẫu chi phí cứng vào tháng ${monthRef.current}.`),
+    saveMonthAsTemplate: async () => {
+      const current = fixedCostsRef.current
+      if (!current.length) {
+        setNotice({ type: 'error', text: `Tháng ${monthRef.current} chưa có chi phí cứng nào để lưu làm mẫu.` })
+        return false
+      }
+      const errors = []
+      for (const t of templatesRef.current) {
+        const { error } = await deleteFixedCostTemplate(t.id)
+        if (error) errors.push(error.message)
+      }
+      if (errors.length) {
+        // Không tạo mẫu mới khi chưa xóa hết mẫu cũ, tránh nhân đôi.
+        setNotice({ type: 'error', text: `Không xóa được mẫu cũ: ${errors[0]}` })
+        reload()
+        return false
+      }
+      let idx = 0
+      for (const c of current) {
+        const { error } = await createFixedCostTemplate({
+          category: c.category,
+          title: c.title,
+          warehouse_code: c.warehouse_code || null,
+          amount: c.amount,
+          sort_order: idx++,
+        })
+        if (error) errors.push(error.message)
+      }
+      reload()
+      if (errors.length) {
+        setNotice({ type: 'error', text: `Lưu mẫu có ${errors.length} dòng lỗi: ${errors[0]}` })
+        return false
+      }
+      setNotice({
+        type: 'success',
+        text: `Đã lưu ${current.length} khoản của tháng ${monthRef.current} thành mẫu hàng tháng.`,
+      })
+      return true
+    },
+  }
+
+  return {
+    loading,
+    adsRows,
+    fixedCosts,
+    templates,
+    shares,
+    warehouses,
+    locks,
+    isLocked: isMonthLockedLocal(locks, month),
+    notice,
+    setNotice,
+    reload,
+    actions,
+  }
+}
