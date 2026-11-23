@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import {
@@ -13,10 +13,13 @@ import {
 import { calcProjectFinancialSummary } from '../lib/calc'
 import { exportToExcel, exportAllRawData } from '../lib/exportExcel'
 import { KindBadge, ProjectStatusBadge } from '../components/Badges'
+import MetaAdsManagerTab from '../components/MetaAdsManagerTab'
 
 export default function ReportsPage() {
   const { role, isManagerOrAdmin } = useAuth()
-  const [activeTab, setActiveTab] = useState('stock')
+  const [searchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState(requestedTab || 'stock')
   const [loading, setLoading] = useState(true)
   const [exportingRaw, setExportingRaw] = useState(false)
   const [error, setError] = useState('')
@@ -399,6 +402,7 @@ export default function ReportsPage() {
         'Khấu hao tái sử dụng (₫)': Math.round(r.depreciationCost),
         'Hỏng & Mất (₫)': Math.round(r.damagedLostCost),
         'Chi phí khác (₫)': Math.round(r.otherCostTotal),
+        'Trong đó Chi phí Ads (₫)': Math.round(r.adsCostTotal || 0),
         'Tổng chi phí (₫)': Math.round(r.totalCost),
         'Lợi nhuận (₫)': Math.round(r.profit),
         'Tỷ suất LN (%)': Number(r.margin.toFixed(1)),
@@ -503,20 +507,29 @@ export default function ReportsPage() {
           💔 3. Tỷ lệ hư hỏng / mất
         </button>
         {isManagerOrAdmin && (
-          <button
-            type="button"
-            className={`tab-btn ${activeTab === 'profit' ? 'active' : ''}`}
-            onClick={() => setActiveTab('profit')}
-          >
-            💰 4. Lãi / Lỗ theo dự án
-          </button>
+          <>
+            <button
+              type="button"
+              className={`tab-btn ${activeTab === 'profit' ? 'active' : ''}`}
+              onClick={() => setActiveTab('profit')}
+            >
+              💰 4. Lãi gộp từng đám (Chi phí xoay vòng)
+            </button>
+            <button
+              type="button"
+              className={`tab-btn ${activeTab === 'pnl' ? 'active' : ''}`}
+              onClick={() => setActiveTab('pnl')}
+            >
+              🏛️ 5. P&L Ròng, Chi phí cứng & Ads (Meta API)
+            </button>
+          </>
         )}
         <button
           type="button"
           className={`tab-btn ${activeTab === 'most_used' ? 'active' : ''}`}
           onClick={() => setActiveTab('most_used')}
         >
-          🏆 5. Vật tư dùng nhiều nhất
+          🏆 6. Vật tư dùng nhiều nhất
         </button>
         {isManagerOrAdmin && (
           <button
@@ -524,7 +537,7 @@ export default function ReportsPage() {
             className={`tab-btn ${activeTab === 'payback' ? 'active' : ''}`}
             onClick={() => setActiveTab('payback')}
           >
-            🔄 6. Hoàn vốn đồ tái sử dụng
+            🔄 7. Hoàn vốn đồ tái sử dụng
           </button>
         )}
         <button
@@ -532,7 +545,7 @@ export default function ReportsPage() {
           className={`tab-btn ${activeTab === 'forecast' ? 'active' : ''}`}
           onClick={() => setActiveTab('forecast')}
         >
-          🔮 7. Dự báo & Cảnh báo thiếu
+          🔮 8. Dự báo & Cảnh báo thiếu
         </button>
       </div>
 
@@ -766,7 +779,14 @@ export default function ReportsPage() {
                           <td className="text-right text-red">
                             {formatCurrency(r.damagedLostCost)}
                           </td>
-                          <td className="text-right">{formatCurrency(r.otherCostTotal)}</td>
+                          <td className="text-right">
+                            <div>{formatCurrency(r.otherCostTotal)}</div>
+                            {r.adsCostTotal > 0 && (
+                              <div className="text-xs text-amber">
+                                📢 Ads: {formatCurrency(r.adsCostTotal)}
+                              </div>
+                            )}
+                          </td>
                           <td
                             className={`text-right font-bold ${
                               r.profit >= 0 ? 'text-green' : 'text-red'
@@ -782,6 +802,11 @@ export default function ReportsPage() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* 4B. BÁO CÁO P&L RÒNG, CHI PHÍ CỨNG & ADS (Admin/Manager) */}
+          {activeTab === 'pnl' && isManagerOrAdmin && (
+            <MetaAdsManagerTab projectProfitReport={projectProfitReport} />
           )}
 
           {/* 5. VẬT TƯ DÙNG NHIỀU NHẤT */}

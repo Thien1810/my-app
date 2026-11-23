@@ -26,6 +26,11 @@ import {
 } from '../lib/comfyUiClient'
 import AiLoadingBanner from '../components/AiLoadingBanner'
 import GiaTienAiStudioModal from '../components/GiaTienAiStudioModal'
+import {
+  parseLeadAdsSource,
+  attachProjectAttributionToNote,
+  inferHubFromLocation,
+} from '../lib/metaAdsClient'
 
 const LEAD_STATUS_META = {
   new: { label: 'Mới đăng ký', cls: 'badge-amber' },
@@ -321,6 +326,22 @@ export default function WebsiteAdminPage() {
       if (lead.note) noteParts.push(`Ghi chú khách: ${lead.note}`)
       noteParts.push('Nguồn: Website dangwed.com')
 
+      const adsSrcStr = (parseLeadAdsSource(lead.note) || '').toLowerCase()
+      let detectedSource = 'google_seo'
+      if (adsSrcStr.includes('tiktok')) detectedSource = 'tiktok_ads'
+      else if (adsSrcStr) detectedSource = 'meta_ads'
+
+      const detectedHub = adsSrcStr.includes('vinhloc')
+        ? 'vinh_loc'
+        : adsSrcStr.includes('xuanloc')
+        ? 'xuan_loc'
+        : inferHubFromLocation(lead.location || '')
+
+      const finalNote = attachProjectAttributionToNote(noteParts.join('\n'), {
+        source: detectedSource,
+        hub: detectedHub,
+      })
+
       const projectName = `${lead.service_interest || 'Tiệc cưới'} - ${lead.customer_name}`
 
       const { data: newProject, error: projErr } = await supabase
@@ -334,7 +355,7 @@ export default function WebsiteAdminPage() {
           end_date: lead.event_date || null,
           status: 'quote',
           contract_value: 0,
-          note: noteParts.join('\n'),
+          note: finalNote,
         })
         .select('id')
         .single()
@@ -931,6 +952,11 @@ export default function WebsiteAdminPage() {
           </p>
         </div>
         <div className="header-actions">
+          {isManagerOrAdmin && (
+            <Link to="/bao-cao?tab=pnl" className="btn btn-outline">
+              🏛️ Báo cáo P&L, Chi phí cứng & Ads
+            </Link>
+          )}
           <Link to="/mau-set" className="btn btn-outline">
             ✨ Quản lý Mẫu Set
           </Link>
@@ -1079,6 +1105,11 @@ export default function WebsiteAdminPage() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <strong style={{ fontSize: 16 }}>{lead.customer_name}</strong>
                               <span className={`badge ${meta.cls}`}>{meta.label}</span>
+                              {isManagerOrAdmin && parseLeadAdsSource(lead.note) && (
+                                <span className="badge badge-blue">
+                                  📢 Ads: {parseLeadAdsSource(lead.note)}
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-muted" style={{ marginTop: 4 }}>
                               Gửi lúc: {formatDate(lead.created_at)}

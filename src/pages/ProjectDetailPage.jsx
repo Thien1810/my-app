@@ -1298,14 +1298,42 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* TAB 4: CHI PHÍ KHÁC (Admin/Manager) */}
+      {/* TAB 4: CHI PHÍ KHÁC XOAY VÒNG TẠI ĐÁM (Admin/Manager) */}
       {activeTab === 'costs' && isManagerOrAdmin && (
         <div className="card">
           <div className="card-header">
-            <h3>💸 Chi phí khác của dự án (Nhân công, vận chuyển, thuê ngoài...)</h3>
+            <div>
+              <h3>💸 Chi phí xoay vòng trực tiếp tại dự án (Nhân công, vận chuyển, hoa tươi...)</h3>
+              <p className="text-xs text-muted">
+                🔒 Chỉ hiển thị cho Quản lý & Quản trị. Lưu ý: Chi phí cứng cố định hàng tháng & Chi
+                phí Ads được hạch toán riêng tại Trung tâm P&L để không trùng luồng.
+              </p>
+            </div>
+            <Link to="/bao-cao?tab=pnl" className="btn btn-outline btn-sm">
+              🏛️ Mở P&L Chi phí cứng & Ads
+            </Link>
           </div>
 
           <form onSubmit={handleAddCost} className="sub-card" style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              <span className="text-xs text-muted">Chọn nhanh khoản mục xoay vòng tại đám:</span>
+              {['Nhân công', 'Vận chuyển', 'Hoa tươi', 'Thuê ngoài / Phụ kiện'].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{
+                    padding: '3px 9px',
+                    fontSize: 12,
+                    borderColor: costKind === preset ? '#163828' : undefined,
+                    fontWeight: costKind === preset ? 700 : 500,
+                  }}
+                  onClick={() => setCostKind(preset)}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
             <div className="form-grid-4">
               <div className="form-group">
                 <label>Khoản mục chi phí *</label>
@@ -1445,9 +1473,9 @@ export default function ProjectDetailPage() {
             </div>
 
             <div className="kpi-card">
-              <div className="kpi-label">Chi phí khác</div>
+              <div className="kpi-label">Chi phí xoay vòng khác</div>
               <div className="kpi-value">{formatCurrency(financialSummary.otherCostTotal)}</div>
-              <div className="kpi-sub">{otherCosts.length} khoản nhân công/vận chuyển</div>
+              <div className="kpi-sub">{otherCosts.length} khoản nhân công/vận chuyển/hoa</div>
             </div>
 
             <div
@@ -1455,7 +1483,7 @@ export default function ProjectDetailPage() {
                 financialSummary.profit >= 0 ? 'kpi-success' : 'kpi-danger'
               }`}
             >
-              <div className="kpi-label">Lợi nhuận ròng</div>
+              <div className="kpi-label">Lãi gộp thi công dự án</div>
               <div
                 className={`kpi-value ${
                   financialSummary.profit >= 0 ? 'text-green' : 'text-red'

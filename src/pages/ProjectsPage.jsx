@@ -14,6 +14,14 @@ import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
 import CurrencyInput from '../components/CurrencyInput'
 import { calcProjectFbReminder, stripFbMetaFromNote } from '../lib/watermarkHelper'
+import {
+  WAREHOUSE_HUBS,
+  PROJECT_LEAD_SOURCES,
+  extractProjectAttribution,
+  attachProjectAttributionToNote,
+  stripProjectAttributionFromNote,
+  inferHubFromLocation,
+} from '../lib/metaAdsClient'
 
 const INITIAL_PROJECT_FORM = {
   code: '',
@@ -26,6 +34,8 @@ const INITIAL_PROJECT_FORM = {
   status: 'quote',
   contract_value: 0,
   member_ids: [],
+  lead_source: 'meta_ads',
+  warehouse_hub: 'xuan_loc',
   note: '',
 }
 
@@ -126,6 +136,7 @@ export default function ProjectsPage() {
 
   const openEditModal = (p) => {
     setEditingProject(p)
+    const attr = extractProjectAttribution(p)
     setForm({
       code: p.code || '',
       name: p.name || '',
@@ -137,7 +148,9 @@ export default function ProjectsPage() {
       status: p.status || 'quote',
       contract_value: financesMap.get(p.id) ?? 0,
       member_ids: membersMap.get(p.id) || [],
-      note: stripFbMetaFromNote(p.note || ''),
+      lead_source: attr.source || 'meta_ads',
+      warehouse_hub: attr.hub || 'xuan_loc',
+      note: stripProjectAttributionFromNote(stripFbMetaFromNote(p.note || '')),
     })
     setModalOpen(true)
   }
@@ -193,6 +206,11 @@ export default function ProjectsPage() {
         }
       }
 
+      const finalNoteWithAttr = attachProjectAttributionToNote(form.note.trim(), {
+        source: form.lead_source || 'meta_ads',
+        hub: form.warehouse_hub || inferHubFromLocation(form.location),
+      })
+
       const payload = {
         code: finalCode,
         name: form.name.trim(),
@@ -202,7 +220,7 @@ export default function ProjectsPage() {
         end_date: form.end_date || null,
         lead_id: form.lead_id || null,
         status: form.status,
-        note: form.note.trim() || null,
+        note: finalNoteWithAttr || null,
       }
 
       let projectId = editingProject?.id
@@ -379,6 +397,23 @@ export default function ProjectsPage() {
                       <Link to={`/du-an/${p.id}`} className="table-link font-bold">
                         {p.name}
                       </Link>
+                      {isManagerOrAdmin && (() => {
+                        const attr = extractProjectAttribution(p)
+                        return (
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+                            <span className="badge badge-gray" style={{ fontSize: '0.7rem' }}>
+                              📍 {attr.hubShortLabel}
+                            </span>
+                            <span
+                              className={`badge ${attr.isPaidAds ? 'badge-blue' : 'badge-gray'}`}
+                              style={{ fontSize: '0.7rem' }}
+                            >
+                              {attr.isPaidAds ? '📢 ' : ''}
+                              {attr.sourceLabel}
+                            </span>
+                          </div>
+                        )
+                      })()}
                       {(() => {
                         const fbRem = calcProjectFbReminder(p)
                         if (fbRem.fbData?.status === 'posted') {
@@ -630,6 +665,37 @@ export default function ProjectsPage() {
                   </div>
                 )}
               </div>
+
+              {isManagerOrAdmin && (
+                <div className="form-grid-2">
+                  <div className="form-group">
+                    <label>📍 Đầu kho phụ trách (Hạch toán P&L theo kho)</label>
+                    <select
+                      value={form.warehouse_hub}
+                      onChange={(e) => setForm({ ...form, warehouse_hub: e.target.value })}
+                    >
+                      {WAREHOUSE_HUBS.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>📢 Nguồn khách hàng (Tự động đo CAC & ROAS Ads)</label>
+                    <select
+                      value={form.lead_source}
+                      onChange={(e) => setForm({ ...form, lead_source: e.target.value })}
+                    >
+                      {PROJECT_LEAD_SOURCES.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Thành viên tham gia thi công (Nhân viên được phân công sẽ thấy dự án này)</label>

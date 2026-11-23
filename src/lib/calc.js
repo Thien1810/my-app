@@ -184,6 +184,17 @@ export function calcProjectFinancialSummary({
     0
   )
 
+  const adsCostTotal = (otherCosts || []).reduce((sum, c) => {
+    const kind = String(c?.kind || '').toLowerCase()
+    const note = String(c?.note || '').toLowerCase()
+    const isAds =
+      kind.includes('ads') ||
+      kind.includes('quảng cáo') ||
+      kind.includes('marketing') ||
+      note.includes('[ads-sync:')
+    return isAds ? sum + Number(c.amount || 0) : sum
+  }, 0)
+
   const totalCost = consumableCost + depreciationCost + damagedLostCost + otherCostTotal
   const contract = Number(contractValue || 0)
   const profit = contract - totalCost
@@ -194,6 +205,7 @@ export function calcProjectFinancialSummary({
     depreciationCost,
     damagedLostCost,
     otherCostTotal,
+    adsCostTotal,
     totalCost,
     profit,
     itemBreakdown,
