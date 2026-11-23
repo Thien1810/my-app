@@ -317,7 +317,7 @@ describe('calcProjectFinancialSummary — chi phí vật tư', () => {
 describe('calcProjectFinancialSummary — chi phí khác và Ads', () => {
   const base = { movements: [], itemStockMap: new Map() }
 
-  it('nhận biết khoản Ads theo kind "quảng cáo", "marketing" hoặc ghi chú [ADS-SYNC:', () => {
+  it('calc không còn phân loại Ads: không có adsCostTotal, mọi dòng chi phí khác (kể cả kind "Ads", "Marketing", ghi chú [ADS-SYNC:) đều nằm trong otherCostTotal', () => {
     const r = calcProjectFinancialSummary({
       ...base,
       otherCosts: [
@@ -327,11 +327,11 @@ describe('calcProjectFinancialSummary — chi phí khác và Ads', () => {
         { kind: 'Nhân công', amount: 400000 },
       ],
     })
-    expect(r.adsCostTotal).toBe(600000)
+    expect(r).not.toHaveProperty('adsCostTotal')
     expect(r.otherCostTotal).toBe(1000000)
   })
 
-  it('hành vi hiện tại, đang sai: adsCostTotal vẫn nằm trong otherCostTotal và totalCost, nên lợi nhuận dự án đã trừ Ads; tab P&L (MetaAdsManagerTab) lại trừ chi phí Ads từ sổ Ads thêm lần nữa', () => {
+  it('chi phí khác có kind "Ads" vẫn cộng đủ vào otherCostTotal và totalCost (Ads chỉ ghi ở sổ Ads, DB chặn bằng trigger; calc không phân loại)', () => {
     const r = calcProjectFinancialSummary({
       ...base,
       otherCosts: [
@@ -340,26 +340,10 @@ describe('calcProjectFinancialSummary — chi phí khác và Ads', () => {
       ],
       contractValue: 5000000,
     })
-    expect(r.adsCostTotal).toBe(1000000)
+    expect(r).not.toHaveProperty('adsCostTotal')
     expect(r.otherCostTotal).toBe(1500000)
     expect(r.totalCost).toBe(1500000)
     expect(r.profit).toBe(3500000)
-  })
-
-  it('hành vi hiện tại, đang sai: nhận biết Ads bằng kind.includes("ads") nên khớp nhầm cả khoản không phải quảng cáo (ví dụ "Thuê pads/loa")', () => {
-    const r = calcProjectFinancialSummary({
-      ...base,
-      otherCosts: [{ kind: 'Thuê pads/loa', amount: 250000 }],
-    })
-    expect(r.adsCostTotal).toBe(250000)
-  })
-
-  it('hành vi hiện tại, đang sai: kind viết không dấu "quang cao" thì không được nhận là Ads', () => {
-    const r = calcProjectFinancialSummary({
-      ...base,
-      otherCosts: [{ kind: 'Chi quang cao', amount: 300000 }],
-    })
-    expect(r.adsCostTotal).toBe(0)
   })
 
   it('amount dạng chuỗi hoặc thiếu thì được ép kiểu số / coi là 0', () => {

@@ -402,7 +402,6 @@ export default function ReportsPage() {
         'Khấu hao tái sử dụng (₫)': Math.round(r.depreciationCost),
         'Hỏng & Mất (₫)': Math.round(r.damagedLostCost),
         'Chi phí khác (₫)': Math.round(r.otherCostTotal),
-        'Trong đó Chi phí Ads (₫)': Math.round(r.adsCostTotal || 0),
         'Tổng chi phí (₫)': Math.round(r.totalCost),
         'Lợi nhuận (₫)': Math.round(r.profit),
         'Tỷ suất LN (%)': Number(r.margin.toFixed(1)),
@@ -781,11 +780,6 @@ export default function ReportsPage() {
                           </td>
                           <td className="text-right">
                             <div>{formatCurrency(r.otherCostTotal)}</div>
-                            {r.adsCostTotal > 0 && (
-                              <div className="text-xs text-amber">
-                                📢 Ads: {formatCurrency(r.adsCostTotal)}
-                              </div>
-                            )}
                           </td>
                           <td
                             className={`text-right font-bold ${
