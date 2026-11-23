@@ -143,14 +143,30 @@ my-app/
 ## 6. Quy trình cập nhật & Deploy dành cho AI Agent tiếp theo
 
 Mỗi khi chỉnh sửa hoặc thêm tính năng mới theo yêu cầu của anh Thiện:
-1. Chạy kiểm tra build tại thư mục `d:\0. AI\1.Vibe code app\my-app`:
+1. Làm việc trên nhánh làm việc (hiện là `claude-migration`), **không làm trực tiếp trên `main`**.
+2. Chạy kiểm tra tại thư mục `d:\0. AI\1.Vibe code app\my-app`:
    ```powershell
-   cd "d:\0. AI\1.Vibe code app\my-app"
+   npm test
+   npm run lint
    npm run build
    ```
-2. Đẩy lên GitHub để Vercel tự động cập nhật bản online (`https://my-app-gold-six-81.vercel.app/`):
+3. Commit trên nhánh làm việc, message ngắn tiếng Việt không dấu:
    ```powershell
-   git add .
+   git add <file da sua>
    git commit -m "Mo ta thay doi"
-   git push origin main
    ```
+4. **Không tự `git push`.** Push lên `main` làm Vercel tự deploy lên domain chính thức `app.dangwed.com`. Chỉ push, merge vào `main` hoặc deploy khi anh Thiện yêu cầu rõ.
+5. **Không chạy SQL lên Supabase.** Thay đổi schema thêm vào file trong `supabase/` và báo anh Thiện tự chạy (nên trên Supabase Branch hoặc sau khi backup).
+
+---
+
+## 7. Phần mở rộng đã có hoặc đang triển khai (đọc thêm trước khi sửa)
+
+Phần này **không** nằm trong mô tả ở mục 4, nhưng đã có trong code hoặc trong tài liệu thương hiệu:
+
+- **Website thương hiệu `dangwed.com`:** repo riêng `dangwed-site` (Next.js), nằm cùng workspace. Gồm trang chủ, `/cau-chuyen`, `/thu-vien`, `/cam-nang`. Khách để lại thông tin qua form, lưu vào bảng `site_leads` (`supabase/website_schema.sql`).
+- **Quản trị website trong app:** `src/pages/WebsiteAdminPage.jsx` (rất lớn, khoảng 2.800 dòng, **không đọc cả file**, chỉ tìm rồi đọc đúng đoạn). Gồm CMS bài viết, thư viện ảnh, lead khách hàng, AI SEO (`aiSeoWriter.js`, `seoPostHelper.js`) và studio ảnh AI cục bộ (`giaTienComfy.js`, `comfyUiClient.js`).
+- **Tài chính quản trị (P&L, sổ Ads, chi phí cứng, tạm ứng, chuyển kho, khóa sổ tháng):** quy tắc đã chốt nằm ở `..\dangwed-brand\FINANCE_SPEC.md`, danh sách việc code ở `..\dangwed-brand\CODE_HANDOFF.md`, SQL ở `supabase/finance_schema.sql`. **File SQL này chưa được chạy trên Supabase.** Phần giao diện hiện nằm ở `src/components/MetaAdsManagerTab.jsx`, `src/lib/metaAdsClient.js` và đang được sửa theo `CODE_HANDOFF.md`.
+- **Bộ tài liệu thương hiệu và Ads:** thư mục `..\dangwed-brand\` (`BRAND_BIBLE.md`, `MARKETING_ROADMAP.md`, `ADS_PLAN_MONTH_1.md`, `ADS_TRACKER.md`).
+- **Test tự động:** `src/lib/calc.test.js` (Vitest, chạy bằng `npm test`). Test gắn nhãn "hành vi hiện tại, đang sai" hoặc `it.todo` ghi nhận lỗi tính tiền đã biết nhưng chưa sửa; khi sửa lỗi nào thì đổi test đó sang kỳ vọng đúng.
+- **Dữ liệu tài chính chỉ admin và manager** được xem (`isManagerOrAdmin`). Không lưu dữ liệu tài chính hay token Meta vào `localStorage`.
