@@ -173,15 +173,15 @@ describe('calcProjectFinancialSummary — giá trị biên', () => {
     const r = calcProjectFinancialSummary({
       movements: [
         { item_id: 2, type: 'issue', qty: -2 },
-        { item_id: 1, type: 'return_lost', qty: -3 },
+        { item_id: 2, type: 'return_lost', qty: -3 },
       ],
       itemStockMap: makeStockMap([HOA, KHUNG]),
       contractValue: 1000000,
     })
     expect(r.depreciationCost).toBe(-100000)
-    expect(r.damagedLostCost).toBe(-30000)
-    expect(r.totalCost).toBe(-130000)
-    expect(r.profit).toBe(1130000)
+    expect(r.damagedLostCost).toBe(-3000000)
+    expect(r.totalCost).toBe(-3100000)
+    expect(r.profit).toBe(4100000)
   })
 
   it('hành vi hiện tại, đang sai: chi phí khác có số tiền âm làm giảm tổng chi phí', () => {
@@ -253,7 +253,7 @@ describe('calcProjectFinancialSummary — dự án tổng hợp', () => {
     expect(r.missingExpectedUsesItems).toEqual([])
   })
 
-  it('hành vi hiện tại, đang sai: tiêu hao có báo mất bị tính 2 lần (đã nằm trong xuất - dư, lại cộng thêm vào hỏng/mất)', () => {
+  it('tiêu hao có báo mất: chỉ tính (xuất - dư) * giá, không cộng thêm vào hỏng/mất', () => {
     const r = calcProjectFinancialSummary({
       movements: [
         { item_id: 1, type: 'issue', qty: 20 },
@@ -263,8 +263,8 @@ describe('calcProjectFinancialSummary — dự án tổng hợp', () => {
       itemStockMap: makeStockMap([HOA]),
     })
     expect(r.consumableCost).toBe(150000)
-    expect(r.damagedLostCost).toBe(20000)
-    expect(r.totalCost).toBe(170000)
+    expect(r.damagedLostCost).toBe(0)
+    expect(r.totalCost).toBe(150000)
   })
 })
 

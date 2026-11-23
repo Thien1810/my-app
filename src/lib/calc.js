@@ -152,8 +152,8 @@ export function calcProjectFinancialSummary({
     let missingExpectedUses = false
 
     if (!isReusable) {
+      // SL hỏng/mất của đồ tiêu hao đã nằm trong (xuất - dư), không cộng thêm.
       rowConsumable = Math.max(0, row.issued - row.return_good) * cost
-      rowDamagedLost = (row.return_damaged + row.return_lost) * cost
     } else {
       const expectedUses = Number(row.item.expected_uses || 0)
       if (expectedUses > 0) {
