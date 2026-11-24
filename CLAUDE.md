@@ -107,4 +107,5 @@ Dự án **chưa có test tự động**. Tiêu chí hoàn thành tối thiểu 
 - CHƯA KIỂM CHỨNG trên giao diện/DB thật: toàn bộ phần lead mới.
 
 - KHÓA SỔ THÁNG (2026-11-24, chưa chạy SQL): `MonthLockBar` trên tab P&L (admin/manager khóa kèm hộp kiểm tra trước; mở khóa chỉ admin kèm lý do; chỉ khóa tháng đã qua; KHÔNG chụp số P&L theo quyết định của anh Thiện). SQL `supabase/month_lock_controls.sql` (đã review độc lập, chưa test trên DB thật; ANH THIỆN CHƯA CHẠY): nhật ký month_lock_log, hàm unlock_month, bỏ quyền xóa/sửa trực tiếp month_locks, chặn Mất cọc trong tháng khóa ở DB. Nếu chạy lại finance_schema.sql thì chạy lại file này sau cùng.
-- CÒN LẠI: thử bằng tài khoản thủ kho/nhân viên và điện thoại; trang chi tiết dự án hiện doanh số/ưu đãi/biên; chi phí khác âm; đồng bộ Meta không lưu token; 2 quyết định chờ anh Thiện (khấu hao đám hủy, Google Ads trong CAC/ROAS).
+- XONG (c48e2ff): trang chi tiết dự án hiện doanh số/ưu đãi/doanh thu/biên lợi nhuận cho admin/manager, khung cảnh báo dự án hủy.
+- CÒN LẠI: thử bằng tài khoản thủ kho/nhân viên và điện thoại; chi phí khác âm; đồng bộ Meta không lưu token; 2 quyết định chờ anh Thiện (khấu hao đám hủy, Google Ads trong CAC/ROAS).
