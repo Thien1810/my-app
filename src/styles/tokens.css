@@ -1,0 +1,48 @@
+/* UI kit - tokens. Giá trị thương hiệu CHỈ nằm ở file này (và các biến cũ trong index.css:
+   --primary, --red, --amber, --blue, --bg, --surface, --border, --text, --text-muted...).
+   Đổi thương hiệu = đổi các biến này; ui.css không chứa màu thương hiệu cố định. */
+:root {
+  /* Khoảng cách */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* Cỡ chữ (tối thiểu 11px) */
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 24px;
+
+  /* Bo góc */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Vùng bấm */
+  --tap: 44px;
+  --tap-sm: 40px;
+
+  /* Màu nhấn phụ (nâu trầm) */
+  --accent: #8e5c57;
+  --accent-light: #f3e8e6;
+  --accent-contrast: #ffffff;
+
+  /* Thanh menu dưới (khớp .mobile-bottom-nav: 58px + vùng an toàn iOS) */
+  --bottom-nav-h: calc(58px + env(safe-area-inset-bottom, 0px));
+
+  /* Lớp xếp chồng */
+  --z-sticky: 44;
+  --z-nav: 45;
+  --z-modal: 200;
+  --z-toast: 300;
+
+  /* Viền focus */
+  --focus-ring: 0 0 0 3px rgba(22, 163, 74, 0.35);
+}
