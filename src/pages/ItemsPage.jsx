@@ -331,10 +331,14 @@ export default function ItemsPage() {
     }
     setError('')
     try {
-      // Xóa các bản ghi phụ thuộc trước để không vướng khóa ngoại (Foreign Key)
-      await supabase.from('project_plan').delete().eq('item_id', item.id)
-      await supabase.from('set_template_items').delete().eq('item_id', item.id)
-      await supabase.from('stock_movements').delete().eq('item_id', item.id)
+      // Xóa các bản ghi phụ thuộc trước để không vướng khóa ngoại (Foreign Key).
+      // Xóa phiếu kho TRƯỚC: nếu trigger chặn thì kế hoạch dự án / mẫu set vẫn còn nguyên.
+      const { error: errMov } = await supabase.from('stock_movements').delete().eq('item_id', item.id)
+      if (errMov) throw errMov
+      const { error: errPlan } = await supabase.from('project_plan').delete().eq('item_id', item.id)
+      if (errPlan) throw errPlan
+      const { error: errTpl } = await supabase.from('set_template_items').delete().eq('item_id', item.id)
+      if (errTpl) throw errTpl
 
       const { error: err } = await supabase.from('items').delete().eq('id', item.id)
       if (err) throw err
