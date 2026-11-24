@@ -12,6 +12,7 @@ import {
 } from '../../lib/leadStatus'
 import { CHANNEL_FILTER_OPTIONS } from '../../lib/leadSource'
 import LeadCard from './LeadCard'
+import LostReasonDialog from './LostReasonDialog'
 
 function isMissingTableErr(err) {
   if (!err) return false
@@ -51,6 +52,8 @@ export default function LeadsTab({
   const [channelFilter, setChannelFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [convertingId, setConvertingId] = useState(null)
+  const [lostLead, setLostLead] = useState(null) // lead đang chờ chọn lý do mất
+  const [savingLost, setSavingLost] = useState(false)
 
   const reportError = (msg) => {
     if (onError) onError(msg)
@@ -89,21 +92,69 @@ export default function LeadsTab({
   useEffect(() => {
     if (onCountsChange) onCountsChange(counts)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [counts.total, counts.new, counts.contacted, counts.converted, counts.closed])
+  }, [counts.total, counts.new, counts.consulting, counts.quoted, counts.deposited, counts.completed, counts.lost])
 
-  const handleUpdateLeadStatus = async (leadId, newStatus) => {
-    const { error } = await supabase
-      .from('site_leads')
-      .update({ status: newStatus })
-      .eq('id', leadId)
+  // Ghi trạng thái (kèm status_changed_at, lost_reason nếu có). Cột status_changed_at/lost_reason
+  // chưa có (chưa chạy SQL) thì thử lại chỉ với status. Trả true nếu thành công.
+  const saveLeadStatus = async (leadId, fields) => {
+    const changedAt = new Date().toISOString()
+    let patch = { ...fields, status_changed_at: changedAt }
+    let { error } = await supabase.from('site_leads').update(patch).eq('id', leadId)
+    if (error && /status_changed_at|lost_reason/i.test(error.message || '') && !/check constraint/i.test(error.message || '')) {
+      if (fields.lost_reason) {
+        reportError('Chưa lưu được lý do mất: cần chạy file supabase/site_leads_workflow.sql trên Supabase trước.')
+        return false
+      }
+      patch = { ...fields }
+      ;({ error } = await supabase.from('site_leads').update(patch).eq('id', leadId))
+    }
     if (error) {
-      reportError('Không thể cập nhật trạng thái: ' + error.message)
-      return
+      const msg = error.message || ''
+      if (error.code === '23514' || /check constraint/i.test(msg)) {
+        reportError('Chưa cập nhật được: cần chạy file supabase/site_leads_workflow.sql trên Supabase trước.')
+      } else {
+        reportError('Không thể cập nhật trạng thái: ' + msg)
+      }
+      return false
     }
     setLeads((prev) =>
-      prev.map((l) => (l.id === leadId ? { ...l, status: newStatus } : l))
+      prev.map((l) =>
+        l.id === leadId
+          ? {
+              ...l,
+              ...patch,
+              ...(fields.status !== 'lost' ? { lost_reason: null } : {}),
+            }
+          : l
+      )
     )
-    if (onToast) onToast('Đã cập nhật trạng thái khách hàng.')
+    return true
+  }
+
+  const handleUpdateLeadStatus = async (leadId, newStatus) => {
+    if (newStatus === 'lost') {
+      const lead = leads.find((l) => l.id === leadId)
+      if (lead) setLostLead(lead)
+      return
+    }
+    reportError('')
+    const ok = await saveLeadStatus(leadId, { status: newStatus })
+    if (ok && onToast) onToast('Đã cập nhật trạng thái khách hàng.')
+  }
+
+  const handleLostReasonResult = async (reason) => {
+    if (!reason || !lostLead) {
+      setLostLead(null)
+      return
+    }
+    setSavingLost(true)
+    reportError('')
+    const ok = await saveLeadStatus(lostLead.id, { status: 'lost', lost_reason: reason })
+    setSavingLost(false)
+    if (ok) {
+      setLostLead(null)
+      if (onToast) onToast('Đã chuyển khách sang trạng thái Mất.')
+    }
   }
 
   const handleDeleteLead = async (lead) => {
@@ -211,10 +262,7 @@ export default function LeadsTab({
       if (projErr) throw projErr
 
       // 3. Đánh dấu lead đã chuyển đổi
-      await supabase.from('site_leads').update({ status: 'converted' }).eq('id', lead.id)
-      setLeads((prev) =>
-        prev.map((l) => (l.id === lead.id ? { ...l, status: 'converted' } : l))
-      )
+      await saveLeadStatus(lead.id, { status: 'quoted' })
 
       navigate(`/du-an/${newProject.id}`)
     } catch (e) {
@@ -231,24 +279,14 @@ export default function LeadsTab({
 
   return (
     <>
-      {/* KPI */}
-      <div className="kpi-grid" style={{ marginBottom: 18 }}>
-        <div className="kpi-card">
-          <div className="kpi-label">Tổng yêu cầu từ Web</div>
-          <div className="kpi-value">{counts.total}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Chưa liên hệ</div>
-          <div className="kpi-value text-amber">{counts.new}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Đã tư vấn</div>
-          <div className="kpi-value">{counts.contacted}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Đã chuyển thành Dự án</div>
-          <div className="kpi-value text-green">{counts.converted}</div>
-        </div>
+      {/* KPI: gọn, cuộn ngang được trên điện thoại */}
+      <div className="lead-kpi-row">
+        {LEAD_STATUS_ORDER.map((st) => (
+          <div className="kpi-card" key={st}>
+            <div className="kpi-label">{LEAD_STATUS_META[st].label}</div>
+            <div className={`kpi-value${st === 'new' ? ' text-amber' : ''}`}>{counts[st]}</div>
+          </div>
+        ))}
       </div>
 
       {/* Filter bar */}
@@ -320,6 +358,13 @@ export default function LeadsTab({
             />
           ))}
         </div>
+      )}
+      {lostLead && (
+        <LostReasonDialog
+          leadName={lostLead.customer_name}
+          saving={savingLost}
+          onResult={handleLostReasonResult}
+        />
       )}
     </>
   )

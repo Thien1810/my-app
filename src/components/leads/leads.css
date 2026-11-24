@@ -12,3 +12,9 @@
   display: grid; gap: 4px; margin-top: 6px; padding: 8px 12px;
   background: #f8fafc; border-radius: 8px; word-break: break-word;
 }
+.badge-purple { background: #ede9fe; color: #6d28d9; }
+.lead-kpi-row {
+  display: flex; gap: 10px; overflow-x: auto; margin-bottom: 18px; padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.lead-kpi-row .kpi-card { flex: 1 0 104px; min-width: 104px; }

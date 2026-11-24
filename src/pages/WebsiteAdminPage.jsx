@@ -97,7 +97,7 @@ export default function WebsiteAdminPage() {
   const [toast, setToast] = useState('')
 
   // Leads: dữ liệu nằm trong <LeadsTab/>, trang chỉ giữ số đếm cho badge
-  const [leadCounts, setLeadCounts] = useState({ total: 0, new: 0, contacted: 0, converted: 0, closed: 0 })
+  const [leadCounts, setLeadCounts] = useState({ total: 0, new: 0, consulting: 0, quoted: 0, deposited: 0, completed: 0, lost: 0 })
   const [leadsReloadKey, setLeadsReloadKey] = useState(0)
 
   // Gallery state (ảnh đám thực tế tải lên riêng)

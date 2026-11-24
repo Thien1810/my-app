@@ -2,7 +2,13 @@ import { formatDate } from '../../lib/formatters'
 import { useState } from 'react'
 import { getLeadAttribution, getLeadChannel } from '../../lib/leadSource'
 import './leads.css'
-import { LEAD_STATUS_META, LEAD_STATUS_ORDER } from '../../lib/leadStatus'
+import {
+  LEAD_STATUS_META,
+  LEAD_STATUS_ORDER,
+  normalizeLeadStatus,
+  getLostReasonLabel,
+  formatTimeAgo,
+} from '../../lib/leadStatus'
 
 export default function LeadCard({
   lead,
@@ -12,7 +18,9 @@ export default function LeadCard({
   onConvert,
   onDelete,
 }) {
-  const meta = LEAD_STATUS_META[lead.status] || LEAD_STATUS_META.new
+  const status = normalizeLeadStatus(lead.status)
+  const meta = LEAD_STATUS_META[status]
+  const changedAgo = formatTimeAgo(lead.status_changed_at)
   const [showSource, setShowSource] = useState(false)
   const channel = getLeadChannel(lead)
   const attr = getLeadAttribution(lead)
@@ -46,7 +54,13 @@ export default function LeadCard({
           </div>
           <div className="text-xs text-muted" style={{ marginTop: 4 }}>
             Gửi lúc: {formatDate(lead.created_at)}
+            {changedAgo && ` · Đổi trạng thái: ${changedAgo}`}
           </div>
+          {status === 'lost' && lead.lost_reason && (
+            <div className="text-xs" style={{ marginTop: 4, color: '#b91c1c' }}>
+              Lý do mất: {getLostReasonLabel(lead.lost_reason)}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -66,7 +80,7 @@ export default function LeadCard({
             </>
           )}
           <select
-            value={lead.status}
+            value={status}
             onChange={(e) => onStatusChange(lead.id, e.target.value)}
             style={{ padding: '6px 10px', fontSize: 13 }}
           >
@@ -141,7 +155,7 @@ export default function LeadCard({
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        {lead.status !== 'converted' ? (
+        {!['quoted', 'deposited', 'completed'].includes(status) ? (
           <button
             type="button"
             className="btn btn-primary btn-sm"
