@@ -14,6 +14,7 @@ import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
 import ContractValueFields from '../components/ContractValueFields'
 import { saveProjectFinance } from '../lib/financeApi'
+import { fetchAllRows } from '../lib/fetchAll'
 import { calcProjectClosure, deleteBlockMessage } from '../lib/projectArchive'
 import { calcProjectFbReminder, stripFbMetaFromNote } from '../lib/watermarkHelper'
 import {
@@ -171,6 +172,11 @@ export default function ProjectsPage() {
       return true
     })
   }, [projects, filterStatus, filterFrom, filterTo, search, showArchived])
+
+  const hiddenArchivedCount = useMemo(
+    () => projects.filter((p) => p.archived_at).length,
+    [projects]
+  )
 
   const openCreateModal = () => {
     setEditingProject(null)
@@ -402,10 +408,32 @@ export default function ProjectsPage() {
   // Nạp phiếu kho, chi phí, tạm ứng, loại vật tư của các dự án rồi tính đóng dự án cho từng dự án.
   const computeClosures = async (projectList) => {
     const ids = projectList.map((p) => p.id)
+    // Phân trang vượt giới hạn 1000 dòng; order('id') để các trang không lặp/mất dòng.
     const [mvRes, costRes, advRes] = await Promise.all([
-      supabase.from('stock_movements').select('project_id, item_id, type, qty, moved_at').in('project_id', ids),
-      supabase.from('project_costs').select('project_id, cost_date').in('project_id', ids),
-      supabase.from('project_advances').select('project_id, kind, amount, received_date').in('project_id', ids),
+      fetchAllRows((from, to) =>
+        supabase
+          .from('stock_movements')
+          .select('project_id, item_id, type, qty, moved_at')
+          .in('project_id', ids)
+          .order('id')
+          .range(from, to)
+      ),
+      fetchAllRows((from, to) =>
+        supabase
+          .from('project_costs')
+          .select('project_id, cost_date')
+          .in('project_id', ids)
+          .order('id')
+          .range(from, to)
+      ),
+      fetchAllRows((from, to) =>
+        supabase
+          .from('project_advances')
+          .select('project_id, kind, amount, received_date')
+          .in('project_id', ids)
+          .order('id')
+          .range(from, to)
+      ),
     ])
     if (mvRes.error) throw mvRes.error
     if (costRes.error) throw costRes.error
@@ -443,12 +471,16 @@ export default function ProjectsPage() {
   }
 
   const setArchivedAt = async (ids, value) => {
-    const { error: err } = await supabase.from('projects').update({ archived_at: value }).in('id', ids)
+    let q = supabase.from('projects').update({ archived_at: value }).in('id', ids)
+    // Lưu trữ: chỉ ghi khi dự án vẫn đang ở trạng thái Đã hủy và chưa lưu trữ.
+    if (value) q = q.eq('status', 'cancelled').is('archived_at', null)
+    const { data: updated, error: err } = await q.select('id')
     if (err) {
       throw new Error(
         `Không ghi được trạng thái lưu trữ (có thể cột archived_at chưa được tạo trên CSDL): ${err.message}`
       )
     }
+    return (updated || []).length
   }
 
   const handleArchiveProject = async (p) => {
@@ -459,8 +491,9 @@ export default function ProjectsPage() {
         return
       }
       if (!window.confirm(`Lưu trữ dự án "${p.name}"? Dự án sẽ bị ẩn khỏi danh sách (dữ liệu và báo cáo vẫn giữ nguyên).`)) return
-      await setArchivedAt([p.id], new Date().toISOString())
+      const n = await setArchivedAt([p.id], new Date().toISOString())
       await loadData()
+      if (n === 0) showError(`Không lưu trữ được dự án "${p.name}" vì dữ liệu đã đổi (không còn ở trạng thái Đã hủy hoặc đã được lưu trữ).`)
     } catch (err) {
       showError(err.message || 'Không thể lưu trữ dự án')
     }
@@ -476,11 +509,19 @@ export default function ProjectsPage() {
   }
 
   const handleArchiveSuggested = async () => {
-    const ids = suggested.map((s) => s.id)
-    if (!window.confirm(`Lưu trữ ${ids.length} dự án hủy đã đóng hết thao tác?`)) return
+    if (!window.confirm(`Lưu trữ ${suggested.length} dự án hủy đã đóng hết thao tác?`)) return
     try {
-      await setArchivedAt(ids, new Date().toISOString())
+      // Tính lại bằng dữ liệu mới nhất trước khi ghi; chỉ lưu trữ dự án vẫn còn đủ điều kiện.
+      const fresh = await computeClosures(suggested)
+      const okIds = fresh.filter((x) => x.closure.suggestArchive).map((x) => x.project.id)
+      const done = okIds.length > 0 ? await setArchivedAt(okIds, new Date().toISOString()) : 0
       await loadData()
+      const skippedAll = suggested.length - done
+      if (skippedAll > 0) {
+        showError(
+          `Đã lưu trữ ${done} dự án; ${skippedAll} dự án bị bỏ qua vì dữ liệu đã đổi.`
+        )
+      }
     } catch (err) {
       showError(err.message || 'Không thể lưu trữ hàng loạt')
     }
@@ -574,6 +615,12 @@ export default function ProjectsPage() {
           </label>
         </div>
       </div>
+
+      {!showArchived && hiddenArchivedCount > 0 && (
+        <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
+          Đang ẩn {hiddenArchivedCount} dự án đã lưu trữ
+        </div>
+      )}
 
       {isManagerOrAdmin && !suggestDismissed && suggested.length > 0 && (
         <div className="alert alert-info" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

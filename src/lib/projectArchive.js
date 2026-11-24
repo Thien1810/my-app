@@ -39,7 +39,7 @@ export function calcProjectClosure({ project, movements, costs, advances, itemKi
     .map((r) => ({ itemId: r.item_id, qty: r.outstanding }))
 
   const { received, forfeitTotal } = summarizeAdvances(ad, 0)
-  const heldAmount = received - forfeitTotal
+  const heldAmount = Math.round(received - forfeitTotal)
   const settled = outstandingItems.length === 0 && heldAmount === 0
 
   const dates = [
@@ -67,7 +67,11 @@ export function calcProjectClosure({ project, movements, costs, advances, itemKi
       `Còn ${outstandingItems.length} món đồ tái sử dụng chưa thu hồi hoặc chưa ghi hỏng/mất`
     )
   }
-  if (heldAmount !== 0) {
+  if (heldAmount < 0) {
+    reasons.push(
+      `Số hoàn cọc đang lớn hơn số đã nhận (${Math.abs(heldAmount).toLocaleString('vi-VN')}). Hãy kiểm tra lại các khoản tạm ứng của dự án.`
+    )
+  } else if (heldAmount > 0) {
     reasons.push(
       `Còn giữ tiền cọc ${heldAmount.toLocaleString('vi-VN')} (chưa hoàn hoặc ghi mất cọc)`
     )

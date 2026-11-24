@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { fetchAllRows } from '../lib/fetchAll'
 import {
   formatCurrency,
   formatNumber,
@@ -85,8 +86,23 @@ export default function ReportsPage() {
           .from('projects')
           .select('*, customer:partners(name)')
           .order('start_date', { ascending: false }),
-        supabase.from('project_plan').select('*'),
-        supabase.from('stock_movements').select('*').order('moved_at', { ascending: false }),
+        // Phân trang vượt giới hạn 1000 dòng; order ổn định (có id/khóa chính) để không lặp/mất dòng.
+        fetchAllRows((from, to) =>
+          supabase
+            .from('project_plan')
+            .select('*')
+            .order('project_id')
+            .order('item_id')
+            .range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('stock_movements')
+            .select('*')
+            .order('moved_at', { ascending: false })
+            .order('id')
+            .range(from, to)
+        ),
       ])
 
       if (itemsRes.error) throw itemsRes.error
@@ -103,8 +119,12 @@ export default function ReportsPage() {
 
       if (isManagerOrAdmin) {
         const [finRes, costRes] = await Promise.all([
-          supabase.from('project_finance').select('*'),
-          supabase.from('project_costs').select('*'),
+          fetchAllRows((from, to) =>
+            supabase.from('project_finance').select('*').order('project_id').range(from, to)
+          ),
+          fetchAllRows((from, to) =>
+            supabase.from('project_costs').select('*').order('id').range(from, to)
+          ),
         ])
         setFinances(finRes.data || [])
         setCosts(costRes.data || [])
@@ -250,7 +270,8 @@ export default function ReportsPage() {
     return projects.map((p) => {
       const projMoves = movements.filter((m) => m.project_id === p.id)
       const projCosts = costs.filter((c) => c.project_id === p.id)
-      const contractValue = finMap.get(p.id) || 0
+      // Dự án đã hủy không có doanh thu: lợi nhuận = -chi phí đã phát sinh.
+      const contractValue = p.status === 'cancelled' ? 0 : finMap.get(p.id) || 0
 
       const summary = calcProjectFinancialSummary({
         movements: projMoves,
@@ -448,7 +469,7 @@ export default function ReportsPage() {
     } else if (activeTab === 'profit' && isManagerOrAdmin) {
       const rows = projectProfitReport.map((r) => ({
         'Mã dự án': r.project.code || `#${r.project.id}`,
-        'Tên dự án': r.project.name,
+        'Tên dự án': r.project.status === 'cancelled' ? `${r.project.name} (Đã hủy)` : r.project.name,
         'Khách hàng': r.project.customer?.name || '',
         'Trạng thái': PROJECT_STATUS_LABELS[r.project.status],
         'Giá trị HĐ (₫)': Math.round(r.contractValue),
@@ -784,6 +805,11 @@ export default function ReportsPage() {
                             >
                               {r.project.name}
                             </Link>
+                            {r.project.status === 'cancelled' && (
+                              <span className="text-xs text-muted" style={{ marginLeft: 6 }}>
+                                (Đã hủy)
+                              </span>
+                            )}
                             <div className="text-xs text-muted">
                               {r.project.customer?.name || ''}
                             </div>

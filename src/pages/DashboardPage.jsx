@@ -159,8 +159,13 @@ export default function DashboardPage() {
 
     const byMonth = new Map()
     for (const p of projects) {
-      if (p.status === 'cancelled') continue
-      const dateStr = p.start_date || String(p.created_at || '').slice(0, 10)
+      const isCancelled = p.status === 'cancelled'
+      // Dự án hủy: chi phí tính vào tháng hủy (rơi về ngày bắt đầu, rồi ngày tạo); doanh thu = 0.
+      const dateStr = isCancelled
+        ? String(p.cancelled_at || '').slice(0, 10) ||
+          p.start_date ||
+          String(p.created_at || '').slice(0, 10)
+        : p.start_date || String(p.created_at || '').slice(0, 10)
       const month = dateStr.slice(0, 7)
       if (!month) continue
       if (!byMonth.has(month)) {
@@ -173,7 +178,7 @@ export default function DashboardPage() {
       }
       const projMoves = movements.filter((m) => m.project_id === p.id)
       const projCosts = costs.filter((c) => c.project_id === p.id)
-      const contractValue = financeMap.get(p.id) || 0
+      const contractValue = isCancelled ? 0 : financeMap.get(p.id) || 0
 
       const summary = calcProjectFinancialSummary({
         movements: projMoves,

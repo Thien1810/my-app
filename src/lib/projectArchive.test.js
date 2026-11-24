@@ -65,6 +65,28 @@ describe('calcProjectClosure', () => {
     expect(r.canArchive).toBe(true)
   })
 
+  it('hoàn cọc nhiều hơn đã nhận: thông điệp riêng, chưa đóng', () => {
+    const r = calcProjectClosure({
+      ...base,
+      advances: [adv('advance', 1000000), adv('refund', -1500000)],
+    })
+    expect(r.heldAmount).toBe(-500000)
+    expect(r.settled).toBe(false)
+    expect(r.canArchive).toBe(false)
+    const text = r.reasons.join(' ')
+    expect(text).toMatch(/Số hoàn cọc đang lớn hơn số đã nhận/)
+    expect(text).not.toMatch(/Còn giữ tiền cọc/)
+  })
+
+  it('chênh lệch lẻ do số thực được làm tròn', () => {
+    const r = calcProjectClosure({
+      ...base,
+      advances: [adv('advance', 1000000.0000001), adv('refund', -1000000)],
+    })
+    expect(r.heldAmount).toBe(0)
+    expect(r.settled).toBe(true)
+  })
+
   it('mất cọc hết', () => {
     const r = calcProjectClosure({
       ...base,
