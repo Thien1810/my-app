@@ -18,15 +18,20 @@ alter table public.projects add column if not exists archived_at timestamptz;  -
 -- ---------- 2. TỰ ĐẶT / XÓA cancelled_at THEO status ----------
 -- Lưu ý: UPDATE chỉ đổi cancelled_at (không đổi status) không kích hoạt trigger này,
 -- nên anh vẫn sửa tay được ngày hủy.
+-- Ngày hủy theo GIỜ VIỆT NAM (DB Supabase mặc định UTC: current_date sẽ lùi 1 ngày khi hủy lúc 0h-7h sáng).
+-- Khi dự án rời trạng thái hủy thì xóa luôn cờ lưu trữ (dự án đang chạy không được bị ẩn).
 create or replace function public.set_cancelled_at() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = public
+as $$
 begin
   if new.status = 'cancelled' then
     if tg_op = 'INSERT' or old.status is distinct from 'cancelled' then
-      new.cancelled_at := coalesce(new.cancelled_at, current_date);
+      new.cancelled_at := coalesce(new.cancelled_at, (now() at time zone 'Asia/Ho_Chi_Minh')::date);
     end if;
   else
     new.cancelled_at := null;
+    new.archived_at := null;
   end if;
   return new;
 end $$;
@@ -44,14 +49,19 @@ order by id;
 
 -- Chỉ điền chỗ trống (không ghi đè ngày đã có). Ngày hủy cũ chỉ là ƯỚC TÍNH
 -- (lấy ngày thi công, không có thì ngày tạo); anh có thể sửa tay sau.
+-- least(...): dự án hủy sớm nhưng ngày thi công ở tương lai thì không để ngày hủy rơi vào tương lai.
 update public.projects
-set cancelled_at = coalesce(start_date, created_at::date)
+set cancelled_at = least(
+      coalesce(start_date, created_at::date),
+      (now() at time zone 'Asia/Ho_Chi_Minh')::date)
 where status = 'cancelled' and cancelled_at is null;
 
 -- ---------- 4. CHẶN XÓA DỰ ÁN ĐÃ CÓ DỮ LIỆU ----------
 -- BEFORE DELETE chạy trước các xóa dây chuyền (on delete cascade) nên chặn đúng thứ tự.
 create or replace function public.prevent_delete_nonempty_project() returns trigger
-language plpgsql as $$
+language plpgsql
+set search_path = public
+as $$
 begin
   if exists (select 1 from public.stock_movements where project_id = old.id)
      or exists (select 1 from public.project_costs where project_id = old.id)
