@@ -196,8 +196,9 @@ export default function ProjectDetailPage() {
       itemStockMap: itemMap,
       otherCosts,
       contractValue,
+      discount: quoteDiscount,
     })
-  }, [movements, itemMap, otherCosts, contractValue])
+  }, [movements, itemMap, otherCosts, contractValue, quoteDiscount])
 
   // Cập nhật nhanh trạng thái dự án (Admin/Manager)
   const handleStatusChange = async (newStatus) => {
@@ -606,8 +607,18 @@ export default function ProjectDetailPage() {
       'Khấu hao tái sử dụng (₫)': Math.round(r.rowDepreciation),
       'Giá trị hỏng + mất (₫)': Math.round(r.rowDamagedLost),
     }))
+    const fs = financialSummary
+    const headerRows = [
+      ['Doanh số (₫)', fs.grossSales],
+      ['Ưu đãi (₫)', fs.discount],
+      ['Doanh thu (₫)', fs.contractValue],
+      [
+        'Biên lợi nhuận (%)',
+        fs.contractValue > 0 ? Number(fs.marginPct.toFixed(1)) : '—',
+      ],
+    ].map(([label, value]) => ({ 'Mã vật tư': label, 'Tên vật tư': value }))
     exportToExcel(
-      rows,
+      [...headerRows, {}, ...rows],
       'QuyetToanVatTu',
       `quyet-toan-du-an-${project?.code || projectId}.xlsx`
     )
@@ -669,6 +680,12 @@ export default function ProjectDetailPage() {
               <span>
                 • Giá trị HĐ:{' '}
                 <strong className="text-green">{formatCurrency(contractValue)}</strong>
+                {isManagerOrAdmin && quoteDiscount > 0 && (
+                  <span className="text-xs text-muted">
+                    {' '}
+                    (đã trừ ưu đãi {formatCurrency(quoteDiscount)})
+                  </span>
+                )}
               </span>
             )}
           </div>
@@ -1457,7 +1474,7 @@ export default function ProjectDetailPage() {
             <div>
               <h3>📊 Quyết toán Tổng kết Dự án</h3>
               <p className="text-xs text-muted">
-                Lợi nhuận = Giá trị hợp đồng − (Tiêu hao thực tế + Khấu hao đồ tái sử dụng + Giá
+                Lợi nhuận = Doanh thu − (Tiêu hao thực tế + Khấu hao đồ tái sử dụng + Giá
                 trị hỏng/mất + Chi phí khác)
               </p>
             </div>
@@ -1475,13 +1492,55 @@ export default function ProjectDetailPage() {
             </div>
           )}
 
-          <div className="kpi-grid" style={{ marginBottom: 20 }}>
+          {project.status === 'cancelled' && (
+            <div className="alert alert-warning">
+              ⚠️ <strong>Dự án đã hủy:</strong> trong Báo cáo P&L doanh thu tính 0; các chi phí đã
+              phát sinh được tính vào tháng hủy
+              {project.cancelled_at ? ` (${String(project.cancelled_at).slice(0, 7)})` : ''}. Số
+              liệu bên dưới là theo giá trị hợp đồng; P&L tính doanh thu 0 cho dự án hủy.
+            </div>
+          )}
+
+          <div className="kpi-grid" style={{ marginBottom: 12 }}>
             <div className="kpi-card">
-              <div className="kpi-label">Giá trị hợp đồng</div>
+              <div className="kpi-label">Doanh số (giá gói)</div>
+              <div className="kpi-value">{formatCurrency(financialSummary.grossSales)}</div>
+              <div className="kpi-sub">Giá gói gốc trước ưu đãi</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Ưu đãi</div>
+              {financialSummary.discount > 0 ? (
+                <>
+                  <div className="kpi-value text-red">
+                    − {formatCurrency(financialSummary.discount)}
+                  </div>
+                  <div className="kpi-sub">
+                    {((financialSummary.discount / financialSummary.grossSales) * 100).toFixed(1)}%
+                    trên doanh số
+                  </div>
+                </>
+              ) : (
+                <div className="kpi-sub">Không có ưu đãi</div>
+              )}
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Doanh thu (khách thực trả)</div>
               <div className="kpi-value text-green">
                 {formatCurrency(financialSummary.contractValue)}
               </div>
-              <div className="kpi-sub">Doanh thu dự án</div>
+              <div className="kpi-sub">= Doanh số − Ưu đãi</div>
+            </div>
+          </div>
+
+          <div className="kpi-grid" style={{ marginBottom: 20 }}>
+            <div className="kpi-card">
+              <div className="kpi-label">Doanh thu (khách thực trả)</div>
+              <div className="kpi-value text-green">
+                {formatCurrency(financialSummary.contractValue)}
+              </div>
+              <div className="kpi-sub">
+                {financialSummary.discount > 0 ? '= Doanh số − Ưu đãi' : 'Doanh thu dự án'}
+              </div>
             </div>
 
             <div className="kpi-card">
@@ -1525,6 +1584,20 @@ export default function ProjectDetailPage() {
               </div>
               <div className="kpi-sub">
                 Tổng chi phí: {formatCurrency(financialSummary.totalCost)}
+              </div>
+              <div
+                className={`kpi-sub ${
+                  financialSummary.contractValue > 0
+                    ? financialSummary.profit >= 0
+                      ? 'text-green'
+                      : 'text-red'
+                    : ''
+                }`}
+              >
+                Biên lợi nhuận:{' '}
+                {financialSummary.contractValue > 0
+                  ? `${financialSummary.marginPct.toFixed(1)}%`
+                  : '—'}
               </div>
             </div>
           </div>
