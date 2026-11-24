@@ -197,19 +197,23 @@ export async function deleteProjectAdvance(id) {
   return db().from('project_advances').delete().eq('id', id)
 }
 
-// Hàm thuần: received = Σ advance - Σ refund (forfeit không tính); outstanding = contractValue - received.
-// Dùng giá trị tuyệt đối của amount vì schema cho phép refund lưu số âm hoặc dương.
-export function summarizeAdvances(rows, contractValue) {
-  let advance = 0
-  let refund = 0
-  for (const r of rows || []) {
-    const a = Math.abs(Number(r.amount) || 0)
-    if (r.kind === 'advance') advance += a
-    else if (r.kind === 'refund') refund += a
-  }
-  const received = advance - refund
-  return { received, outstanding: (Number(contractValue) || 0) - received }
+// Mọi dòng project_advances có received_date trong tháng 'YYYY-MM' (gte ngày 1, lt ngày 1 tháng sau).
+export async function listAdvancesByMonth(month) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!MONTH_RE.test(month || '')) return fail('Tháng phải có dạng YYYY-MM.')
+  const [y, m] = month.split('-').map(Number)
+  const next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+  return db()
+    .from('project_advances')
+    .select('*')
+    .gte('received_date', `${month}-01`)
+    .lt('received_date', next)
+    .order('received_date')
+    .order('id')
 }
+
+// Nguồn công thức duy nhất nằm ở ./advances (re-export; chữ ký tương thích, trả thêm các tổng).
+export { summarizeAdvances } from './advances'
 
 // ---------------------------------------------------------------------
 // 5. month_locks

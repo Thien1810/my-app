@@ -24,6 +24,7 @@ import {
 import CurrencyInput from '../components/CurrencyInput'
 import ProjectQuoteTab from '../components/ProjectQuoteTab'
 import ProjectFacebookTab from '../components/ProjectFacebookTab'
+import ProjectAdvancesPanel from '../components/finance/ProjectAdvancesPanel'
 import { calcProjectFbReminder } from '../lib/watermarkHelper'
 
 export default function ProjectDetailPage() {
@@ -1576,6 +1577,8 @@ export default function ProjectDetailPage() {
               </table>
             </div>
           )}
+
+          <ProjectAdvancesPanel projectId={projectId} contractValue={contractValue} canWrite={isManagerOrAdmin} />
         </div>
       )}
     </div>
