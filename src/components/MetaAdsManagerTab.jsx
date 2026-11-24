@@ -6,6 +6,7 @@ import { calcPnl } from '../lib/pnl'
 import { monthlyCashIn } from '../lib/advances'
 import { toPnlProjects, buildPnlHistory, calcBySource, resolveShares } from '../lib/pnlHistory'
 import PnlPanel from './finance/PnlPanel'
+import MonthLockBar from './finance/MonthLockBar'
 import FixedCostsPanel from './finance/FixedCostsPanel'
 import AdsLedgerPanel from './finance/AdsLedgerPanel'
 import WarehouseSharePanel from './finance/WarehouseSharePanel'
@@ -132,6 +133,7 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
     loadErrors,
     hasLoadError,
     locks,
+    lockLog,
     adsRows,
     advances,
     fixedCosts,
@@ -293,6 +295,18 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
           Lợi nhuận và chi phí có thể sai, đừng dùng để quyết định.
         </div>
       )}
+
+      <MonthLockBar
+        key={selectedMonth}
+        month={selectedMonth}
+        locks={locks}
+        lockLog={lockLog}
+        isLocked={isLocked}
+        projects={projects}
+        adsRows={adsRows}
+        fixedCosts={fixedCosts}
+        actions={actions}
+      />
 
       <PnlPanel
         pnl={pnl}

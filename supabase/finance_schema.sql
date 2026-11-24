@@ -161,7 +161,7 @@ returns boolean language sql stable security definer set search_path = public as
   select exists (select 1 from public.month_locks where month = m)
 $$;
 
--- Chặn sửa sổ chi phí cứng / ads của tháng đã khóa (admin vẫn mở khóa bằng cách xóa dòng month_locks)
+-- Chặn sửa sổ chi phí cứng / ads của tháng đã khóa (admin mở khóa bằng hàm unlock_month trong month_lock_controls.sql, có ghi lý do)
 create or replace function public.guard_locked_month() returns trigger
 language plpgsql as $$
 declare m text;
@@ -220,11 +220,22 @@ create policy "warehouses_write" on public.warehouses for all
 do $$
 declare t text;
 begin
-  foreach t in array array['project_advances','fixed_costs','fixed_cost_templates','ads_spend','month_locks'] loop
+  foreach t in array array['project_advances','fixed_costs','fixed_cost_templates','ads_spend'] loop
     execute format('drop policy if exists "%1$s_all" on public.%1$s', t);
     execute format('create policy "%1$s_all" on public.%1$s for all using (public.has_role(array[''admin'',''manager''])) with check (public.has_role(array[''admin'',''manager'']))', t);
   end loop;
 end $$;
+
+-- month_locks KHÔNG dùng policy "for all": chỉ select + insert (admin/manager); không ai sửa/xóa trực tiếp.
+-- Quyền mở khóa chỉ qua hàm unlock_month trong month_lock_controls.sql.
+-- Giống hệt policy trong month_lock_controls.sql (drop + create nên chạy hai file theo thứ tự nào cũng không xung đột).
+drop policy if exists "month_locks_all" on public.month_locks;
+drop policy if exists "month_locks_select" on public.month_locks;
+drop policy if exists "month_locks_insert" on public.month_locks;
+create policy "month_locks_select" on public.month_locks for select
+  using (public.has_role(array['admin','manager']));
+create policy "month_locks_insert" on public.month_locks for insert
+  with check (public.has_role(array['admin','manager']));
 
 -- Chuyển kho: thủ kho cũng được ghi (đây là nghiệp vụ kho), nhưng không xóa
 drop policy if exists "stock_transfers_select" on public.stock_transfers;
@@ -239,7 +250,9 @@ create policy "stock_transfers_delete" on public.stock_transfers for delete
 
 grant select, insert, update, delete on
   public.warehouses, public.project_advances, public.fixed_costs, public.fixed_cost_templates,
-  public.ads_spend, public.stock_transfers, public.month_locks to authenticated;
+  public.ads_spend, public.stock_transfers to authenticated;
+-- month_locks: chỉ select + insert; quyền mở khóa chỉ qua hàm unlock_month trong month_lock_controls.sql
+grant select, insert on public.month_locks to authenticated;
 grant select on public.warehouse_asset_value, public.warehouse_share to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
 grant execute on function public.is_month_locked(text) to authenticated;

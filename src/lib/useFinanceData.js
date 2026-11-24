@@ -14,6 +14,9 @@ import {
   listWarehouseShare,
   listWarehouses,
   listMonthLocks,
+  lockMonth,
+  unlockMonth,
+  listMonthLockLog,
   listAdvancesByMonth,
   isMonthLockedLocal,
 } from './financeApi'
@@ -27,6 +30,7 @@ export function useFinanceData({ month }) {
   const [warehouses, setWarehouses] = useState([])
   const [locks, setLocks] = useState([])
   const [advances, setAdvances] = useState([])
+  const [lockLog, setLockLog] = useState([])
   const [notice, setNotice] = useState(null)
   const [loadErrors, setLoadErrors] = useState([])
   const [reloadKey, setReloadKey] = useState(0)
@@ -52,9 +56,10 @@ export function useFinanceData({ month }) {
         listWarehouses(),
         listMonthLocks(),
         listAdvancesByMonth(month),
+        listMonthLockLog(month),
       ])
       if (cancelled) return // tháng đã đổi hoặc unmount: bỏ kết quả cũ
-      const [ads, fixed, tpl, share, wh, lk, adv] = results
+      const [ads, fixed, tpl, share, wh, lk, adv, log] = results
       setAdsRows(ads.data || [])
       setFixedCosts(fixed.data || [])
       setTemplates(tpl.data || [])
@@ -62,11 +67,15 @@ export function useFinanceData({ month }) {
       setWarehouses(wh.data || [])
       setLocks(lk.data || [])
       setAdvances(adv.data || [])
+      setLockLog(log.data || []) // lỗi nhật ký (bảng chưa có) không chặn
       const names = ['Sổ Ads', 'Chi phí cứng', 'Mẫu', 'Tỷ trọng kho', 'Danh sách kho', 'Khóa sổ', 'Tạm ứng']
-      const failed = results.map((r, i) => (r.error ? names[i] : null)).filter(Boolean)
+      const failed = results
+        .slice(0, 7)
+        .map((r, i) => (r.error ? names[i] : null))
+        .filter(Boolean)
       setLoadErrors(failed)
       if (failed.length) {
-        const firstErr = results.find((r) => r.error)
+        const firstErr = results.slice(0, 7).find((r) => r.error)
         setNotice({
           type: 'error',
           source: 'load',
@@ -108,6 +117,35 @@ export function useFinanceData({ month }) {
     removeFixedCost: (id) => run(() => deleteFixedCost(id), 'Đã xóa khoản chi phí cứng.'),
     applyTemplates: () =>
       run(() => applyFixedCostTemplates(monthRef.current), `Đã áp mẫu chi phí cứng vào tháng ${monthRef.current}.`),
+    lockMonth: async (note) => {
+      const { error } = await lockMonth(monthRef.current, note)
+      if (error) {
+        setNotice({ type: 'error', text: error.message })
+        return false
+      }
+      setNotice({ type: 'success', text: `Đã khóa sổ tháng ${monthRef.current}.` })
+      reload()
+      return true
+    },
+    unlockMonth: async (reason) => {
+      const { error } = await unlockMonth(monthRef.current, reason)
+      if (error) {
+        const missing =
+          error.code === 'PGRST202' ||
+          error.code === '42883' ||
+          (/unlock_month/i.test(error.message || '') && /not find|does not exist|schema cache/i.test(error.message || ''))
+        setNotice({
+          type: 'error',
+          text: missing
+            ? 'Chưa mở khóa được: cần chạy file supabase/month_lock_controls.sql trên Supabase trước.'
+            : error.message,
+        })
+        return false
+      }
+      setNotice({ type: 'success', text: `Đã mở khóa sổ tháng ${monthRef.current}.` })
+      reload()
+      return true
+    },
     saveMonthAsTemplate: async () => {
       const current = fixedCostsRef.current
       if (!current.length) {
@@ -157,6 +195,7 @@ export function useFinanceData({ month }) {
     shares,
     warehouses,
     locks,
+    lockLog,
     advances,
     isLocked: isMonthLockedLocal(locks, month),
     loadErrors,

@@ -226,13 +226,50 @@ export async function listMonthLocks() {
   return db().from('month_locks').select('*').order('month', { ascending: false })
 }
 
+// Chuyển lỗi khóa/mở khóa sang tiếng Việt thân thiện.
+function friendlyLockError(error) {
+  if (!error) return error
+  const msg = String(error.message || '')
+  if (/chỉ khóa được tháng đã qua/i.test(msg)) return error
+  if (error.code === '23505' || /duplicate key/i.test(msg)) {
+    return { ...error, message: 'Tháng này đã được khóa sổ rồi.' }
+  }
+  if (error.code === '42501' || /row-level security|permission denied|not authorized|chỉ admin/i.test(msg)) {
+    return { ...error, message: 'Bạn không có quyền khóa sổ.' }
+  }
+  return error
+}
+
 // Khóa sổ một tháng, kèm share_snapshot lấy từ view warehouse_share lúc khóa (lỗi snapshot thì không khóa).
 export async function lockMonth(month, note) {
   if (!db()) return fail(NO_CLIENT)
   if (!MONTH_RE.test(month || '')) return fail('Tháng phải có dạng YYYY-MM.')
   const share = await listWarehouseShare()
   if (share.error) return share
-  return db().from('month_locks').insert({ month, note: note || null, share_snapshot: share.data }).select().single()
+  const res = await db().from('month_locks').insert({ month, note: note || null, share_snapshot: share.data }).select().single()
+  return res.error ? { ...res, error: friendlyLockError(res.error) } : res
+}
+
+// Mở khóa sổ (chỉ admin, DB kiểm tra) qua RPC unlock_month; bắt buộc có lý do.
+export async function unlockMonth(month, reason) {
+  if (!db()) return fail(NO_CLIENT)
+  if (!MONTH_RE.test(month || '')) return fail('Tháng phải có dạng YYYY-MM.')
+  const why = String(reason || '').trim()
+  if (!why) return fail('Phải nhập lý do mở khóa.')
+  const res = await db().rpc('unlock_month', { p_month: month, p_reason: why })
+  if (res.error && (res.error.code === '42501' || /row-level security|permission denied|chỉ admin/i.test(res.error.message || ''))) {
+    return { ...res, error: { ...res.error, message: 'Chỉ admin mới mở khóa được sổ.' } }
+  }
+  return res
+}
+
+// Nhật ký khóa/mở khóa (month_lock_log). Bảng chưa có hoặc lỗi: trả { data: [], error }.
+export async function listMonthLockLog(month) {
+  if (!db()) return { data: [], error: { message: NO_CLIENT } }
+  let q = db().from('month_lock_log').select('*').order('acted_at', { ascending: false })
+  if (month) q = q.eq('month', month)
+  const res = await q
+  return res.error ? { data: [], error: res.error } : res
 }
 
 // Hàm thuần: tháng có nằm trong danh sách locks (đã tải) hay không.
