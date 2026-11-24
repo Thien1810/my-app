@@ -1578,7 +1578,7 @@ export default function ProjectDetailPage() {
             </div>
           )}
 
-          <ProjectAdvancesPanel projectId={projectId} contractValue={contractValue} canWrite={isManagerOrAdmin} />
+          <ProjectAdvancesPanel projectId={projectId} contractValue={contractValue} canWrite={isManagerOrAdmin} projectStatus={project?.status} />
         </div>
       )}
     </div>

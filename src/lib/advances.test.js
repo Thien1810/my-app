@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { summarizeAdvances, validateAdvanceInput, toAdvanceRow, monthlyCashIn } from './advances'
+import { summarizeAdvances, validateAdvanceInput, toAdvanceRow, monthlyCashIn, canDeleteAdvance } from './advances'
 
 describe('monthlyCashIn', () => {
   const row = (amount, kind, received_date) => ({ amount, kind, received_date })
@@ -94,12 +94,58 @@ describe('validateAdvanceInput', () => {
   })
   it('forfeit quá số đang giữ (đã trừ forfeit có sẵn) bị chặn', () => {
     const rows = [adv(3000000), adv(2000000, 'forfeit')]
-    expect(validateAdvanceInput({ ...ok, kind: 'forfeit', amount: 1000001, rows })).not.toBe('')
-    expect(validateAdvanceInput({ ...ok, kind: 'forfeit', amount: 1000000, rows })).toBe('')
+    const c = { ...ok, kind: 'forfeit', rows, projectStatus: 'cancelled' }
+    expect(validateAdvanceInput({ ...c, amount: 1000001 })).not.toBe('')
+    expect(validateAdvanceInput({ ...c, amount: 1000000 })).toBe('')
   })
   it('refund/forfeit khi chưa thu gì bị chặn', () => {
     expect(validateAdvanceInput({ ...ok, kind: 'refund', amount: 1 })).not.toBe('')
-    expect(validateAdvanceInput({ ...ok, kind: 'forfeit', amount: 1 })).not.toBe('')
+    expect(validateAdvanceInput({ ...ok, kind: 'forfeit', amount: 1, projectStatus: 'cancelled' })).not.toBe('')
+  })
+  it('forfeit chỉ hợp lệ khi dự án đã hủy', () => {
+    const rows = [adv(3000000)]
+    const f = { ...ok, kind: 'forfeit', amount: 1000, rows }
+    expect(validateAdvanceInput({ ...f, projectStatus: 'cancelled' })).toBe('')
+    expect(validateAdvanceInput({ ...f, projectStatus: 'done' })).toContain('Chỉ ghi Mất cọc')
+    expect(validateAdvanceInput({ ...f, projectStatus: 'active' })).not.toBe('')
+    expect(validateAdvanceInput(f)).not.toBe('')
+  })
+  it('advance/refund không phụ thuộc trạng thái dự án', () => {
+    const rows = [adv(3000000)]
+    for (const projectStatus of [undefined, 'done', 'cancelled']) {
+      expect(validateAdvanceInput({ ...ok, projectStatus })).toBe('')
+      expect(validateAdvanceInput({ ...ok, kind: 'refund', amount: 1000, rows, projectStatus })).toBe('')
+    }
+  })
+})
+
+describe('canDeleteAdvance', () => {
+  const r = (id, amount, kind) => ({ id, amount, kind })
+  it('xóa cọc đã bị hoàn hết -> lỗi', () => {
+    const rows = [r(1, 5000000, 'advance'), r(2, -5000000, 'refund')]
+    expect(canDeleteAdvance({ rows, id: 1 })).toContain('Không thể xóa')
+  })
+  it('xóa dòng hoàn -> ok', () => {
+    const rows = [r(1, 5000000, 'advance'), r(2, -5000000, 'refund')]
+    expect(canDeleteAdvance({ rows, id: 2 })).toBe('')
+  })
+  it('xóa cọc khi forfeit vượt phần còn lại -> lỗi', () => {
+    const rows = [r(1, 3000000, 'advance'), r(2, 2000000, 'advance'), r(3, 4000000, 'forfeit')]
+    expect(canDeleteAdvance({ rows, id: 2 })).not.toBe('')
+    expect(canDeleteAdvance({ rows, id: 1 })).not.toBe('')
+  })
+  it('xóa dòng bất kỳ khi không âm -> ok', () => {
+    const rows = [r(1, 3000000, 'advance'), r(2, 2000000, 'advance'), r(3, 1000000, 'forfeit')]
+    expect(canDeleteAdvance({ rows, id: 2 })).toBe('')
+    expect(canDeleteAdvance({ rows, id: 3 })).toBe('')
+  })
+  it('so khớp id số/chuỗi', () => {
+    const rows = [r('1', 5000000, 'advance'), r(2, -5000000, 'refund')]
+    expect(canDeleteAdvance({ rows, id: 1 })).not.toBe('')
+  })
+  it('id không tồn tại -> trả "" (không có gì để xóa, không đổi số liệu)', () => {
+    expect(canDeleteAdvance({ rows: [r(1, 100, 'advance')], id: 99 })).toBe('')
+    expect(canDeleteAdvance({ rows: null, id: 1 })).toBe('')
   })
 })
 

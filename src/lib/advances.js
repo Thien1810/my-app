@@ -55,8 +55,11 @@ export function monthlyCashIn(rows, month) {
 }
 
 // Trả chuỗi lỗi tiếng Việt, hoặc '' nếu hợp lệ. amount là số dương người dùng nhập.
-export function validateAdvanceInput({ kind, amount, receivedDate, rows }) {
+export function validateAdvanceInput({ kind, amount, receivedDate, rows, projectStatus }) {
   if (!ADVANCE_KINDS.includes(kind)) return 'Loại khoản không hợp lệ.'
+  if (kind === 'forfeit' && projectStatus !== 'cancelled') {
+    return 'Chỉ ghi Mất cọc cho dự án đã hủy. Hãy chuyển dự án sang trạng thái Đã hủy trước.'
+  }
   const n = Number(amount)
   if (amount === '' || amount === null || amount === undefined || !Number.isFinite(n) || !(n > 0)) {
     return 'Số tiền phải lớn hơn 0.'
@@ -70,6 +73,17 @@ export function validateAdvanceInput({ kind, amount, receivedDate, rows }) {
         ? 'Số hoàn lại không được lớn hơn số tiền đang giữ của khách.'
         : 'Số mất cọc không được lớn hơn số tiền đang giữ của khách.'
     }
+  }
+  return ''
+}
+
+// Trả '' nếu xóa dòng `id` vẫn ổn, hoặc chuỗi lỗi nếu sau khi xóa số tiền đang giữ bị âm.
+// id không tồn tại: không có gì để xóa, trả '' (lệnh xóa ở DB sẽ là no-op).
+export function canDeleteAdvance({ rows, id }) {
+  const remaining = (rows || []).filter((r) => String(r?.id) !== String(id))
+  const s = summarizeAdvances(remaining, 0)
+  if (s.received < 0 || s.received - s.forfeitTotal < 0) {
+    return 'Không thể xóa: số tiền đang giữ của khách sẽ bị âm. Hãy xóa các khoản hoàn/mất cọc liên quan trước.'
   }
   return ''
 }
