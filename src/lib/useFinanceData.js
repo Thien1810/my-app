@@ -14,6 +14,7 @@ import {
   listWarehouseShare,
   listWarehouses,
   listMonthLocks,
+  listAdvancesByMonth,
   isMonthLockedLocal,
 } from './financeApi'
 
@@ -25,6 +26,7 @@ export function useFinanceData({ month }) {
   const [shares, setShares] = useState([])
   const [warehouses, setWarehouses] = useState([])
   const [locks, setLocks] = useState([])
+  const [advances, setAdvances] = useState([])
   const [notice, setNotice] = useState(null)
   const [loadErrors, setLoadErrors] = useState([])
   const [reloadKey, setReloadKey] = useState(0)
@@ -49,16 +51,18 @@ export function useFinanceData({ month }) {
         listWarehouseShare(),
         listWarehouses(),
         listMonthLocks(),
+        listAdvancesByMonth(month),
       ])
       if (cancelled) return // tháng đã đổi hoặc unmount: bỏ kết quả cũ
-      const [ads, fixed, tpl, share, wh, lk] = results
+      const [ads, fixed, tpl, share, wh, lk, adv] = results
       setAdsRows(ads.data || [])
       setFixedCosts(fixed.data || [])
       setTemplates(tpl.data || [])
       setShares(share.data || [])
       setWarehouses(wh.data || [])
       setLocks(lk.data || [])
-      const names = ['Sổ Ads', 'Chi phí cứng', 'Mẫu', 'Tỷ trọng kho', 'Danh sách kho', 'Khóa sổ']
+      setAdvances(adv.data || [])
+      const names = ['Sổ Ads', 'Chi phí cứng', 'Mẫu', 'Tỷ trọng kho', 'Danh sách kho', 'Khóa sổ', 'Tạm ứng']
       const failed = results.map((r, i) => (r.error ? names[i] : null)).filter(Boolean)
       setLoadErrors(failed)
       if (failed.length) {
@@ -153,6 +157,7 @@ export function useFinanceData({ month }) {
     shares,
     warehouses,
     locks,
+    advances,
     isLocked: isMonthLockedLocal(locks, month),
     loadErrors,
     hasLoadError: loadErrors.length > 0,

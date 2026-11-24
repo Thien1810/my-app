@@ -13,7 +13,7 @@ function sourceLabel(id) {
   return PROJECT_LEAD_SOURCES.find((s) => s.id === id)?.label || id
 }
 
-export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', warehouses = [] }) {
+export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', warehouses = [], cashIn }) {
   if (!pnl) return null
   const isAll = scope === 'all'
   const whName = (code) => warehouses.find((w) => w.code === code)?.name || code
@@ -68,7 +68,7 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
       ? [
           {
             key: 'VII',
-            label: 'VII. Thu nhập khác',
+            label: 'VII. Thu nhập khác (mất cọc)',
             note: 'Tiền cọc khách hủy (forfeit)',
             value: pnl.otherIncome,
             cls: 'text-green',
@@ -193,9 +193,13 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
             </tbody>
           </table>
         </div>
-        <div className="text-xs text-muted" style={{ marginTop: 8 }}>
-          Thu nhập khác (tiền cọc bị mất) chưa được tính ở bản này; sẽ nối khi có giao diện tạm ứng.
-        </div>
+        {cashIn !== undefined && (
+          <div className="text-xs text-muted" style={{ marginTop: 8 }}>
+            Dòng tiền cọc/tạm ứng thu trong tháng: <strong>{formatCurrency(cashIn)}</strong> (chỉ theo dõi, không
+            phải doanh thu)
+            {!isAll && <> — Tiền cọc chưa gán kho nên số này là toàn công ty.</>}
+          </div>
+        )}
 
         <div className="kpi-grid" style={{ marginTop: 16 }}>
           <div className="kpi-card">

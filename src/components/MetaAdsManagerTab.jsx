@@ -3,6 +3,7 @@ import { useAuth } from '../lib/AuthContext'
 import { todayISO } from '../lib/formatters'
 import { useFinanceData } from '../lib/useFinanceData'
 import { calcPnl } from '../lib/pnl'
+import { monthlyCashIn } from '../lib/advances'
 import { toPnlProjects, buildPnlHistory, calcBySource, resolveShares } from '../lib/pnlHistory'
 import PnlPanel from './finance/PnlPanel'
 import FixedCostsPanel from './finance/FixedCostsPanel'
@@ -131,6 +132,7 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
     hasLoadError,
     locks,
     adsRows,
+    advances,
     fixedCosts,
     templates,
     shares,
@@ -150,7 +152,6 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
 
   const pnl = useMemo(() => {
     const history = buildPnlHistory({ projects, month: selectedMonth, scope: viewScope })
-    // Tạm ứng/forfeit (advances) sẽ nối sau khi có giao diện tạm ứng.
     return calcPnl({
       month: selectedMonth,
       scope: viewScope,
@@ -158,10 +159,12 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
       adsRows,
       fixedCosts,
       shares: effectiveShares,
-      advances: [],
+      advances,
       history,
     })
-  }, [projects, selectedMonth, viewScope, adsRows, fixedCosts, effectiveShares])
+  }, [projects, selectedMonth, viewScope, adsRows, fixedCosts, effectiveShares, advances])
+
+  const cashIn = useMemo(() => monthlyCashIn(advances, selectedMonth), [advances, selectedMonth])
 
   const bySource = useMemo(
     () => calcBySource({ projects, month: selectedMonth, scope: viewScope }),
@@ -287,6 +290,7 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
         month={selectedMonth}
         scope={viewScope}
         warehouses={warehouses}
+        cashIn={cashIn}
       />
 
       <FixedCostsPanel

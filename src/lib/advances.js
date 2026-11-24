@@ -40,6 +40,20 @@ export function summarizeAdvances(rows, contractValue) {
   }
 }
 
+// Tiền mặt vào trong tháng (chỉ theo dõi dòng tiền, KHÔNG phải doanh thu):
+// Σ advance - Σ refund có received_date thuộc month ('YYYY-MM'); forfeit không tính.
+export function monthlyCashIn(rows, month) {
+  if (typeof month !== 'string' || !/^\d{4}-\d{2}$/.test(month)) return 0
+  let total = 0
+  for (const r of rows || []) {
+    if (!isValidDate(r?.received_date) || r.received_date.slice(0, 7) !== month) continue
+    const a = Math.abs(Number(r?.amount) || 0)
+    if (r.kind === 'advance') total += a
+    else if (r.kind === 'refund') total -= a
+  }
+  return total
+}
+
 // Trả chuỗi lỗi tiếng Việt, hoặc '' nếu hợp lệ. amount là số dương người dùng nhập.
 export function validateAdvanceInput({ kind, amount, receivedDate, rows }) {
   if (!ADVANCE_KINDS.includes(kind)) return 'Loại khoản không hợp lệ.'

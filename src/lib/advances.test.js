@@ -1,5 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { summarizeAdvances, validateAdvanceInput, toAdvanceRow } from './advances'
+import { summarizeAdvances, validateAdvanceInput, toAdvanceRow, monthlyCashIn } from './advances'
+
+describe('monthlyCashIn', () => {
+  const row = (amount, kind, received_date) => ({ amount, kind, received_date })
+  it('chỉ tính các dòng đúng tháng', () => {
+    const rows = [
+      row(3000000, 'advance', '2026-11-05'),
+      row(2000000, 'advance', '2026-10-31'),
+      row(1000000, 'advance', '2026-12-01'),
+    ]
+    expect(monthlyCashIn(rows, '2026-11')).toBe(3000000)
+  })
+  it('hoàn lại (số âm hoặc dương) làm giảm tiền vào', () => {
+    const rows = [row(3000000, 'advance', '2026-11-05'), row(-1000000, 'refund', '2026-11-20')]
+    expect(monthlyCashIn(rows, '2026-11')).toBe(2000000)
+    expect(monthlyCashIn([row(3000000, 'advance', '2026-11-05'), row(1000000, 'refund', '2026-11-20')], '2026-11')).toBe(2000000)
+  })
+  it('forfeit không tính', () => {
+    const rows = [row(3000000, 'advance', '2026-11-05'), row(3000000, 'forfeit', '2026-11-25')]
+    expect(monthlyCashIn(rows, '2026-11')).toBe(3000000)
+  })
+  it('rỗng/null trả 0', () => {
+    expect(monthlyCashIn([], '2026-11')).toBe(0)
+    expect(monthlyCashIn(null, '2026-11')).toBe(0)
+    expect(monthlyCashIn(undefined, '2026-11')).toBe(0)
+  })
+  it('dòng sai định dạng ngày bị bỏ', () => {
+    const rows = [
+      row(1000000, 'advance', '2026-11'),
+      row(1000000, 'advance', '05/11/2026'),
+      row(1000000, 'advance', null),
+      row(1000000, 'advance', '2026-11-31'),
+      row(500000, 'advance', '2026-11-10'),
+    ]
+    expect(monthlyCashIn(rows, '2026-11')).toBe(500000)
+  })
+})
 
 const adv = (amount, kind = 'advance') => ({ amount, kind })
 
