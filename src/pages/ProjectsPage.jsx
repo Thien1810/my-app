@@ -14,6 +14,7 @@ import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
 import ContractValueFields from '../components/ContractValueFields'
 import { saveProjectFinance } from '../lib/financeApi'
+import { calcProjectClosure, deleteBlockMessage } from '../lib/projectArchive'
 import { calcProjectFbReminder, stripFbMetaFromNote } from '../lib/watermarkHelper'
 import {
   WAREHOUSE_HUBS,
@@ -59,6 +60,12 @@ export default function ProjectsPage() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+
+  // Gợi ý lưu trữ
+  const [suggested, setSuggested] = useState([])
+  const [suggestNote, setSuggestNote] = useState('')
+  const [suggestDismissed, setSuggestDismissed] = useState(false)
 
   // Modal tạo / sửa dự án
   const [modalOpen, setModalOpen] = useState(false)
@@ -120,8 +127,36 @@ export default function ProjectsPage() {
     loadData()
   }, [canEditCatalog, isManagerOrAdmin])
 
+  // Gợi ý lưu trữ: chỉ tải dữ liệu khi có dự án hủy chưa lưu trữ; lỗi chỉ ghi chú nhỏ.
+  useEffect(() => {
+    if (!isManagerOrAdmin) return undefined
+    const cand = projects.filter((p) => p.status === 'cancelled' && !p.archived_at)
+    if (cand.length === 0) {
+      setSuggested([])
+      setSuggestNote('')
+      return undefined
+    }
+    let cancelled = false
+    computeClosures(cand)
+      .then((list) => {
+        if (cancelled) return
+        setSuggested(list.filter((x) => x.closure.suggestArchive).map((x) => x.project))
+        setSuggestNote('')
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setSuggested([])
+        setSuggestNote(`Không tải được gợi ý lưu trữ: ${err.message || 'lỗi không rõ'}`)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, isManagerOrAdmin])
+
   const filteredProjects = useMemo(() => {
     return projects.filter((p) => {
+      if (!showArchived && p.archived_at) return false
       if (filterStatus !== 'all' && p.status !== filterStatus) return false
       if (filterFrom && (p.start_date || '') < filterFrom) return false
       if (filterTo && (p.start_date || '') > filterTo) return false
@@ -135,7 +170,7 @@ export default function ProjectsPage() {
       }
       return true
     })
-  }, [projects, filterStatus, filterFrom, filterTo, search])
+  }, [projects, filterStatus, filterFrom, filterTo, search, showArchived])
 
   const openCreateModal = () => {
     setEditingProject(null)
@@ -333,11 +368,121 @@ export default function ProjectsPage() {
   const handleDeleteProject = async (p) => {
     if (!window.confirm(`Bạn có chắc chắn muốn xóa dự án "${p.name}"?`)) return
     try {
+      const countOf = async (table) => {
+        const { count, error: cErr } = await supabase
+          .from(table)
+          .select('id', { count: 'exact', head: true })
+          .eq('project_id', p.id)
+        if (cErr) throw cErr
+        return count || 0
+      }
+      const [movements, costs, advances] = await Promise.all([
+        countOf('stock_movements'),
+        countOf('project_costs'),
+        countOf('project_advances'),
+      ])
+      const blockMsg = deleteBlockMessage({ movements, costs, advances })
+      if (blockMsg) {
+        showError(blockMsg)
+        return
+      }
       const { error: err } = await supabase.from('projects').delete().eq('id', p.id)
       if (err) throw err
       await loadData()
     } catch (err) {
-      setError(err.message || 'Không thể xóa dự án (có thể dự án đã có phiếu kho)')
+      showError(err.message || 'Không thể xóa dự án')
+    }
+  }
+
+  const showError = (msg) => {
+    setError(msg)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // Nạp phiếu kho, chi phí, tạm ứng, loại vật tư của các dự án rồi tính đóng dự án cho từng dự án.
+  const computeClosures = async (projectList) => {
+    const ids = projectList.map((p) => p.id)
+    const [mvRes, costRes, advRes] = await Promise.all([
+      supabase.from('stock_movements').select('project_id, item_id, type, qty, moved_at').in('project_id', ids),
+      supabase.from('project_costs').select('project_id, cost_date').in('project_id', ids),
+      supabase.from('project_advances').select('project_id, kind, amount, received_date').in('project_id', ids),
+    ])
+    if (mvRes.error) throw mvRes.error
+    if (costRes.error) throw costRes.error
+    if (advRes.error) throw advRes.error
+    const itemIds = [...new Set((mvRes.data || []).map((m) => m.item_id))]
+    const kindMap = new Map()
+    if (itemIds.length > 0) {
+      const itemRes = await supabase.from('items').select('id, kind').in('id', itemIds)
+      if (itemRes.error) throw itemRes.error
+      for (const it of itemRes.data || []) kindMap.set(Number(it.id), it.kind)
+    }
+    const group = (rows) => {
+      const g = new Map()
+      for (const r of rows || []) {
+        if (!g.has(r.project_id)) g.set(r.project_id, [])
+        g.get(r.project_id).push(r)
+      }
+      return g
+    }
+    const gm = group(mvRes.data)
+    const gc = group(costRes.data)
+    const ga = group(advRes.data)
+    const today = todayISO()
+    return projectList.map((p) => ({
+      project: p,
+      closure: calcProjectClosure({
+        project: p,
+        movements: gm.get(p.id) || [],
+        costs: gc.get(p.id) || [],
+        advances: ga.get(p.id) || [],
+        itemKindMap: kindMap,
+        today,
+      }),
+    }))
+  }
+
+  const setArchivedAt = async (ids, value) => {
+    const { error: err } = await supabase.from('projects').update({ archived_at: value }).in('id', ids)
+    if (err) {
+      throw new Error(
+        `Không ghi được trạng thái lưu trữ (có thể cột archived_at chưa được tạo trên CSDL): ${err.message}`
+      )
+    }
+  }
+
+  const handleArchiveProject = async (p) => {
+    try {
+      const [{ closure }] = await computeClosures([p])
+      if (!closure.canArchive) {
+        showError(`Chưa thể lưu trữ dự án "${p.name}": ${closure.reasons.join('; ')}.`)
+        return
+      }
+      if (!window.confirm(`Lưu trữ dự án "${p.name}"? Dự án sẽ bị ẩn khỏi danh sách (dữ liệu và báo cáo vẫn giữ nguyên).`)) return
+      await setArchivedAt([p.id], new Date().toISOString())
+      await loadData()
+    } catch (err) {
+      showError(err.message || 'Không thể lưu trữ dự án')
+    }
+  }
+
+  const handleUnarchiveProject = async (p) => {
+    try {
+      await setArchivedAt([p.id], null)
+      await loadData()
+    } catch (err) {
+      showError(err.message || 'Không thể bỏ lưu trữ dự án')
+    }
+  }
+
+  const handleArchiveSuggested = async () => {
+    const ids = suggested.map((s) => s.id)
+    if (!window.confirm(`Lưu trữ ${ids.length} dự án hủy đã đóng hết thao tác?`)) return
+    try {
+      await setArchivedAt(ids, new Date().toISOString())
+      await loadData()
+    } catch (err) {
+      showError(err.message || 'Không thể lưu trữ hàng loạt')
     }
   }
 
@@ -419,8 +564,33 @@ export default function ProjectsPage() {
               onChange={(e) => setFilterTo(e.target.value)}
             />
           </div>
+          <label className="filter-inline" style={{ cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+            />{' '}
+            Hiện cả dự án lưu trữ
+          </label>
         </div>
       </div>
+
+      {isManagerOrAdmin && !suggestDismissed && suggested.length > 0 && (
+        <div className="alert alert-info" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>
+            Có {suggested.length} dự án hủy đã đóng hết thao tác từ 30 ngày, có thể lưu trữ.
+          </span>
+          <button className="btn btn-sm btn-primary" onClick={handleArchiveSuggested}>
+            Lưu trữ {suggested.length} dự án
+          </button>
+          <button className="btn btn-sm btn-outline" onClick={() => setSuggestDismissed(true)}>
+            Bỏ qua
+          </button>
+        </div>
+      )}
+      {isManagerOrAdmin && suggestNote && (
+        <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 8 }}>{suggestNote}</div>
+      )}
 
       {/* Bảng dự án */}
       <div className="card">
@@ -506,6 +676,11 @@ export default function ProjectsPage() {
                     <td>{p.lead?.full_name || p.lead?.email || '—'}</td>
                     <td>
                       <ProjectStatusBadge status={p.status} />
+                      {p.archived_at && (
+                        <span className="badge badge-gray" style={{ marginLeft: 4, fontSize: '0.72rem' }}>
+                          Lưu trữ
+                        </span>
+                      )}
                     </td>
                     {canEditCatalog && (
                       <td className="text-right font-bold text-green">
@@ -523,6 +698,22 @@ export default function ProjectsPage() {
                             onClick={() => openEditModal(p)}
                           >
                             Sửa
+                          </button>
+                        )}
+                        {isManagerOrAdmin && p.status === 'cancelled' && !p.archived_at && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => handleArchiveProject(p)}
+                          >
+                            Lưu trữ
+                          </button>
+                        )}
+                        {isManagerOrAdmin && p.archived_at && (
+                          <button
+                            className="btn btn-sm btn-outline"
+                            onClick={() => handleUnarchiveProject(p)}
+                          >
+                            Bỏ lưu trữ
                           </button>
                         )}
                         {isAdmin && (
