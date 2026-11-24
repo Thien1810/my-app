@@ -605,12 +605,13 @@ export default function ProjectsPage() {
               onChange={(e) => setFilterTo(e.target.value)}
             />
           </div>
-          <label className="filter-inline" style={{ cursor: 'pointer' }}>
+          <label className="checkbox-label" style={{ flex: '1 1 100%' }}>
             <input
               type="checkbox"
+              style={{ width: 'auto' }}
               checked={showArchived}
               onChange={(e) => setShowArchived(e.target.checked)}
-            />{' '}
+            />
             Hiện cả dự án lưu trữ
           </label>
         </div>
