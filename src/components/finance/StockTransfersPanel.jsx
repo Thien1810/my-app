@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useConfirm } from '../ConfirmDialog'
-import { formatCurrency } from '../../lib/formatters'
+import WarehouseSharePanel from './WarehouseSharePanel'
 import {
   createStockTransfer,
   deleteStockTransfer,
+  listMonthLocks,
   listReusableItemStock,
   listStockTransfers,
+  listWarehouses,
+  listWarehouseShare,
 } from '../../lib/financeApi'
 import { calcWarehouseHoldings, canDeleteTransfer, todayVN, validateTransferInput } from '../../lib/stockTransfers'
 
 const emptyForm = () => ({ item_id: '', from_wh: '', to_wh: '', qty: '', transferred_at: todayVN(), note: '' })
 
-export default function StockTransfersPanel({ role, canWrite = false, warehouses = [], shares = [], locks = [], onChanged }) {
+export default function StockTransfersPanel({ role, canWrite = false, onChanged, embedded = false }) {
   const [items, setItems] = useState([])
   const [transfers, setTransfers] = useState([])
+  const [warehouses, setWarehouses] = useState([])
+  const [shares, setShares] = useState([])
+  const [locks, setLocks] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
@@ -25,19 +31,34 @@ export default function StockTransfersPanel({ role, canWrite = false, warehouses
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([listReusableItemStock(), listStockTransfers()]).then(([it, tr]) => {
-      if (cancelled) return
-      const err = it.error || tr.error
-      if (err) {
-        setLoadError(err.message || 'Lỗi không xác định')
+    Promise.all([
+      listReusableItemStock(),
+      listStockTransfers(),
+      listWarehouses(),
+      listWarehouseShare(),
+      listMonthLocks(),
+    ])
+      .then(([it, tr, wh, sh, lk]) => {
+        if (cancelled) return
+        const err = it.error || tr.error || wh.error || sh.error || lk.error
+        if (err) {
+          setLoadError(err.message || 'Lỗi không xác định')
+          setLoaded(false)
+          return
+        }
+        setLoadError('')
+        setItems(it.data || [])
+        setTransfers(tr.data || [])
+        setWarehouses(wh.data || [])
+        setShares(sh.data || [])
+        setLocks(lk.data || [])
+        setLoaded(true)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setLoadError((e && e.message) || 'Lỗi không xác định')
         setLoaded(false)
-        return
-      }
-      setLoadError('')
-      setItems(it.data || [])
-      setTransfers(tr.data || [])
-      setLoaded(true)
-    })
+      })
     return () => {
       cancelled = true
     }
@@ -130,11 +151,10 @@ export default function StockTransfersPanel({ role, canWrite = false, warehouses
   }
 
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }))
-  const sortedShares = [...shares].sort((a, b) => String(a.code).localeCompare(String(b.code)))
 
   return (
-    <div className="card" style={{ padding: 20, marginTop: 20 }}>
-      <h3 style={{ marginBottom: 4 }}>🔁 Chuyển kho tài sản</h3>
+    <div className={embedded ? undefined : 'card'} style={embedded ? undefined : { padding: 20, marginTop: 20 }}>
+      {!embedded && <h3 style={{ marginBottom: 4 }}>🔁 Chuyển kho tài sản</h3>}
       <p className="text-muted" style={{ fontSize: 13.5, marginBottom: 14 }}>
         Phiếu chuyển tài sản tái sử dụng giữa các kho. Giá trị tài sản đặt ở mỗi kho quyết định tỷ trọng chia chi phí chung.
       </p>
@@ -204,31 +224,7 @@ export default function StockTransfersPanel({ role, canWrite = false, warehouses
       )}
       {error && <div className="text-xs" style={{ color: '#dc2626', marginBottom: 10 }}>{error}</div>}
 
-      <h4 style={{ margin: '8px 0' }}>Giá trị tài sản và tỷ trọng từng kho</h4>
-      {sortedShares.length === 0 ? (
-        <div className="empty-state" style={{ padding: 16 }}>Chưa có dữ liệu tỷ trọng kho.</div>
-      ) : (
-        <div className="table-responsive" style={{ marginBottom: 16 }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Kho</th>
-                <th className="text-right">Giá trị tài sản (₫)</th>
-                <th className="text-right">Tỷ trọng</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedShares.map((s) => (
-                <tr key={s.code}>
-                  <td>{s.name || whName[s.code] || s.code}</td>
-                  <td className="text-right">{formatCurrency(Number(s.asset_value) || 0)}</td>
-                  <td className="text-right font-bold">{((Number(s.share) || 0) * 100).toFixed(1)}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <WarehouseSharePanel shares={shares} hideNote />
 
       <h4 style={{ margin: '8px 0' }}>Lịch sử phiếu chuyển</h4>
       {loaded &&

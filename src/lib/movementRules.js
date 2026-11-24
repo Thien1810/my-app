@@ -1,0 +1,140 @@
+// Quy tắc thuần cho phiếu sổ kho (không gọi Supabase). Số liệu tồn lấy từ view item_stock.
+
+const num = (v) => {
+  if (v === null || v === undefined) return NaN
+  if (typeof v === 'string' && v.trim() === '') return NaN
+  return Number(v)
+}
+const fmt = (n) => String(Math.round(n * 100) / 100)
+
+// Kiểm tra phiếu đơn dòng (adjust | repair_done | dispose) -> { ok, error }.
+// stock: dòng item_stock của vật tư { in_stock, in_repair }.
+export function validateSingleMovement({ type, qty, stock, note } = {}) {
+  const q = num(qty)
+  if (!Number.isFinite(q) || q === 0) return { ok: false, error: 'Số lượng không được để trống hoặc bằng 0.' }
+  if (type === 'adjust') {
+    if (!String(note || '').trim()) {
+      return { ok: false, error: 'Phiếu điều chỉnh bắt buộc phải ghi lý do điều chỉnh.' }
+    }
+    if (q < 0) {
+      const inStock = Number(stock?.in_stock) || 0
+      if (-q > inStock) {
+        return {
+          ok: false,
+          error: `Điều chỉnh giảm ${fmt(-q)} vượt quá tồn trong kho hiện có (${fmt(Math.max(0, inStock))}). Tồn kho không được âm.`,
+        }
+      }
+    }
+    return { ok: true, error: '' }
+  }
+  if (q < 0) return { ok: false, error: 'Số lượng không được là số âm.' }
+  if (type === 'repair_done' || type === 'dispose') {
+    const inRepair = Number(stock?.in_repair) || 0
+    if (q > inRepair) {
+      const label = type === 'repair_done' ? 'sửa xong' : 'thanh lý'
+      return {
+        ok: false,
+        error: `Số lượng ${label} (${fmt(q)}) vượt quá số đang chờ sửa (${fmt(Math.max(0, inRepair))}).`,
+      }
+    }
+  }
+  return { ok: true, error: '' }
+}
+
+// Dòng nhập mua hoàn toàn trống (chưa chọn vật tư, chưa nhập giá, số lượng mặc định/0) thì được bỏ qua.
+export function isBlankPurchaseLine(l) {
+  const q = num(l?.qty)
+  const qtyBlank = !Number.isFinite(q) || q === 0 || q === 1
+  return !l?.item_id && !(Number(l?.unit_cost) > 0) && qtyBlank
+}
+
+// Kiểm tra các dòng nhập mua -> { ok, error, errors:[{row,message}], validLines }.
+// row đánh số từ 1 theo thứ tự trên form.
+export function validatePurchaseLines(lines) {
+  const errors = []
+  const valid = []
+  const seen = new Map()
+  ;(lines || []).forEach((l, i) => {
+    if (isBlankPurchaseLine(l)) return
+    const row = i + 1
+    const before = errors.length
+    if (!l.item_id) errors.push({ row, message: `Dòng ${row}: chưa chọn vật tư.` })
+    const q = num(l.qty)
+    if (!Number.isFinite(q) || q <= 0) {
+      errors.push({ row, message: `Dòng ${row}: số lượng phải lớn hơn 0.` })
+    }
+    const c = num(l.unit_cost)
+    if (!Number.isFinite(c) || c <= 0) {
+      errors.push({
+        row,
+        message: `Dòng ${row}: đơn giá nhập phải lớn hơn 0 (đơn giá này sẽ ghi đè giá vốn của vật tư).`,
+      })
+    }
+    if (l.item_id) {
+      const key = String(l.item_id)
+      if (seen.has(key)) {
+        errors.push({
+          row,
+          message: `Dòng ${row}: trùng vật tư với dòng ${seen.get(key)}. Hãy gộp thành một dòng.`,
+        })
+      } else seen.set(key, row)
+    }
+    if (errors.length === before) valid.push(l)
+  })
+  if (errors.length === 0 && valid.length === 0) {
+    return {
+      ok: false,
+      error: 'Vui lòng chọn ít nhất 1 vật tư và nhập số lượng > 0.',
+      errors: [],
+      validLines: [],
+    }
+  }
+  if (errors.length > 0) {
+    return { ok: false, error: errors.map((e) => e.message).join('\n'), errors, validLines: [] }
+  }
+  return { ok: true, error: '', errors: [], validLines: valid }
+}
+
+// Xóa phiếu có làm tồn kho âm không -> { ok, reason }.
+// movement: { type, qty }; stock: dòng item_stock { in_stock, in_repair, at_project, kind }.
+export function canDeleteMovement({ movement, stock } = {}) {
+  if (!movement) return { ok: false, reason: 'Không tìm thấy phiếu.' }
+  if (!stock) return { ok: true, reason: '' } // không có số liệu: để DB quyết định
+  const q = Number(movement.qty) || 0
+  const inStock = Number(stock.in_stock) || 0
+  const inRepair = Number(stock.in_repair) || 0
+  const atProject = Number(stock.at_project) || 0
+  const name = stock.name ? `"${stock.name}"` : 'vật tư này'
+  const stockFail = (what) => ({
+    ok: false,
+    reason: `Không xóa được: xóa phiếu ${what} sẽ làm tồn trong kho của ${name} âm (đang có ${fmt(inStock)}, phiếu ${fmt(q)}).`,
+  })
+  switch (movement.type) {
+    case 'purchase':
+      return inStock - q < 0 ? stockFail('nhập mua') : { ok: true, reason: '' }
+    case 'return_good':
+      return inStock - q < 0 ? stockFail('thu hồi tốt') : { ok: true, reason: '' }
+    case 'repair_done':
+      return inStock - q < 0 ? stockFail('sửa xong') : { ok: true, reason: '' }
+    case 'adjust':
+      return inStock - q < 0 ? stockFail('điều chỉnh') : { ok: true, reason: '' }
+    case 'return_damaged':
+      if (inRepair - q < 0) {
+        return {
+          ok: false,
+          reason: `Không xóa được: xóa phiếu thu hồi hỏng sẽ làm số chờ sửa của ${name} âm (đang có ${fmt(inRepair)}, phiếu ${fmt(q)}).`,
+        }
+      }
+      return { ok: true, reason: '' }
+    case 'issue':
+      if (stock.kind === 'reusable' && atProject - q < 0) {
+        return {
+          ok: false,
+          reason: `Không xóa được: xóa phiếu xuất sẽ làm số đang ở dự án của ${name} âm (đang có ${fmt(atProject)}, phiếu ${fmt(q)}).`,
+        }
+      }
+      return { ok: true, reason: '' }
+    default:
+      return { ok: true, reason: '' }
+  }
+}

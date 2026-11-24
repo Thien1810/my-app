@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -12,18 +12,31 @@ import {
 import { exportToExcel } from '../lib/exportExcel'
 import { MovementTypeBadge } from '../components/Badges'
 import CurrencyInput from '../components/CurrencyInput'
+import { useConfirm } from '../components/ConfirmDialog'
+import StockTransfersPanel from '../components/finance/StockTransfersPanel'
+import { fetchAllRows } from '../lib/fetchAll'
+import { listWarehouses, createStockTransfer } from '../lib/financeApi'
+import {
+  validateSingleMovement,
+  validatePurchaseLines,
+  canDeleteMovement,
+} from '../lib/movementRules'
 
 export default function MovementsPage() {
-  const { canEditCatalog, isAdmin } = useAuth()
+  const { canEditCatalog, isAdmin, role } = useAuth()
+  const { confirm, confirmDialog } = useConfirm()
   const [items, setItems] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [projects, setProjects] = useState([])
   const [movements, setMovements] = useState([])
+  const [warehouses, setWarehouses] = useState([])
+  const [purchaseWh, setPurchaseWh] = useState('')
+  const loadedOnce = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // Tab tạo phiếu: 'purchase' | 'adjust' | 'repair_done' | 'dispose'
+  // Tab tạo phiếu: 'purchase' | 'adjust' | 'repair_done' | 'dispose' | 'transfer'
   const [activeTab, setActiveTab] = useState('purchase')
   const [submitting, setSubmitting] = useState(false)
 
@@ -49,21 +62,24 @@ export default function MovementsPage() {
   const [filterProject, setFilterProject] = useState('all')
 
   const loadAll = async () => {
-    setLoading(true)
-    setError('')
+    // Chỉ hiện "Đang tải" ở lần tải đầu; các lần sau tải ngầm để bảng không nhấp nháy.
+    if (!loadedOnce.current) setLoading(true)
     try {
-      const [itemsRes, supRes, projRes, movesRes] = await Promise.all([
+      const [itemsRes, supRes, projRes, movesRes, whRes] = await Promise.all([
         supabase.from('item_stock').select('*').order('name'),
         supabase.from('partners').select('*').eq('kind', 'supplier').order('name'),
         supabase.from('projects').select('id, code, name').order('created_at', { ascending: false }),
-        supabase
-          .from('stock_movements')
-          .select(
-            '*, item:items(id, code, name, unit, kind), project:projects(id, code, name), partner:partners(id, name)'
-          )
-          .order('moved_at', { ascending: false })
-          .order('id', { ascending: false })
-          .limit(500),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('stock_movements')
+            .select(
+              '*, item:items(id, code, name, unit, kind), project:projects(id, code, name), partner:partners(id, name)'
+            )
+            .order('moved_at', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, to)
+        ),
+        listWarehouses(),
       ])
 
       if (itemsRes.error) throw itemsRes.error
@@ -75,12 +91,26 @@ export default function MovementsPage() {
       setSuppliers(supRes.data || [])
       setProjects(projRes.data || [])
       setMovements(movesRes.data || [])
+      // Lỗi tải kho không chặn trang: chỉ ẩn ô chọn kho.
+      const whs = whRes?.error ? [] : whRes?.data || []
+      setWarehouses(whs)
+      setPurchaseWh((cur) => {
+        if (cur && whs.some((w) => w.code === cur)) return cur
+        return (whs.find((w) => w.is_main) || whs[0])?.code || ''
+      })
+      setError((cur) => (cur.startsWith('Không thể tải') ? '' : cur))
     } catch (err) {
-      setError(err.message || 'Không thể tải dữ liệu sổ kho')
+      setError(`Không thể tải dữ liệu sổ kho: ${err.message || 'lỗi không xác định'}`)
     } finally {
+      loadedOnce.current = true
       setLoading(false)
     }
   }
+
+  // Cuộn lên đầu trang khi có thông báo để người dùng thấy ngay.
+  useEffect(() => {
+    if (error || success) window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [error, success])
 
   useEffect(() => {
     loadAll()
@@ -120,18 +150,12 @@ export default function MovementsPage() {
     setError('')
     setSuccess('')
 
-    if (purchaseLines.some((l) => Number(l.qty) < 0)) {
-      setError('Số lượng không được là số âm. Vui lòng kiểm tra lại các dòng vật tư.')
+    const check = validatePurchaseLines(purchaseLines)
+    if (!check.ok) {
+      setError(check.error)
       return
     }
-
-    const validLines = purchaseLines.filter(
-      (l) => l.item_id && Number(l.qty) > 0
-    )
-    if (validLines.length === 0) {
-      setError('Vui lòng chọn ít nhất 1 vật tư và nhập số lượng > 0.')
-      return
-    }
+    const validLines = check.validLines
 
     setSubmitting(true)
     try {
@@ -141,16 +165,48 @@ export default function MovementsPage() {
         item_id: Number(l.item_id),
         partner_id: supplierId ? Number(supplierId) : null,
         qty: Number(l.qty),
-        unit_cost: Number(l.unit_cost || 0),
+        unit_cost: Number(l.unit_cost),
         note: purchaseNote.trim() || null,
       }))
 
       const { error: err } = await supabase.from('stock_movements').insert(rows)
       if (err) throw err
 
-      setSuccess(`Đã tạo phiếu nhập mua gồm ${rows.length} dòng vật tư!`)
+      // Nhập về kho khác kho chính: chuyển kho các vật tư tái sử dụng.
+      const mainWh = warehouses.find((w) => w.is_main)
+      const targetWh = warehouses.find((w) => w.code === purchaseWh)
+      let transferMsg = ''
+      let transferFailed = ''
+      if (mainWh && targetWh && targetWh.code !== mainWh.code) {
+        const reusableRows = rows.filter((r) => itemMap.get(r.item_id)?.kind === 'reusable')
+        let done = 0
+        for (const r of reusableRows) {
+          const { error: terr } = await createStockTransfer({
+            item_id: r.item_id,
+            from_wh: mainWh.code,
+            to_wh: targetWh.code,
+            qty: r.qty,
+            transferred_at: r.moved_at,
+            note: `Nhập mua về ${targetWh.name}`,
+          })
+          if (terr) {
+            transferFailed = `${itemMap.get(r.item_id)?.name || `#${r.item_id}`}: ${terr.message || 'lỗi không xác định'}`
+            break
+          }
+          done += 1
+        }
+        if (!transferFailed && done > 0) transferMsg = ` Đã chuyển ${done} vật tư tái sử dụng về ${targetWh.name}.`
+      }
+
       setPurchaseLines([{ item_id: '', qty: 1, unit_cost: 0 }])
       setPurchaseNote('')
+      if (transferFailed) {
+        setError(
+          `Phiếu nhập mua ĐÃ được lưu (${rows.length} dòng) nhưng chuyển kho CHƯA hoàn tất (${transferFailed}). Vui lòng vào tab "Chuyển kho" để tạo phiếu chuyển kho còn thiếu, đừng nhập mua lại.`
+        )
+      } else {
+        setSuccess(`Đã tạo phiếu nhập mua gồm ${rows.length} dòng vật tư!${transferMsg}`)
+      }
       await loadAll()
     } catch (err) {
       setError(err.message || 'Lỗi khi tạo phiếu nhập mua')
@@ -169,16 +225,14 @@ export default function MovementsPage() {
       return
     }
     const qtyNum = Number(singleQty)
-    if (!qtyNum || Number.isNaN(qtyNum)) {
-      setError('Số lượng không được bằng 0.')
-      return
-    }
-    if (activeTab !== 'adjust' && qtyNum <= 0) {
-      setError(
-        qtyNum < 0
-          ? 'Số lượng không được là số âm.'
-          : 'Số lượng phải lớn hơn 0.'
-      )
+    const check = validateSingleMovement({
+      type: activeTab,
+      qty: singleQty,
+      stock: itemMap.get(Number(singleItemId)),
+      note: singleNote,
+    })
+    if (!check.ok) {
+      setError(check.error)
       return
     }
 
@@ -206,12 +260,26 @@ export default function MovementsPage() {
   }
 
   const handleDeleteMovement = async (m) => {
-    if (!window.confirm(`Xóa phiếu "${MOVEMENT_TYPE_LABELS[m.type]}" của "${m.item?.name}"?`)) {
+    setError('')
+    setSuccess('')
+    const rule = canDeleteMovement({ movement: m, stock: itemMap.get(Number(m.item_id)) })
+    if (!rule.ok) {
+      setError(rule.reason)
       return
     }
+    const label = MOVEMENT_TYPE_LABELS[m.type] || m.type
+    const itemName = m.item?.name || `#${m.item_id}`
+    const ok = await confirm({
+      title: 'Xóa phiếu kho',
+      message: `Xóa phiếu "${label}" của "${itemName}" (SL ${formatNumber(m.qty)}) ngày ${formatDate(m.moved_at)}?\nTồn kho sẽ được tính lại.`,
+      confirmLabel: 'Xóa phiếu',
+      danger: true,
+    })
+    if (!ok) return
     try {
       const { error: err } = await supabase.from('stock_movements').delete().eq('id', m.id)
       if (err) throw err
+      setSuccess(`Đã xóa phiếu ${label} của "${itemName}".`)
       await loadAll()
     } catch (err) {
       setError(err.message || 'Không thể xóa phiếu kho')
@@ -247,6 +315,8 @@ export default function MovementsPage() {
     exportToExcel(rows, 'SoKho', 'so-kho-phieu-xuat-nhap.xlsx')
   }
 
+  const singleStock = singleItemId ? itemMap.get(Number(singleItemId)) : null
+
   // Gợi ý vật tư đang có đồ chờ sửa khi ở tab repair_done hoặc dispose
   const repairableItems = useMemo(() => {
     if (activeTab === 'repair_done' || activeTab === 'dispose') {
@@ -261,7 +331,7 @@ export default function MovementsPage() {
         <div>
           <h1>Nhập kho & Sổ phiếu kho</h1>
           <p className="text-muted">
-            Tạo phiếu nhập mua nhiều dòng, điều chỉnh kiểm kê, xác nhận sửa xong hoặc thanh lý đồ hỏng
+            Tạo phiếu nhập mua nhiều dòng, điều chỉnh kiểm kê, xác nhận sửa xong, thanh lý đồ hỏng hoặc chuyển kho tài sản tái sử dụng
           </p>
         </div>
         <button className="btn btn-outline" onClick={handleExport}>
@@ -269,7 +339,12 @@ export default function MovementsPage() {
         </button>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {confirmDialog}
+      {error && (
+        <div className="alert alert-error" style={{ whiteSpace: 'pre-line' }}>
+          {error}
+        </div>
+      )}
       {success && <div className="alert alert-success">{success}</div>}
 
       {/* Khu vực tạo phiếu kho */}
@@ -304,10 +379,24 @@ export default function MovementsPage() {
             >
               🗑️ Thanh lý đồ hỏng
             </button>
+            <button
+              type="button"
+              className={`tab-btn ${activeTab === 'transfer' ? 'active' : ''}`}
+              onClick={() => setActiveTab('transfer')}
+            >
+              🔁 Chuyển kho
+            </button>
           </div>
 
-          {activeTab === 'purchase' ? (
-            <form onSubmit={handleCreatePurchase} style={{ marginTop: 16 }}>
+          {activeTab === 'transfer' ? (
+            <div style={{ marginTop: 16 }}>
+              <p className="text-muted" style={{ marginBottom: 12 }}>
+                Chuyển tài sản tái sử dụng giữa các kho (không đổi tồn kho tổng, chỉ đổi nơi để đồ).
+              </p>
+              <StockTransfersPanel role={role} canWrite={canEditCatalog} embedded onChanged={loadAll} />
+            </div>
+          ) : activeTab === 'purchase' ? (
+            <form onSubmit={handleCreatePurchase} noValidate style={{ marginTop: 16 }}>
               <div className="form-grid-3">
                 <div className="form-group">
                   <label>Ngày nhập *</label>
@@ -341,6 +430,22 @@ export default function MovementsPage() {
                     onChange={(e) => setPurchaseNote(e.target.value)}
                   />
                 </div>
+                {warehouses.length > 1 && (
+                  <div className="form-group">
+                    <label>Nhập về kho</label>
+                    <select value={purchaseWh} onChange={(e) => setPurchaseWh(e.target.value)}>
+                      {warehouses.map((w) => (
+                        <option key={w.code} value={w.code}>
+                          {w.name}
+                          {w.is_main ? ' (kho chính)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="text-xs text-muted" style={{ marginTop: 4 }}>
+                      Chỉ ảnh hưởng tỷ trọng chia chi phí chung của đồ tái sử dụng.
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="table-responsive" style={{ marginTop: 12 }}>
@@ -499,6 +604,13 @@ export default function MovementsPage() {
                   <label>
                     {activeTab === 'adjust' ? 'Số lượng điều chỉnh (+/-) *' : 'Số lượng *'}
                   </label>
+                  {singleStock && (
+                    <div className="text-xs text-muted" style={{ marginBottom: 4 }}>
+                      {activeTab === 'adjust'
+                        ? `Tồn trong kho hiện có: ${formatNumber(singleStock.in_stock)} ${singleStock.unit || ''}`
+                        : `Đang chờ sửa: ${formatNumber(singleStock.in_repair)} ${singleStock.unit || ''}`}
+                    </div>
+                  )}
                   <input
                     type="number"
                     step="any"
@@ -510,9 +622,10 @@ export default function MovementsPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Ghi chú / Lý do</label>
+                  <label>{activeTab === 'adjust' ? 'Lý do điều chỉnh *' : 'Ghi chú / Lý do'}</label>
                   <input
                     type="text"
+                    required={activeTab === 'adjust'}
                     placeholder="Lý do điều chỉnh / sửa chữa..."
                     value={singleNote}
                     onChange={(e) => setSingleNote(e.target.value)}
