@@ -4,6 +4,7 @@ import {
   validatePurchaseLines,
   canDeleteMovement,
   isBlankPurchaseLine,
+  priceDeviation,
 } from './movementRules'
 
 const stock = { name: 'Ghế', in_stock: 5, in_repair: 2, at_project: 3, kind: 'reusable' }
@@ -46,6 +47,7 @@ describe('validatePurchaseLines', () => {
     const r = validatePurchaseLines([{ item_id: '1', qty: 2, unit_cost: 0 }])
     expect(r.ok).toBe(false)
     expect(r.errors[0].row).toBe(1)
+    expect(r.errors[0].field).toBe('unit_cost')
   })
   it('dòng trống bỏ qua, dòng thiếu vật tư báo số thứ tự', () => {
     const lines = [
@@ -72,6 +74,38 @@ describe('validatePurchaseLines', () => {
   it('toàn dòng trống thì báo chọn ít nhất 1', () => {
     expect(validatePurchaseLines([{ item_id: '', qty: 1, unit_cost: 0 }]).ok).toBe(false)
     expect(isBlankPurchaseLine({ item_id: '', qty: 1, unit_cost: 0 })).toBe(true)
+  })
+})
+
+describe('validatePurchaseLines field', () => {
+  it('đánh dấu đúng ô lỗi theo dòng', () => {
+    const r = validatePurchaseLines([
+      { item_id: '1', qty: 1, unit_cost: 5 },
+      { item_id: '', qty: 3, unit_cost: '' },
+    ])
+    expect(r.errors.map((e) => [e.row, e.field]).sort()).toEqual([[2, 'item_id'], [2, 'unit_cost']])
+  })
+  it('đơn giá để trống chuỗi rỗng báo lỗi unit_cost', () => {
+    const r = validatePurchaseLines([{ item_id: '1', qty: 2, unit_cost: '' }])
+    expect(r.errors[0].field).toBe('unit_cost')
+  })
+})
+
+describe('priceDeviation', () => {
+  it('lệch cao hơn 30% thì cảnh báo', () => {
+    expect(priceDeviation(140, 100)).toEqual({ warn: true, pct: 40 })
+  })
+  it('lệch thấp hơn 30% thì cảnh báo', () => {
+    expect(priceDeviation(60, 100)).toEqual({ warn: true, pct: -40 })
+  })
+  it('đúng 30% hoặc ít hơn thì không cảnh báo', () => {
+    expect(priceDeviation(130, 100).warn).toBe(false)
+    expect(priceDeviation(100, 100).warn).toBe(false)
+  })
+  it('thiếu giá lần trước hoặc giá trống thì không cảnh báo', () => {
+    expect(priceDeviation(100, 0).warn).toBe(false)
+    expect(priceDeviation('', 100).warn).toBe(false)
+    expect(priceDeviation(100, null).warn).toBe(false)
   })
 })
 

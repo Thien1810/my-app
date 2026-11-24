@@ -48,7 +48,8 @@ export function isBlankPurchaseLine(l) {
   return !l?.item_id && !(Number(l?.unit_cost) > 0) && qtyBlank
 }
 
-// Kiểm tra các dòng nhập mua -> { ok, error, errors:[{row,message}], validLines }.
+// Kiểm tra các dòng nhập mua -> { ok, error, errors:[{row,field,message}], validLines }.
+// field: 'item_id' | 'qty' | 'unit_cost' để tô viền đỏ đúng ô.
 // row đánh số từ 1 theo thứ tự trên form.
 export function validatePurchaseLines(lines) {
   const errors = []
@@ -58,15 +59,16 @@ export function validatePurchaseLines(lines) {
     if (isBlankPurchaseLine(l)) return
     const row = i + 1
     const before = errors.length
-    if (!l.item_id) errors.push({ row, message: `Dòng ${row}: chưa chọn vật tư.` })
+    if (!l.item_id) errors.push({ row, field: 'item_id', message: `Dòng ${row}: chưa chọn vật tư.` })
     const q = num(l.qty)
     if (!Number.isFinite(q) || q <= 0) {
-      errors.push({ row, message: `Dòng ${row}: số lượng phải lớn hơn 0.` })
+      errors.push({ row, field: 'qty', message: `Dòng ${row}: số lượng phải lớn hơn 0.` })
     }
     const c = num(l.unit_cost)
     if (!Number.isFinite(c) || c <= 0) {
       errors.push({
         row,
+        field: 'unit_cost',
         message: `Dòng ${row}: đơn giá nhập phải lớn hơn 0 (đơn giá này sẽ ghi đè giá vốn của vật tư).`,
       })
     }
@@ -75,6 +77,7 @@ export function validatePurchaseLines(lines) {
       if (seen.has(key)) {
         errors.push({
           row,
+          field: 'item_id',
           message: `Dòng ${row}: trùng vật tư với dòng ${seen.get(key)}. Hãy gộp thành một dòng.`,
         })
       } else seen.set(key, row)
@@ -137,4 +140,14 @@ export function canDeleteMovement({ movement, stock } = {}) {
     default:
       return { ok: true, reason: '' }
   }
+}
+
+// Cảnh báo giá nhập lệch quá 30% so với giá lần trước (cao hoặc thấp) -> { warn, pct }.
+// pct: phần trăm lệch có dấu (làm tròn số nguyên); 0 nếu thiếu dữ liệu.
+export function priceDeviation(cost, last, threshold = 0.3) {
+  const c = num(cost)
+  const l = num(last)
+  if (!Number.isFinite(c) || !Number.isFinite(l) || c <= 0 || l <= 0) return { warn: false, pct: 0 }
+  const ratio = (c - l) / l
+  return { warn: Math.abs(ratio) > threshold, pct: Math.round(ratio * 100) }
 }

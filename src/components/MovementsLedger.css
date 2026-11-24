@@ -1,0 +1,172 @@
+.ml-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ml-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 14px;
+}
+
+.ml-search {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ml-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ml-chip {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ml-chip:hover {
+  border-color: #16a34a;
+}
+
+.ml-chip.active {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+  font-weight: 600;
+}
+
+.ml-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ml-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.ml-range-note {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.ml-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #16a34a;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.badge.ml-badge-transfer {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.ml-new-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.data-table tbody tr.ml-row-new,
+.data-table tbody tr.ml-row-new:hover {
+  background: #dcfce7;
+}
+
+.ml-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 0 4px;
+}
+
+/* Danh sách thẻ cho điện thoại */
+.ml-cards {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .ml-table {
+    display: none;
+  }
+
+  .ml-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ml-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: #fff;
+  }
+
+  .ml-card.ml-row-new {
+    background: #dcfce7;
+    border-color: #86efac;
+  }
+
+  .ml-card-line + .ml-card-line {
+    margin-top: 4px;
+  }
+
+  .ml-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .ml-card-name {
+    font-size: 15px;
+  }
+
+  .ml-card-meta {
+    font-size: 13px;
+  }
+
+  .ml-card-note {
+    margin-top: 2px;
+  }
+
+  .ml-card-delete {
+    margin-top: 8px;
+  }
+
+  .ml-filter-row select,
+  .ml-field {
+    flex: 1 1 140px;
+  }
+
+  .ml-field input {
+    flex: 1;
+    min-width: 0;
+  }
+}

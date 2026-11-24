@@ -1,0 +1,37 @@
+.ip-root { position: relative; width: 100%; }
+.ip-field { position: relative; display: flex; align-items: center; }
+.ip-input {
+  width: 100%; min-height: 40px; padding: 8px 34px 8px 12px;
+  border: 1px solid var(--border, #e2e8f0); border-radius: 8px;
+  background: var(--surface, #fff); color: var(--text, #0f172a); font-size: 14px;
+}
+.ip-input:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
+.ip-input:disabled { background: #f1f5f9; cursor: not-allowed; }
+.ip-required .ip-input { border-color: #bbf7d0; background: #f0fdf4; }
+.ip-invalid .ip-input { border-color: #dc2626; background: #fff; }
+.ip-invalid .ip-input:focus { box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15); }
+.ip-clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 32px; height: 32px; border: none; background: transparent; cursor: pointer;
+  color: var(--text-muted, #64748b); font-size: 14px; border-radius: 6px;
+}
+.ip-clear:hover { background: #f1f5f9; color: #dc2626; }
+.ip-list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 50;
+  max-height: min(320px, 50vh); overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+  background: var(--surface, #fff); border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
+}
+.ip-option {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-height: 44px;
+  padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 14px;
+}
+.ip-option.ip-active { background: #f0fdf4; }
+.ip-option[aria-selected='true'] { box-shadow: inset 3px 0 0 #16a34a; }
+.ip-tag { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; flex: none; }
+.ip-tag-th { background: #dcfce7; color: #15803d; }
+.ip-tag-tsd { background: #dbeafe; color: #1d4ed8; }
+.ip-code { font-weight: 600; color: var(--text, #0f172a); }
+.ip-name { flex: 1 1 120px; min-width: 0; color: var(--text, #0f172a); }
+.ip-stock { margin-left: auto; font-size: 12px; color: var(--text-muted, #64748b); white-space: nowrap; }
+.ip-empty { padding: 12px; font-size: 13px; color: var(--text-muted, #64748b); text-align: center; }
