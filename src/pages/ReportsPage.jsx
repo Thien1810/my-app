@@ -15,11 +15,53 @@ import { exportToExcel, exportAllRawData } from '../lib/exportExcel'
 import { KindBadge, ProjectStatusBadge } from '../components/Badges'
 import MetaAdsManagerTab from '../components/MetaAdsManagerTab'
 
+// Cấu hình nhóm báo cáo: mỗi nhóm gồm nhiều phần (view); id view = giá trị activeTab / ?tab=
+const REPORT_GROUPS = [
+  {
+    id: 'kho',
+    label: '📦 Kho & Cảnh báo',
+    views: [
+      { id: 'stock', label: 'Tồn kho & Giá trị' },
+      { id: 'where', label: 'Đồ đang ở đâu' },
+      { id: 'forecast', label: 'Dự báo & Cảnh báo thiếu' },
+    ],
+  },
+  {
+    id: 'vattu',
+    label: '🧰 Hiệu quả vật tư',
+    views: [
+      { id: 'most_used', label: 'Dùng nhiều nhất' },
+      { id: 'damage', label: 'Hư hỏng / mất' },
+      { id: 'payback', label: 'Hoàn vốn đồ tái sử dụng', managerOnly: true },
+    ],
+  },
+  {
+    id: 'taichinh',
+    label: '💰 Tài chính',
+    managerOnly: true,
+    views: [
+      { id: 'profit', label: 'Lãi gộp từng đám', managerOnly: true },
+      { id: 'pnl', label: 'P&L ròng, chi phí cứng & Ads', managerOnly: true },
+    ],
+  },
+]
+
 export default function ReportsPage() {
   const { role, isManagerOrAdmin } = useAuth()
   const [searchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const [activeTab, setActiveTab] = useState(requestedTab || 'stock')
+  const [activeTab, setActiveTab] = useState(() =>
+    REPORT_GROUPS.some((g) =>
+      g.views.some((v) => v.id === requestedTab && (!v.managerOnly || isManagerOrAdmin)),
+    )
+      ? requestedTab
+      : 'stock',
+  )
+  const visibleGroups = REPORT_GROUPS.map((g) => ({
+    ...g,
+    views: g.views.filter((v) => !v.managerOnly || isManagerOrAdmin),
+  })).filter((g) => g.views.length > 0 && (!g.managerOnly || isManagerOrAdmin))
+  const currentGroup = visibleGroups.find((g) => g.views.some((v) => v.id === activeTab))
   const [loading, setLoading] = useState(true)
   const [exportingRaw, setExportingRaw] = useState(false)
   const [error, setError] = useState('')
@@ -494,71 +536,38 @@ export default function ReportsPage() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {/* Thanh chọn loại báo cáo */}
-      <div className="tabs-bar" style={{ marginBottom: 20 }}>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === 'stock' ? 'active' : ''}`}
-          onClick={() => setActiveTab('stock')}
-        >
-          📦 1. Tồn kho & Giá trị
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === 'where' ? 'active' : ''}`}
-          onClick={() => setActiveTab('where')}
-        >
-          📍 2. Đồ đang ở đâu ({whereIsItemsReport.length})
-        </button>
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === 'damage' ? 'active' : ''}`}
-          onClick={() => setActiveTab('damage')}
-        >
-          💔 3. Tỷ lệ hư hỏng / mất
-        </button>
-        {isManagerOrAdmin && (
-          <>
-            <button
-              type="button"
-              className={`tab-btn ${activeTab === 'profit' ? 'active' : ''}`}
-              onClick={() => setActiveTab('profit')}
-            >
-              💰 4. Lãi gộp từng đám (Chi phí xoay vòng)
-            </button>
-            <button
-              type="button"
-              className={`tab-btn ${activeTab === 'pnl' ? 'active' : ''}`}
-              onClick={() => setActiveTab('pnl')}
-            >
-              🏛️ 5. P&L Ròng, Chi phí cứng & Ads (Meta API)
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === 'most_used' ? 'active' : ''}`}
-          onClick={() => setActiveTab('most_used')}
-        >
-          🏆 6. Vật tư dùng nhiều nhất
-        </button>
-        {isManagerOrAdmin && (
+      {/* Thanh tab nhóm báo cáo */}
+      <div className="tabs-bar" style={{ marginBottom: currentGroup?.views.length > 1 ? 10 : 20 }}>
+        {visibleGroups.map((g) => (
           <button
+            key={g.id}
             type="button"
-            className={`tab-btn ${activeTab === 'payback' ? 'active' : ''}`}
-            onClick={() => setActiveTab('payback')}
+            className={`tab-btn ${currentGroup?.id === g.id ? 'active' : ''}`}
+            onClick={() => {
+              if (currentGroup?.id !== g.id) setActiveTab(g.views[0].id)
+            }}
           >
-            🔄 7. Hoàn vốn đồ tái sử dụng
+            {g.label}
           </button>
-        )}
-        <button
-          type="button"
-          className={`tab-btn ${activeTab === 'forecast' ? 'active' : ''}`}
-          onClick={() => setActiveTab('forecast')}
-        >
-          🔮 8. Dự báo & Cảnh báo thiếu
-        </button>
+        ))}
       </div>
+
+      {/* Thanh chuyển phần trong nhóm */}
+      {currentGroup && currentGroup.views.length > 1 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+          {currentGroup.views.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              className={`btn btn-sm ${activeTab === v.id ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setActiveTab(v.id)}
+            >
+              {v.label}
+              {v.id === 'where' ? ` (${whereIsItemsReport.length})` : ''}
+            </button>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="loading-state">Đang tổng hợp dữ liệu báo cáo...</div>
