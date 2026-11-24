@@ -10,6 +10,7 @@ import {
 } from '../lib/formatters'
 import CurrencyInput from '../components/CurrencyInput'
 import ItemPicker from '../components/ItemPicker'
+import PurchaseExcelImport from '../components/PurchaseExcelImport'
 import MovementsLedger from '../components/MovementsLedger'
 import { useConfirm } from '../components/ConfirmDialog'
 import StockTransfersPanel from '../components/finance/StockTransfersPanel'
@@ -20,6 +21,7 @@ import {
   validatePurchaseLines,
   canDeleteMovement,
   priceDeviation,
+  isBlankPurchaseLine,
 } from '../lib/movementRules'
 import './MovementsPage.css'
 
@@ -31,7 +33,7 @@ const TABS = [
 ]
 
 let lineSeq = 0
-const newLine = () => ({ uid: ++lineSeq, item_id: '', qty: 1, unit_cost: '' })
+const newLine = () => ({ uid: ++lineSeq, item_id: '', qty: 1, unit_cost: '', note: '' })
 
 const Req = () => <span className="mv-req">*</span>
 
@@ -65,6 +67,11 @@ export default function MovementsPage() {
   const [purchaseLines, setPurchaseLines] = useState(() => [newLine()])
   // { [uid]: { item_id?: true, qty?: true, unit_cost?: true } }
   const [lineInvalid, setLineInvalid] = useState({})
+  // Tham chiếu tới các ô của từng dòng để nhảy ô bằng bàn phím.
+  const pickerRefs = useRef(new Map())
+  const qtyRefs = useRef(new Map())
+  const costRefs = useRef(new Map())
+  const pendingFocus = useRef(null) // { uid, field: 'picker' | 'qty' }
 
   // Form đơn dòng cho Kiểm kê / Đồ hỏng
   const [singleDate, setSingleDate] = useState(todayISO())
@@ -167,6 +174,41 @@ export default function MovementsPage() {
 
   const activeItems = useMemo(() => items.filter((i) => i.active), [items])
 
+  // Vật tư hay nhập: từ phiếu mua mới nhất, unique, tối đa 10.
+  const suggestedIds = useMemo(() => {
+    const purchases = movements
+      .filter((m) => m.type === 'purchase' && m.item_id != null)
+      .sort((a, b) => {
+        const d = String(b.moved_at || '').localeCompare(String(a.moved_at || ''))
+        return d !== 0 ? d : Number(b.id) - Number(a.id)
+      })
+    const out = []
+    const seen = new Set()
+    for (const m of purchases) {
+      const key = String(m.item_id)
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(key)
+      if (out.length >= 10) break
+    }
+    return out
+  }, [movements])
+
+  const focusInput = (el) => {
+    if (!el) return
+    el.focus()
+    if (el.select) el.select()
+  }
+
+  // Focus sau khi React vẽ xong (ô vật tư dòng mới, ô số lượng sau khi chọn vật tư).
+  useEffect(() => {
+    const p = pendingFocus.current
+    if (!p) return
+    pendingFocus.current = null
+    if (p.field === 'picker') pickerRefs.current.get(p.uid)?.focus()
+    else focusInput(qtyRefs.current.get(p.uid))
+  }, [purchaseLines])
+
   // Chèn phiếu và lấy id các dòng vừa tạo để làm nổi bật trong sổ kho.
   // Nếu RLS chặn trả dòng về thì thử lại không kèm select (chèn lỗi nghĩa là chưa có dòng nào được tạo).
   const insertMovements = async (rows) => {
@@ -217,6 +259,77 @@ export default function MovementsPage() {
     })
   }
 
+  const handleQtyKeyDown = (e, uid) => {
+    if (e.key !== 'Enter' || e.ctrlKey || e.metaKey) return
+    e.preventDefault()
+    focusInput(costRefs.current.get(uid)?.querySelector('input'))
+  }
+
+  const handleCostKeyDown = (e, idx) => {
+    if (e.key !== 'Enter' || e.ctrlKey || e.metaKey) return
+    e.preventDefault()
+    const line = purchaseLines[idx]
+    if (!line) return
+    if (idx < purchaseLines.length - 1) {
+      pickerRefs.current.get(purchaseLines[idx + 1].uid)?.focus()
+      return
+    }
+    if (line.item_id && Number(line.qty) > 0 && Number(line.unit_cost) > 0) {
+      const nl = newLine()
+      pendingFocus.current = { uid: nl.uid, field: 'picker' }
+      setPurchaseLines((prev) => [...prev, nl])
+    }
+  }
+
+  // Ctrl+Enter ở bất kỳ ô nào (trừ ô chọn vật tư) = lưu phiếu.
+  const handleFormKeyDown = (e) => {
+    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return
+    if (e.target?.getAttribute?.('role') === 'combobox') return
+    e.preventDefault()
+    if (!submitting) e.currentTarget.requestSubmit()
+  }
+
+  const handleExcelApply = (lines) => {
+    setError('')
+    setSuccess('')
+    setSuccessHint(false)
+    const incoming = Array.isArray(lines) ? lines : []
+    const replaceAll = purchaseLines.every(isBlankPurchaseLine)
+    const kept = replaceAll ? [] : purchaseLines.filter((l) => !isBlankPurchaseLine(l))
+    const seen = new Set(kept.map((l) => String(l.item_id)).filter(Boolean))
+    const added = []
+    let skipped = 0
+    for (const l of incoming) {
+      const key = String(l.item_id)
+      if (seen.has(key)) {
+        skipped += 1
+        continue
+      }
+      seen.add(key)
+      added.push({
+        uid: ++lineSeq,
+        item_id: key,
+        qty: Number(l.qty),
+        unit_cost: Number(l.unit_cost) > 0 ? Number(l.unit_cost) : '',
+        note: String(l.note ?? '').trim(),
+      })
+    }
+    if (added.length === 0) {
+      setError(
+        skipped > 0
+          ? `Không có dòng mới nào được thêm: đã bỏ qua ${skipped} mã trùng.`
+          : 'Không có dòng nào để đổ vào phiếu.'
+      )
+      return
+    }
+    setPurchaseLines([...kept, ...added])
+    setLineInvalid({})
+    setSuccess(
+      `Đã đổ ${added.length} dòng từ Excel vào phiếu. Kiểm tra rồi bấm Lưu.` +
+        (skipped > 0 ? ` Đã bỏ qua ${skipped} mã trùng.` : '')
+    )
+  }
+
   const addPurchaseLine = () => setPurchaseLines((prev) => [...prev, newLine()])
 
   const removePurchaseLine = (uid) => {
@@ -258,7 +371,7 @@ export default function MovementsPage() {
         partner_id: supplierId ? Number(supplierId) : null,
         qty: Number(l.qty),
         unit_cost: Number(l.unit_cost),
-        note: purchaseNote.trim() || null,
+        note: [purchaseNote.trim(), String(l.note || '').trim()].filter(Boolean).join(' — ') || null,
       }))
 
       await insertMovements(rows)
@@ -399,7 +512,7 @@ export default function MovementsPage() {
   const purchaseLineCount = purchaseLines.filter((l) => l.item_id).length
 
   const renderPurchase = () => (
-    <form onSubmit={handleCreatePurchase} noValidate className="mv-form">
+    <form onSubmit={handleCreatePurchase} onKeyDown={handleFormKeyDown} noValidate className="mv-form">
       <section className="mv-block">
         <h3 className="mv-block-title">
           <span className="mv-step">1</span> Thông tin phiếu
@@ -460,6 +573,10 @@ export default function MovementsPage() {
         <h3 className="mv-block-title">
           <span className="mv-step">2</span> Danh sách vật tư
         </h3>
+        <PurchaseExcelImport items={activeItems} disabled={submitting} onApply={handleExcelApply} />
+        <div className="mv-hint mv-tip">
+          Mẹo: gõ mã/tên → Enter → số lượng → Enter → đơn giá → Enter để thêm dòng mới.
+        </div>
         <div className="mv-lines">
           {purchaseLines.map((line, idx) => {
             const itemObj = line.item_id ? itemMap.get(Number(line.item_id)) : null
@@ -489,9 +606,18 @@ export default function MovementsPage() {
                     Vật tư <Req />
                   </label>
                   <ItemPicker
+                    ref={(el) => {
+                      if (el) pickerRefs.current.set(line.uid, el)
+                      else pickerRefs.current.delete(line.uid)
+                    }}
                     items={activeItems}
                     value={line.item_id}
+                    suggestedIds={suggestedIds}
+                    showGroupChips
                     onChange={(v) => handlePurchaseLineChange(line.uid, 'item_id', v)}
+                    onSelected={() => {
+                      pendingFocus.current = { uid: line.uid, field: 'qty' }
+                    }}
                     placeholder="Gõ để tìm vật tư..."
                     invalid={!!inv.item_id}
                     stockField="in_stock"
@@ -530,29 +656,43 @@ export default function MovementsPage() {
                       min="0.01"
                       step="any"
                       inputMode="decimal"
+                      ref={(el) => {
+                        if (el) qtyRefs.current.set(line.uid, el)
+                        else qtyRefs.current.delete(line.uid)
+                      }}
                       className={inv.qty ? 'mv-invalid' : ''}
                       value={line.qty}
                       onChange={(e) => handlePurchaseLineChange(line.uid, 'qty', e.target.value)}
+                      onKeyDown={(e) => handleQtyKeyDown(e, line.uid)}
                     />
                   </div>
                   <div className="form-group">
                     <label>
                       Đơn giá nhập (₫) <Req />
                     </label>
-                    <CurrencyInput
-                      value={line.unit_cost}
-                      className={inv.unit_cost ? 'mv-invalid' : ''}
-                      onChange={(num) =>
-                        handlePurchaseLineChange(line.uid, 'unit_cost', num === 0 ? '' : num)
-                      }
-                      placeholder="VD: 250.000"
-                    />
+                    <div
+                      ref={(el) => {
+                        if (el) costRefs.current.set(line.uid, el)
+                        else costRefs.current.delete(line.uid)
+                      }}
+                      onKeyDown={(e) => handleCostKeyDown(e, idx)}
+                    >
+                      <CurrencyInput
+                        value={line.unit_cost}
+                        className={inv.unit_cost ? 'mv-invalid' : ''}
+                        onChange={(num) =>
+                          handlePurchaseLineChange(line.uid, 'unit_cost', num === 0 ? '' : num)
+                        }
+                        placeholder="VD: 250.000"
+                      />
+                    </div>
                   </div>
                   <div className="mv-line-total">
                     <span className="mv-muted">Thành tiền</span>
                     <strong>{formatCurrency(lineTotal)}</strong>
                   </div>
                 </div>
+                {line.note && <div className="mv-hint">Ghi chú dòng: {line.note}</div>}
                 {dev.warn && (
                   <div className="mv-warn">
                     ⚠️ Giá nhập {dev.pct > 0 ? 'cao hơn' : 'thấp hơn'} {Math.abs(dev.pct)}% so với
