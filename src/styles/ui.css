@@ -23,23 +23,27 @@
 /* ===== Nút ===== */
 .ui-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  min-height: var(--tap); padding: 0 var(--space-5);
-  border: 1px solid transparent; border-radius: var(--radius-md);
-  font-size: var(--fs-lg); font-weight: 600; line-height: 1.2; text-align: center;
+  min-height: var(--tap); padding: 0 var(--space-6);
+  border: 1.5px solid transparent; border-radius: var(--radius-pill);
+  font-size: var(--fs-lg); font-weight: 600; line-height: 1.2; letter-spacing: 0.01em; text-align: center;
   cursor: pointer; text-decoration: none; background: var(--surface); color: var(--text);
   transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
 .ui-btn:hover { text-decoration: none; }
 .ui-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.ui-btn--primary { background: var(--primary); color: #fff; }
+.ui-btn--primary { background: var(--primary); color: #fff; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.28); }
 .ui-btn--primary:hover { background: var(--primary-hover); }
+.ui-btn--primary:active { transform: translateY(1px); box-shadow: 0 1px 3px rgba(22, 163, 74, 0.28); }
 .ui-btn--secondary { background: var(--surface); color: var(--primary-hover); border-color: var(--primary); }
 .ui-btn--secondary:hover { background: var(--primary-subtle); }
 .ui-btn--danger { background: var(--red); color: #fff; }
 .ui-btn--danger:hover { opacity: 0.9; }
 .ui-btn--ghost { background: transparent; color: var(--text-muted); }
 .ui-btn--ghost:hover { background: var(--bg); color: var(--text); }
-.ui-btn--sm { min-height: var(--tap-sm); padding: 0 var(--space-4); font-size: var(--fs-md); }
+.ui-btn--sm { min-height: var(--tap-sm); padding: 0 var(--space-5); font-size: var(--fs-md); }
+/* Nút chỉ có biểu tượng: hình tròn, đủ vùng bấm */
+.ui-btn--icon { width: var(--tap); min-width: var(--tap); padding: 0; }
+.ui-btn--icon.ui-btn--sm { width: var(--tap-sm); min-width: var(--tap-sm); }
 .ui-btn--block { display: flex; width: 100%; }
 .ui-btn:disabled, .ui-btn[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
 .ui-btn.is-loading { position: relative; color: transparent; pointer-events: none; }

@@ -110,6 +110,8 @@ export default function UiKitPage() {
           <button type="button" className="ui-btn ui-btn--danger">Xóa</button>
           <button type="button" className="ui-btn ui-btn--ghost">Ghost</button>
           <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm">Nhỏ 40px</button>
+          <button type="button" className="ui-btn ui-btn--secondary ui-btn--icon" aria-label="Chỉnh sửa">✏️</button>
+          <button type="button" className="ui-btn ui-btn--primary ui-btn--icon ui-btn--sm" aria-label="Thêm">＋</button>
           <button type="button" className="ui-btn ui-btn--primary" disabled>Vô hiệu</button>
           <button type="button" className={`ui-btn ui-btn--primary${loading ? ' is-loading' : ''}`} onClick={startLoading}>Đang lưu (bấm thử)</button>
         </div>
