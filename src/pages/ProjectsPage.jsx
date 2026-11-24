@@ -13,6 +13,7 @@ import {
 import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
 import ContractValueFields from '../components/ContractValueFields'
+import { useConfirm } from '../components/ConfirmDialog'
 import { saveProjectFinance } from '../lib/financeApi'
 import { fetchAllRows } from '../lib/fetchAll'
 import { calcProjectClosure, deleteBlockMessage } from '../lib/projectArchive'
@@ -55,6 +56,8 @@ export default function ProjectsPage() {
   const [membersMap, setMembersMap] = useState(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const { confirm, confirmDialog } = useConfirm()
 
   // Bộ lọc
   const [search, setSearch] = useState('')
@@ -372,7 +375,13 @@ export default function ProjectsPage() {
   }
 
   const handleDeleteProject = async (p) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa dự án "${p.name}"?`)) return
+    const okDelete = await confirm({
+      title: 'Xóa dự án',
+      message: `Bạn có chắc chắn muốn xóa dự án "${p.name}"? Hành động không hoàn tác được.`,
+      confirmLabel: 'Xóa',
+      danger: true,
+    })
+    if (!okDelete) return
     try {
       const countOf = async (table) => {
         const { count, error: cErr } = await supabase
@@ -395,13 +404,21 @@ export default function ProjectsPage() {
       const { error: err } = await supabase.from('projects').delete().eq('id', p.id)
       if (err) throw err
       await loadData()
+      showNotice(`Đã xóa dự án "${p.name}".`)
     } catch (err) {
       showError(err.message || 'Không thể xóa dự án')
     }
   }
 
   const showError = (msg) => {
+    setNotice('')
     setError(msg)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const showNotice = (msg) => {
+    setError('')
+    setNotice(msg)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -490,10 +507,16 @@ export default function ProjectsPage() {
         showError(`Chưa thể lưu trữ dự án "${p.name}": ${closure.reasons.join('; ')}.`)
         return
       }
-      if (!window.confirm(`Lưu trữ dự án "${p.name}"? Dự án sẽ bị ẩn khỏi danh sách (dữ liệu và báo cáo vẫn giữ nguyên).`)) return
+      const okArchive = await confirm({
+        title: 'Lưu trữ dự án',
+        message: `Lưu trữ dự án "${p.name}"? Dự án sẽ bị ẩn khỏi danh sách (dữ liệu và báo cáo vẫn giữ nguyên).`,
+        confirmLabel: 'Lưu trữ',
+      })
+      if (!okArchive) return
       const n = await setArchivedAt([p.id], new Date().toISOString())
       await loadData()
       if (n === 0) showError(`Không lưu trữ được dự án "${p.name}" vì dữ liệu đã đổi (không còn ở trạng thái Đã hủy hoặc đã được lưu trữ).`)
+      else showNotice(`Đã lưu trữ dự án "${p.name}".`)
     } catch (err) {
       showError(err.message || 'Không thể lưu trữ dự án')
     }
@@ -503,13 +526,19 @@ export default function ProjectsPage() {
     try {
       await setArchivedAt([p.id], null)
       await loadData()
+      showNotice(`Đã bỏ lưu trữ dự án "${p.name}".`)
     } catch (err) {
       showError(err.message || 'Không thể bỏ lưu trữ dự án')
     }
   }
 
   const handleArchiveSuggested = async () => {
-    if (!window.confirm(`Lưu trữ ${suggested.length} dự án hủy đã đóng hết thao tác?`)) return
+    const okBulk = await confirm({
+      title: 'Lưu trữ hàng loạt',
+      message: `Lưu trữ ${suggested.length} dự án hủy đã đóng hết thao tác?`,
+      confirmLabel: 'Lưu trữ',
+    })
+    if (!okBulk) return
     try {
       // Tính lại bằng dữ liệu mới nhất trước khi ghi; chỉ lưu trữ dự án vẫn còn đủ điều kiện.
       const fresh = await computeClosures(suggested)
@@ -521,6 +550,8 @@ export default function ProjectsPage() {
         showError(
           `Đã lưu trữ ${done} dự án; ${skippedAll} dự án bị bỏ qua vì dữ liệu đã đổi.`
         )
+      } else {
+        showNotice(`Đã lưu trữ ${done} dự án.`)
       }
     } catch (err) {
       showError(err.message || 'Không thể lưu trữ hàng loạt')
@@ -570,6 +601,19 @@ export default function ProjectsPage() {
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+      {notice && (
+        <div
+          className="alert alert-success"
+          role="status"
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+        >
+          <span>{notice}</span>
+          <button type="button" className="btn-icon" aria-label="Đóng thông báo" onClick={() => setNotice('')}>
+            ✕
+          </button>
+        </div>
+      )}
+      {confirmDialog}
 
       {/* Bộ lọc */}
       <div className="card filter-bar">

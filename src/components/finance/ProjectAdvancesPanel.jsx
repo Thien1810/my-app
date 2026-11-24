@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import CurrencyInput from '../CurrencyInput'
+import { useConfirm } from '../ConfirmDialog'
 import { formatCurrency } from '../../lib/formatters'
 import {
   createProjectAdvance,
@@ -33,6 +34,7 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
   const [form, setForm] = useState({ receivedDate: todayStr(), kind: 'advance', amount: 0, note: '' })
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const { confirm, confirmDialog } = useConfirm()
 
   useEffect(() => {
     let cancelled = false
@@ -131,7 +133,13 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
       setError(delMsg)
       return
     }
-    if (!window.confirm('Xóa khoản này?')) return
+    const okDel = await confirm({
+      title: 'Xóa khoản này',
+      message: 'Xóa khoản này?',
+      confirmLabel: 'Xóa',
+      danger: true,
+    })
+    if (!okDel) return
     setSubmitting(true)
     setError('')
     try {
@@ -292,6 +300,7 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
             </table>
           </div>
         ))}
+      {confirmDialog}
     </div>
   )
 }
