@@ -192,6 +192,30 @@
   .ui-table .ui-col-hide-mobile { display: none; }
 }
 
+/* Bảng thật dùng cả hai lớp "data-table ui-table": desktop giữ đúng kiểu .data-table cũ (App.css),
+   điện thoại thành thẻ theo .ui-table. ui.css nạp sau App.css nên phải khôi phục cỡ chữ/đệm desktop. */
+@media (min-width: 769px) {
+  .data-table.ui-table { font-size: 13.5px; }
+  .data-table.ui-table th, .data-table.ui-table td { padding: 10px 12px; }
+  .data-table.ui-table th { font-size: 12px; background: #f8fafc; }
+}
+@media (max-width: 768px) {
+  .data-table.ui-table td { text-align: right; }
+  .data-table.ui-table td.ui-table__primary,
+  .data-table.ui-table td.ui-table__sub { text-align: left; }
+  /* Hàng nút trong ô hành động: xếp ngang, chia đều, tự xuống dòng */
+  .ui-table td.ui-table__actions .row-actions { display: flex; flex: 1 1 100%; flex-wrap: wrap; width: 100%; gap: var(--space-2); }
+  .ui-table td.ui-table__actions .row-actions > .btn { flex: 1 1 auto; min-width: 0; padding: 0 var(--space-3); white-space: nowrap; }
+  /* Thẻ có ảnh nhỏ (Vật tư): ảnh bên trái, tên + mã bên phải */
+  .ui-table--thumb tr { display: grid; grid-template-columns: 64px minmax(0, 1fr); }
+  .ui-table--thumb td { grid-column: 1 / -1; }
+  .ui-table--thumb td.ui-table__thumb { grid-column: 1; grid-row: 1 / span 2; order: -2; display: flex; align-items: center; justify-content: center; padding: var(--space-3) 0 var(--space-3) var(--space-4); background: var(--bg); border-bottom: 0; }
+  .ui-table--thumb td.ui-table__thumb::before { display: none; }
+  .ui-table--thumb td.ui-table__primary { grid-column: 2; grid-row: 1; padding-bottom: 0; border-bottom: 0; }
+  .ui-table--thumb td.ui-table__sub { grid-column: 2; grid-row: 2; order: -1; display: block; padding-top: 0; padding-bottom: var(--space-3); text-align: left; background: var(--bg); }
+  .ui-table--thumb td.ui-table__sub::before { display: none; }
+}
+
 /* ===== Thanh dính đáy ===== */
 .ui-sticky-bar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .ui-sticky-bar > .ui-btn { flex: 1 1 0; }

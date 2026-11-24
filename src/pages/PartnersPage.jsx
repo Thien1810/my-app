@@ -176,8 +176,8 @@ export default function PartnersPage() {
         ) : filteredPartners.length === 0 ? (
           <div className="empty-state">Không tìm thấy đối tác nào.</div>
         ) : (
-          <div className="table-responsive">
-            <table className="data-table">
+          <div className="table-responsive ui-table-wrap">
+            <table className="data-table ui-table">
               <thead>
                 <tr>
                   <th>Phân loại</th>
@@ -191,15 +191,21 @@ export default function PartnersPage() {
               <tbody>
                 {filteredPartners.map((p) => (
                   <tr key={p.id}>
-                    <td>
+                    <td data-label="Phân loại">
                       <PartnerKindBadge kind={p.kind} />
                     </td>
-                    <td className="font-bold">{p.name}</td>
-                    <td>{p.phone || '—'}</td>
-                    <td>{p.address || '—'}</td>
-                    <td>{p.note || '—'}</td>
+                    <td className="font-bold ui-table__primary" data-label="Tên đối tác">
+                      {p.name}
+                    </td>
+                    <td data-label="Số điện thoại">{p.phone || '—'}</td>
+                    <td className="ui-col-hide-mobile" data-label="Địa chỉ">
+                      {p.address || '—'}
+                    </td>
+                    <td className="ui-col-hide-mobile" data-label="Ghi chú">
+                      {p.note || '—'}
+                    </td>
                     {canEditCatalog && (
-                      <td className="text-right">
+                      <td className="text-right ui-table__actions">
                         <div className="row-actions">
                           <button
                             className="btn btn-sm btn-outline"

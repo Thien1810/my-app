@@ -691,8 +691,8 @@ export default function ProjectsPage() {
         ) : filteredProjects.length === 0 ? (
           <div className="empty-state">Chưa có dự án nào phù hợp.</div>
         ) : (
-          <div className="table-responsive">
-            <table className="data-table">
+          <div className="table-responsive ui-table-wrap">
+            <table className="data-table ui-table">
               <thead>
                 <tr>
                   <th>Mã</th>
@@ -709,10 +709,10 @@ export default function ProjectsPage() {
               <tbody>
                 {filteredProjects.map((p) => (
                   <tr key={p.id}>
-                    <td>
+                    <td data-label="Mã">
                       <code>{p.code || `#${p.id}`}</code>
                     </td>
-                    <td>
+                    <td className="ui-table__primary" data-label="Tên dự án">
                       <Link to={`/du-an/${p.id}`} className="table-link font-bold">
                         {p.name}
                       </Link>
@@ -760,13 +760,17 @@ export default function ProjectsPage() {
                         return null
                       })()}
                     </td>
-                    <td>{p.customer?.name || '—'}</td>
-                    <td>{p.location || '—'}</td>
-                    <td>
+                    <td data-label="Khách hàng">{p.customer?.name || '—'}</td>
+                    <td className="ui-col-hide-mobile" data-label="Địa điểm">
+                      {p.location || '—'}
+                    </td>
+                    <td data-label="Thi công → Tháo dỡ">
                       {formatDate(p.start_date)} → {formatDate(p.end_date)}
                     </td>
-                    <td>{p.lead?.full_name || p.lead?.email || '—'}</td>
-                    <td>
+                    <td className="ui-col-hide-mobile" data-label="Phụ trách">
+                      {p.lead?.full_name || p.lead?.email || '—'}
+                    </td>
+                    <td data-label="Trạng thái">
                       <ProjectStatusBadge status={p.status} />
                       {p.archived_at && (
                         <span className="badge badge-gray" style={{ marginLeft: 4, fontSize: '0.72rem' }}>
@@ -775,11 +779,11 @@ export default function ProjectsPage() {
                       )}
                     </td>
                     {canEditCatalog && (
-                      <td className="text-right font-bold text-green">
+                      <td className="text-right font-bold text-green" data-label="Giá trị HĐ">
                         {formatCurrency(financesMap.get(p.id) || 0)}
                       </td>
                     )}
-                    <td className="text-right">
+                    <td className="text-right ui-table__actions">
                       <div className="row-actions">
                         <Link to={`/du-an/${p.id}`} className="btn btn-sm btn-primary">
                           Mở dự án

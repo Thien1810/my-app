@@ -501,8 +501,8 @@ export default function ItemsPage() {
         ) : filteredItems.length === 0 ? (
           <div className="empty-state">Không tìm thấy vật tư phù hợp.</div>
         ) : (
-          <div className="table-responsive">
-            <table className="data-table items-table">
+          <div className="table-responsive ui-table-wrap">
+            <table className="data-table ui-table ui-table--thumb">
               <thead>
                 <tr>
                   <th style={{ width: 54 }}>Ảnh</th>
@@ -529,7 +529,7 @@ export default function ItemsPage() {
                   const swatch = getColorSwatch(itemColor)
                   return (
                     <tr key={item.id} className={!item.active ? 'row-inactive' : ''}>
-                      <td>
+                      <td className="ui-table__thumb" data-label="Ảnh">
                         {item.image_url ? (
                           <img
                             src={item.image_url}
@@ -567,10 +567,10 @@ export default function ItemsPage() {
                           </div>
                         )}
                       </td>
-                      <td>
+                      <td className="ui-table__sub" data-label="Mã">
                         <code>{item.code || `#${item.id}`}</code>
                       </td>
-                      <td>
+                      <td className="ui-table__primary" data-label="Tên vật tư">
                         <Link to={`/vat-tu/${item.id}`} className="table-link font-bold">
                           {item.name}
                         </Link>
@@ -580,8 +580,10 @@ export default function ItemsPage() {
                           </span>
                         )}
                       </td>
-                      <td>{item.category || '—'}</td>
-                      <td>
+                      <td className="ui-col-hide-mobile" data-label="Danh mục">
+                        {item.category || '—'}
+                      </td>
+                      <td className="ui-col-hide-mobile" data-label="Màu sắc">
                         {itemColor ? (
                           <span
                             style={{
@@ -609,21 +611,28 @@ export default function ItemsPage() {
                           '—'
                         )}
                       </td>
-                      <td>
+                      <td className="ui-col-hide-mobile" data-label="Loại">
                         <KindBadge kind={item.kind} />
                       </td>
-                      <td>{item.unit}</td>
-                      <td className="text-right">{formatCurrency(item.cost)}</td>
-                      <td className={`text-right font-bold ${isLowStock ? 'text-red' : 'text-green'}`}>
+                      <td className="ui-col-hide-mobile" data-label="ĐVT">
+                        {item.unit}
+                      </td>
+                      <td className="text-right ui-col-hide-mobile" data-label="Giá nhập">
+                        {formatCurrency(item.cost)}
+                      </td>
+                      <td
+                        className={`text-right font-bold ${isLowStock ? 'text-red' : 'text-green'}`}
+                        data-label="Trong kho"
+                      >
                         {formatNumber(item.in_stock)}
                       </td>
-                      <td className="text-right text-blue">
+                      <td className="text-right text-blue ui-col-hide-mobile" data-label="Ở dự án">
                         {item.kind === 'reusable' ? formatNumber(item.at_project) : '—'}
                       </td>
-                      <td className="text-right text-amber">
+                      <td className="text-right text-amber ui-col-hide-mobile" data-label="Chờ sửa">
                         {Number(item.in_repair || 0) > 0 ? formatNumber(item.in_repair) : '0'}
                       </td>
-                      <td>
+                      <td data-label="Cảnh báo tồn">
                         {isLowStock ? (
                           <span className="badge badge-danger">
                             ⚠️ Dưới tối thiểu ({formatNumber(item.min_stock)})
@@ -636,7 +645,7 @@ export default function ItemsPage() {
                           '—'
                         )}
                       </td>
-                      <td className="text-right">
+                      <td className="text-right ui-table__actions">
                         <div className="row-actions">
                           <Link to={`/vat-tu/${item.id}`} className="btn btn-sm btn-outline">
                             Chi tiết
