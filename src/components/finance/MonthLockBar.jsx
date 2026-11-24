@@ -39,7 +39,15 @@ function Modal({ title, busy, onClose, children }) {
 
 export default function MonthLockBar({ month, locks = [], lockLog = [], isLocked, projects, adsRows, fixedCosts, actions }) {
   const { role } = useAuth()
-  const [dialog, setDialog] = useState(null) // 'lock' | 'unlock' | null
+  // { type: 'lock' | 'unlock', month } | null — hộp thoại chỉ hiện khi đúng tháng đang chọn (không cần remount bằng key).
+  const [dialogState, setDialog] = useState(null)
+  const dialog = dialogState && dialogState.month === month ? dialogState.type : null
+  const openDialog = (type) => {
+    setNote('')
+    setReason('')
+    setModalError('')
+    setDialog({ type, month })
+  }
   const [note, setNote] = useState('')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -109,7 +117,7 @@ export default function MonthLockBar({ month, locks = [], lockLog = [], isLocked
         )}
         <div className="month-lock-actions">
           {canUnlock && (
-            <button type="button" className="btn btn-outline btn-sm" onClick={() => setDialog('unlock')}>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => openDialog('unlock')}>
               Mở khóa
             </button>
           )}
@@ -119,7 +127,7 @@ export default function MonthLockBar({ month, locks = [], lockLog = [], isLocked
               className="btn btn-primary btn-sm"
               disabled={!lockRule.ok}
               title={lockRule.ok ? '' : lockRule.reason}
-              onClick={() => setDialog('lock')}
+              onClick={() => openDialog('lock')}
             >
               🔒 Khóa sổ tháng {label}
             </button>

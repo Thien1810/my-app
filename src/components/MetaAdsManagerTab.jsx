@@ -297,7 +297,6 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
       )}
 
       <MonthLockBar
-        key={selectedMonth}
         month={selectedMonth}
         locks={locks}
         lockLog={lockLog}
