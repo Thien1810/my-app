@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../lib/AuthContext'
 import { generateProjectCode } from '../../lib/formatters'
-import { parseLeadAdsSource, inferHubFromLocation } from '../../lib/metaAdsClient'
+import { canConvertLead } from '../../lib/leadConvert'
 import {
   LEAD_STATUS_META,
   LEAD_STATUS_ORDER,
@@ -15,6 +15,7 @@ import { validateNewLead, buildManualLeadRow, isMissingLeadColumnErr } from '../
 import LeadCard from './LeadCard'
 import AddLeadModal from './AddLeadModal'
 import LostReasonDialog from './LostReasonDialog'
+import ConvertLeadDialog from './ConvertLeadDialog'
 
 function isMissingTableErr(err) {
   if (!err) return false
@@ -56,6 +57,9 @@ export default function LeadsTab({
   const [convertingId, setConvertingId] = useState(null)
   const [lostLead, setLostLead] = useState(null) // lead đang chờ chọn lý do mất
   const [savingLost, setSavingLost] = useState(false)
+  const [convertLead, setConvertLead] = useState(null) // lead đang mở hộp thoại tạo dự án
+  const [convertWarning, setConvertWarning] = useState(null) // dự án đã tạo nhưng chưa đổi được trạng thái lead
+  const [linkedProjects, setLinkedProjects] = useState({}) // site_lead_id -> { id, code }
 
   const [addOpen, setAddOpen] = useState(false)
   const [addSaving, setAddSaving] = useState(false)
@@ -119,9 +123,27 @@ export default function LeadsTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Dự án đã liên kết với lead (cột projects.site_lead_id). Cột chưa có thì bỏ qua, không báo lỗi.
+  const loadLinkedProjects = useCallback(async () => {
+    if (!supabase) return
+    try {
+      const res = await supabase
+        .from('projects')
+        .select('id, code, site_lead_id')
+        .not('site_lead_id', 'is', null)
+      if (res.error) return
+      const map = {}
+      for (const p of res.data || []) map[p.site_lead_id] = p
+      setLinkedProjects(map)
+    } catch {
+      // bỏ qua: chưa có cột
+    }
+  }, [])
+
   useEffect(() => {
     loadLeads()
-  }, [loadLeads, reloadKey])
+    loadLinkedProjects()
+  }, [loadLeads, loadLinkedProjects, reloadKey])
 
   const counts = countLeadsByStatus(leads)
 
@@ -204,19 +226,53 @@ export default function LeadsTab({
     if (onToast) onToast('Đã xóa yêu cầu báo giá.')
   }
 
-  const handleConvertToProject = async (lead) => {
-    if (
-      !window.confirm(
-        `Tạo khách hàng "${lead.customer_name}" và một Dự án Báo giá mới từ yêu cầu này?`
-      )
-    ) {
-      return
-    }
+  // Mở hộp thoại chọn nguồn/kho; việc tạo thật nằm ở handleConfirmConvert.
+  const handleConvertToProject = (lead) => {
+    if (convertingId) return
+    setConvertLead(lead)
+  }
 
+  const handleConfirmConvert = async ({ leadSource, warehouseCode }) => {
+    const lead = convertLead
+    if (!lead || convertingId) return
     setConvertingId(lead.id)
     reportError('')
+    setConvertWarning(null)
     try {
-      // 1. Tìm khách hàng trùng SĐT hoặc tạo mới
+      // 1. Tải lại lead từ DB: trạng thái có thể đã đổi từ máy/tab khác
+      const { data: fresh, error: freshErr } = await supabase
+        .from('site_leads')
+        .select('id, status')
+        .eq('id', lead.id)
+        .maybeSingle()
+      if (freshErr) throw freshErr
+      if (!fresh) {
+        reportError('Không tìm thấy yêu cầu này nữa (có thể đã bị xóa).')
+        setConvertLead(null)
+        loadLeads()
+        return
+      }
+      const can = canConvertLead({ status: fresh.status })
+      if (!can.ok) {
+        reportError(`Không tạo dự án: ${can.reason}. Danh sách đã được làm mới.`)
+        setConvertLead(null)
+        loadLeads()
+        return
+      }
+      // 2. Đã có dự án liên kết chưa (bỏ qua nếu cột site_lead_id chưa tồn tại)
+      const { data: linked, error: linkedErr } = await supabase
+        .from('projects')
+        .select('id, code')
+        .eq('site_lead_id', lead.id)
+        .limit(1)
+      if (!linkedErr && linked && linked.length > 0) {
+        reportError(`Lead này đã có dự án ${linked[0].code || ''}. Không tạo thêm.`)
+        setLinkedProjects((prev) => ({ ...prev, [lead.id]: linked[0] }))
+        setConvertLead(null)
+        return
+      }
+
+      // 3. Tìm khách hàng trùng SĐT hoặc tạo mới
       const cleanPhone = (lead.phone || '').trim()
       let customerId = null
 
@@ -248,10 +304,8 @@ export default function LeadsTab({
         customerId = newPartner.id
       }
 
-      // 2. Tạo mã dự án tự động DA-YYMM-XXX
-      const { data: existingProjects } = await supabase
-        .from('projects')
-        .select('id, code')
+      // 4. Tạo mã dự án DA-YYMM-XXX rồi thêm dự án
+      const { data: existingProjects } = await supabase.from('projects').select('id, code')
       const code = generateProjectCode(lead.event_date || '', existingProjects || [])
 
       const noteParts = []
@@ -260,49 +314,56 @@ export default function LeadsTab({
       if (lead.note) noteParts.push(`Ghi chú khách: ${lead.note}`)
       noteParts.push('Nguồn: Website dangwed.com')
 
-      const adsSrcStr = (parseLeadAdsSource(lead.note) || '').toLowerCase()
-      let detectedSource = 'google_seo'
-      if (adsSrcStr.includes('tiktok')) detectedSource = 'tiktok_ads'
-      else if (adsSrcStr) detectedSource = 'meta_ads'
+      const projectRow = {
+        code,
+        name: `${lead.service_interest || 'Tiệc cưới'} - ${lead.customer_name}`,
+        customer_id: customerId,
+        location: lead.location || null,
+        start_date: lead.event_date || null,
+        end_date: lead.event_date || null,
+        status: 'quote',
+        lead_source: leadSource,
+        warehouse_code: warehouseCode || null,
+        note: noteParts.join('\n'),
+      }
 
-      const detectedHub = adsSrcStr.includes('vinhloc')
-        ? 'vinh_loc'
-        : adsSrcStr.includes('xuanloc')
-        ? 'xuan_loc'
-        : inferHubFromLocation(lead.location || '')
-
-      // Nguồn khách và đầu kho ghi vào CỘT projects.lead_source / projects.warehouse_code (không còn thẻ [DW_ATTR] trong note)
-      const finalNote = noteParts.join('\n')
-      const VALID_LEAD_SOURCES = ['meta_ads', 'tiktok_ads', 'google_seo', 'referral', 'partner']
-      const leadSourceCol = VALID_LEAD_SOURCES.includes(detectedSource) ? detectedSource : 'unknown'
-      const warehouseCodeCol = detectedHub === 'xuan_loc' || detectedHub === 'vinh_loc' ? detectedHub : null
-
-      const projectName = `${lead.service_interest || 'Tiệc cưới'} - ${lead.customer_name}`
-
-      const { data: newProject, error: projErr } = await supabase
+      let ins = await supabase
         .from('projects')
-        .insert({
-          code,
-          name: projectName,
-          customer_id: customerId,
-          location: lead.location || null,
-          start_date: lead.event_date || null,
-          end_date: lead.event_date || null,
-          status: 'quote',
-          lead_source: leadSourceCol,
-          warehouse_code: warehouseCodeCol,
-          note: finalNote,
-        })
+        .insert({ ...projectRow, site_lead_id: lead.id })
         .select('id')
         .single()
-      if (projErr) throw projErr
+      if (ins.error) {
+        const m = ins.error.message || ''
+        if (ins.error.code === '23505' && /uq_projects_site_lead|site_lead_id/i.test(m)) {
+          reportError('Lead này đã có dự án. Không tạo thêm.')
+          setConvertLead(null)
+          loadLeads()
+          loadLinkedProjects()
+          return
+        }
+        if (/site_lead_id/i.test(m) || ins.error.code === 'PGRST204' || ins.error.code === '42703') {
+          // Cột site_lead_id chưa có (chưa chạy SQL): chưa tạo gì nên thử lại một lần không có cột đó
+          ins = await supabase.from('projects').insert(projectRow).select('id').single()
+        }
+      }
+      if (ins.error) throw ins.error
+      const newProject = ins.data
 
-      // 3. Đánh dấu lead đã chuyển đổi
-      await saveLeadStatus(lead.id, { status: 'quoted' })
+      // 5. Đổi lead sang Báo giá và KIỂM TRA kết quả
+      const ok = await saveLeadStatus(lead.id, { status: 'quoted' })
+      setLinkedProjects((prev) => ({ ...prev, [lead.id]: { id: newProject.id, code, site_lead_id: lead.id } }))
+      setConvertLead(null)
+      if (!ok) {
+        setConvertWarning({ projectId: newProject.id, code, leadName: lead.customer_name })
+        return
+      }
 
+      // 6. Thành công
+      if (onToast) onToast(`Đã tạo dự án ${code}.`)
       navigate(`/du-an/${newProject.id}`)
     } catch (e) {
-      reportError('Lỗi khi tạo dự án từ yêu cầu: ' + e.message)
+      reportError('Lỗi khi tạo dự án từ yêu cầu: ' + (e.message || e))
+      setConvertLead(null)
     } finally {
       setConvertingId(null)
     }
@@ -315,6 +376,22 @@ export default function LeadsTab({
 
   return (
     <>
+      {convertWarning && (
+        <div className="lead-dup-warning" role="alert" style={{ marginBottom: 12 }}>
+          Đã tạo dự án {convertWarning.code} nhưng chưa cập nhật được trạng thái lead — hãy tự đổi sang Báo giá.{' '}
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => navigate(`/du-an/${convertWarning.projectId}`)}
+          >
+            Mở dự án
+          </button>{' '}
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => setConvertWarning(null)}>
+            Đóng
+          </button>
+        </div>
+      )}
+
       {/* KPI: gọn, cuộn ngang được trên điện thoại */}
       <div className="lead-kpi-row">
         {LEAD_STATUS_ORDER.map((st) => (
@@ -398,6 +475,8 @@ export default function LeadsTab({
               lead={lead}
               isManagerOrAdmin={isManagerOrAdmin}
               converting={convertingId === lead.id}
+              linkedProject={linkedProjects[lead.id]}
+              onOpenProject={(id) => navigate(`/du-an/${id}`)}
               onStatusChange={handleUpdateLeadStatus}
               onConvert={handleConvertToProject}
               onDelete={handleDeleteLead}
@@ -412,6 +491,14 @@ export default function LeadsTab({
           error={addError}
           onSubmit={handleAddLead}
           onClose={() => setAddOpen(false)}
+        />
+      )}
+      {convertLead && (
+        <ConvertLeadDialog
+          lead={convertLead}
+          saving={convertingId === convertLead.id}
+          onConfirm={handleConfirmConvert}
+          onCancel={() => setConvertLead(null)}
         />
       )}
       {lostLead && (

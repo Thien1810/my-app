@@ -1,6 +1,7 @@
 import { formatDate } from '../../lib/formatters'
 import { useState } from 'react'
 import { getLeadAttribution, getLeadChannel } from '../../lib/leadSource'
+import { canConvertLead } from '../../lib/leadConvert'
 import './leads.css'
 import {
   LEAD_STATUS_META,
@@ -17,6 +18,8 @@ export default function LeadCard({
   onStatusChange,
   onConvert,
   onDelete,
+  linkedProject,
+  onOpenProject,
 }) {
   const status = normalizeLeadStatus(lead.status)
   const meta = LEAD_STATUS_META[status]
@@ -31,6 +34,7 @@ export default function LeadCard({
     ['Biết qua', attr.heard_from],
     ['Nguồn giới thiệu', attr.referrer],
   ].filter(([, v]) => v)
+  const convertCheck = canConvertLead({ status, linkedProject })
   const cleanDigits = (lead.phone || '').replace(/\D/g, '')
   return (
     <div className="card" style={{ padding: 16 }}>
@@ -158,20 +162,27 @@ export default function LeadCard({
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        {!['quoted', 'deposited', 'completed'].includes(status) ? (
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={converting}
-            onClick={() => onConvert(lead)}
-          >
-            {converting ? 'Đang tạo dự án...' : '✨ Tạo Khách & Dự án Báo giá'}
-          </button>
-        ) : (
-          <span className="text-xs text-green" style={{ alignSelf: 'center' }}>
-            ✓ Đã chuyển sang mục Dự án
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {convertCheck.ok && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={converting}
+              onClick={() => onConvert(lead)}
+            >
+              {converting ? 'Đang tạo dự án...' : '✨ Tạo Khách & Dự án'}
+            </button>
+          )}
+          {linkedProject && (
+            <button
+              type="button"
+              className="lead-project-link"
+              onClick={() => onOpenProject && onOpenProject(linkedProject.id)}
+            >
+              Dự án: {linkedProject.code}
+            </button>
+          )}
+        </div>
 
         {isManagerOrAdmin && (
           <button

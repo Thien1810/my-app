@@ -23,3 +23,7 @@
   -webkit-overflow-scrolling: touch;
 }
 .lead-kpi-row .kpi-card { flex: 1 0 104px; min-width: 104px; }
+.lead-project-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: #166534; font-size: 13px; font-weight: 600; text-decoration: underline;
+}
