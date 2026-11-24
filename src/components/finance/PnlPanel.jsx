@@ -6,7 +6,6 @@ import { PROJECT_LEAD_SOURCES } from '../../lib/metaAdsClient'
 const DASH = '—'
 const pctOf = (value, revenue) => (revenue > 0 ? `${((value / revenue) * 100).toFixed(1)}%` : DASH)
 const fmtPct = (v) => `${Number(v || 0).toFixed(1)}%`
-const money = (v) => (v == null ? DASH : formatCurrency(Math.round(v)))
 
 function sourceLabel(id) {
   if (!id || id === 'unknown') return 'Chưa chọn nguồn'
@@ -22,9 +21,6 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
   const netOk = pnl.netProfit >= 0
   const overhead = pnl.adsSpend + pnl.fixedCostTotal
   const rev = pnl.revenue
-
-  const roasText = pnl.roas == null ? DASH : `${pnl.roas.toFixed(1)}x`
-  const cirText = pnl.cir == null ? DASH : `${(pnl.cir * 100).toFixed(1)}%`
 
   const rows = [
     {
@@ -201,27 +197,6 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
             {!isAll && <> — Tiền cọc chưa gán kho nên số này là toàn công ty.</>}
           </div>
         )}
-
-        <div className="kpi-grid" style={{ marginTop: 16 }}>
-          <div className="kpi-card">
-            <div className="kpi-label">CAC (chi phí Ads / đám từ Ads)</div>
-            <div className="kpi-value">{money(pnl.cac)}</div>
-            <div className="kpi-sub">{pnl.paidAdsProjectCount} đám từ Ads</div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-label">ROAS</div>
-            <div className="kpi-value">{roasText}</div>
-            <div className="kpi-sub">Doanh thu từ Ads: {formatCurrency(pnl.paidAdsRevenue)}</div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-label">CIR (Ads / doanh thu từ Ads)</div>
-            <div className="kpi-value">{cirText}</div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-label">CPL (chi phí / tin nhắn + lead)</div>
-            <div className="kpi-value">{money(pnl.cpl)}</div>
-          </div>
-        </div>
       </div>
 
       <div className="form-grid-2">

@@ -8,7 +8,9 @@ const CHANNELS = [
   { value: 'google', label: 'Google' },
   { value: 'other', label: 'Khác' },
 ]
-const channelLabel = (v) => CHANNELS.find((c) => c.value === v)?.label || v
+const DASH = '—'
+const money = (v) => (v == null ? DASH : formatCurrency(Math.round(v)))
+const channelLabel =(v) => CHANNELS.find((c) => c.value === v)?.label || v
 
 // Ngày mặc định nằm trong tháng đang xem: hôm nay nếu cùng tháng, ngược lại mùng 1.
 function defaultDate(month) {
@@ -31,6 +33,7 @@ export default function AdsLedgerPanel({
   canWrite,
   onAdd,
   onRemove,
+  metrics,
 }) {
   const [form, setForm] = useState({
     date: defaultDate(month),
@@ -49,6 +52,8 @@ export default function AdsLedgerPanel({
   const whName = (code) => warehouses.find((w) => w.code === code)?.name || code
   const visible = rows.filter((r) => scope === 'all' || !r.warehouse_code || r.warehouse_code === scope)
   const total = visible.reduce((s, r) => s + (Number(r.spend) || 0), 0)
+  const roasText = metrics?.roas == null ? DASH : `${metrics.roas.toFixed(1)}x`
+  const cirText = metrics?.cir == null ? DASH : `${(metrics.cir * 100).toFixed(1)}%`
 
   const submit = async (e) => {
     e.preventDefault()
@@ -97,6 +102,34 @@ export default function AdsLedgerPanel({
           <div className="font-bold" style={{ fontSize: 18 }}>{formatCurrency(total)}</div>
         </div>
       </div>
+
+      {metrics && (
+        <div style={{ marginBottom: 16 }}>
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <div className="kpi-label">CAC (chi phí Ads / đám từ Ads)</div>
+              <div className="kpi-value">{money(metrics.cac)}</div>
+              <div className="kpi-sub">{metrics.paidAdsProjectCount} đám từ Ads</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">ROAS</div>
+              <div className="kpi-value">{roasText}</div>
+              <div className="kpi-sub">Doanh thu từ Ads: {formatCurrency(metrics.paidAdsRevenue)}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">CIR (Ads / doanh thu từ Ads)</div>
+              <div className="kpi-value">{cirText}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">CPL (chi phí / tin nhắn + lead)</div>
+              <div className="kpi-value">{money(metrics.cpl)}</div>
+            </div>
+          </div>
+          <div className="text-xs text-muted" style={{ marginTop: 8 }}>
+            CAC và ROAS chỉ tính các đám có nguồn Meta/TikTok (đám chưa chọn nguồn không tính).
+          </div>
+        </div>
+      )}
 
       {isLocked && <div className="empty-state" style={{ padding: 10, marginBottom: 12 }}>Tháng này đã khóa sổ</div>}
       {!isLocked && !canWrite && (

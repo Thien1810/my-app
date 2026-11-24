@@ -326,6 +326,14 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
         canWrite={isManagerOrAdmin}
         onAdd={actions.addAdsRow}
         onRemove={actions.removeAdsRow}
+        metrics={{
+          cac: pnl.cac,
+          roas: pnl.roas,
+          cir: pnl.cir,
+          cpl: pnl.cpl,
+          paidAdsProjectCount: pnl.paidAdsProjectCount,
+          paidAdsRevenue: pnl.paidAdsRevenue,
+        }}
       />
 
       <TargetUtmSection onCopied={(text) => setNotice({ type: 'success', text })} />
