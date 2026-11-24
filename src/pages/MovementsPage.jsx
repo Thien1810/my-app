@@ -15,6 +15,7 @@ import MovementsLedger from '../components/MovementsLedger'
 import { useConfirm } from '../components/ConfirmDialog'
 import StockTransfersPanel from '../components/finance/StockTransfersPanel'
 import { fetchAllRows } from '../lib/fetchAll'
+import { useIsMobile } from '../lib/useIsMobile'
 import { listWarehouses, createStockTransfer, listStockTransfers, getReceiptCode } from '../lib/financeApi'
 import {
   RECEIPT_PREFIX,
@@ -39,6 +40,9 @@ const TABS = [
   { key: 'adjust', icon: '⚖️', title: 'Kiểm kho', desc: 'Chỉnh tồn cho khớp thực tế' },
 ]
 
+// Trên điện thoại chỉ giữ Nhập hàng và Đồ hỏng.
+const MOBILE_TAB_KEYS = ['purchase', 'damaged']
+
 let lineSeq = 0
 const newLine = () => ({ uid: ++lineSeq, item_id: '', qty: 1, unit_cost: '', note: '' })
 
@@ -47,6 +51,7 @@ const Req = () => <span className="mv-req">*</span>
 export default function MovementsPage() {
   const { canEditCatalog, isAdmin, role } = useAuth()
   const { confirm, confirmDialog } = useConfirm()
+  const isMobile = useIsMobile()
   const [items, setItems] = useState([])
   const [suppliers, setSuppliers] = useState([])
   const [projects, setProjects] = useState([])
@@ -62,7 +67,9 @@ export default function MovementsPage() {
   const [successHint, setSuccessHint] = useState(false)
 
   // Việc đang làm: 'purchase' | 'adjust' | 'damaged' | 'transfer'
-  const [activeTab, setActiveTab] = useState('purchase')
+  const [tabState, setActiveTab] = useState('purchase')
+  // Màn hình nhỏ đang ở tab Chuyển kho / Kiểm kho thì hiểu như Nhập hàng.
+  const activeTab = isMobile && !MOBILE_TAB_KEYS.includes(tabState) ? 'purchase' : tabState
   const [submitting, setSubmitting] = useState(false)
   const [highlightIds, setHighlightIds] = useState([])
   const highlightTimer = useRef(null)
@@ -571,72 +578,111 @@ export default function MovementsPage() {
   )
   const purchaseLineCount = purchaseLines.filter((l) => l.item_id).length
 
-  const renderPurchase = () => (
+  const renderPurchase = () => {
+    const dateField = (
+      <div className="form-group mv-date-group">
+        <label>
+          Ngày nhập <Req />
+        </label>
+        <input
+          type="date"
+          required
+          className={!purchaseDate ? 'mv-invalid' : ''}
+          value={purchaseDate}
+          onChange={(e) => setPurchaseDate(e.target.value)}
+        />
+      </div>
+    )
+    const supplierField = (
+      <div className="form-group">
+        <label>Nhà cung cấp</label>
+        <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+          <option value="">-- Chọn nhà cung cấp (tùy chọn) --</option>
+          {suppliers.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} {s.phone ? `(${s.phone})` : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+    )
+    const warehouseField =
+      warehouses.length > 1 ? (
+        <div className="form-group">
+          <label>Nhập về kho</label>
+          <select value={purchaseWh} onChange={(e) => setPurchaseWh(e.target.value)}>
+            {warehouses.map((w) => (
+              <option key={w.code} value={w.code}>
+                {w.name}
+                {w.is_main ? ' (kho chính)' : ''}
+              </option>
+            ))}
+          </select>
+          <div className="mv-hint mv-wh-hint">
+            Chỉ ảnh hưởng tỷ trọng chia chi phí chung của đồ tái sử dụng.
+          </div>
+        </div>
+      ) : null
+    const noteField = (
+      <div className="form-group">
+        <label>Ghi chú phiếu nhập</label>
+        <input
+          type="text"
+          placeholder="Số hóa đơn, đợt nhập hàng..."
+          value={purchaseNote}
+          onChange={(e) => setPurchaseNote(e.target.value)}
+        />
+      </div>
+    )
+    return (
     <form onSubmit={handleCreatePurchase} onKeyDown={handleFormKeyDown} noValidate className="mv-form">
       <section className="mv-block">
         <h3 className="mv-block-title">
           <span className="mv-step">1</span> Thông tin phiếu
         </h3>
-        <div className="mv-grid">
-          <div className="form-group">
-            <label>
-              Ngày nhập <Req />
-            </label>
-            <input
-              type="date"
-              required
-              className={!purchaseDate ? 'mv-invalid' : ''}
-              value={purchaseDate}
-              onChange={(e) => setPurchaseDate(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label>Nhà cung cấp</label>
-            <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">-- Chọn nhà cung cấp (tùy chọn) --</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} {s.phone ? `(${s.phone})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          {warehouses.length > 1 && (
-            <div className="form-group">
-              <label>Nhập về kho</label>
-              <select value={purchaseWh} onChange={(e) => setPurchaseWh(e.target.value)}>
-                {warehouses.map((w) => (
-                  <option key={w.code} value={w.code}>
-                    {w.name}
-                    {w.is_main ? ' (kho chính)' : ''}
-                  </option>
-                ))}
-              </select>
-              <div className="mv-hint">
-                Chỉ ảnh hưởng tỷ trọng chia chi phí chung của đồ tái sử dụng.
-              </div>
+        {isMobile ? (
+          <>
+            <div className="mv-grid mv-grid-info">
+              {dateField}
+              {warehouseField}
             </div>
-          )}
-          <div className="form-group">
-            <label>Ghi chú phiếu nhập</label>
-            <input
-              type="text"
-              placeholder="Số hóa đơn, đợt nhập hàng..."
-              value={purchaseNote}
-              onChange={(e) => setPurchaseNote(e.target.value)}
-            />
+            <details className="mv-more">
+              <summary>Thêm thông tin (tùy chọn)</summary>
+              <div className="mv-more-body">
+                {supplierField}
+                {noteField}
+              </div>
+            </details>
+          </>
+        ) : (
+          <div className="mv-grid">
+            {dateField}
+            {supplierField}
+            {warehouseField}
+            {noteField}
           </div>
-        </div>
+        )}
       </section>
 
       <section className="mv-block">
         <h3 className="mv-block-title">
           <span className="mv-step">2</span> Danh sách vật tư
         </h3>
-        <PurchaseExcelImport items={activeItems} disabled={submitting} onApply={handleExcelApply} />
-        <div className="mv-hint mv-tip">
-          Mẹo: gõ mã/tên → Enter → số lượng → Enter → đơn giá → Enter để thêm dòng mới.
-        </div>
+        {isMobile ? (
+          <details className="mv-more">
+            <summary>📊 Nhập bằng Excel</summary>
+            <div className="mv-more-body">
+              <PurchaseExcelImport items={activeItems} disabled={submitting} onApply={handleExcelApply} />
+            </div>
+          </details>
+        ) : (
+          <PurchaseExcelImport items={activeItems} disabled={submitting} onApply={handleExcelApply} />
+        )}
+        {!isMobile && (
+          <div className="mv-hint mv-tip">
+            Mẹo: gõ mã/tên → Enter → số lượng → Enter → đơn giá → Enter để thêm dòng mới.
+          </div>
+        )}
         <div className="mv-lines">
           {purchaseLines.map((line, idx) => {
             const itemObj = line.item_id ? itemMap.get(Number(line.item_id)) : null
@@ -646,6 +692,127 @@ export default function MovementsPage() {
             const last = itemObj ? Number(itemObj.cost || 0) : 0
             const dev = itemObj ? priceDeviation(line.unit_cost, last) : { warn: false, pct: 0 }
             const stockNow = itemObj ? Number(itemObj.in_stock || 0) : 0
+            const pickerGroup = (
+              <div className="form-group">
+                <label>
+                  Vật tư <Req />
+                </label>
+                <ItemPicker
+                  ref={(el) => {
+                    if (el) pickerRefs.current.set(line.uid, el)
+                    else pickerRefs.current.delete(line.uid)
+                  }}
+                  items={activeItems}
+                  value={line.item_id}
+                  suggestedIds={suggestedIds}
+                  showGroupChips
+                  onChange={(v) => handlePurchaseLineChange(line.uid, 'item_id', v)}
+                  onSelected={() => {
+                    pendingFocus.current = { uid: line.uid, field: 'qty' }
+                  }}
+                  placeholder="Gõ để tìm vật tư..."
+                  invalid={!!inv.item_id}
+                  stockField="in_stock"
+                  required
+                />
+              </div>
+            )
+            const qtyGroup = (
+              <div className="form-group">
+                <label>
+                  Số lượng <Req />
+                </label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  inputMode="decimal"
+                  ref={(el) => {
+                    if (el) qtyRefs.current.set(line.uid, el)
+                    else qtyRefs.current.delete(line.uid)
+                  }}
+                  className={inv.qty ? 'mv-invalid' : ''}
+                  value={line.qty}
+                  onChange={(e) => handlePurchaseLineChange(line.uid, 'qty', e.target.value)}
+                  onKeyDown={(e) => handleQtyKeyDown(e, line.uid)}
+                />
+              </div>
+            )
+            const costGroup = (
+              <div className="form-group">
+                <label>
+                  Đơn giá nhập (₫) <Req />
+                </label>
+                <div
+                  ref={(el) => {
+                    if (el) costRefs.current.set(line.uid, el)
+                    else costRefs.current.delete(line.uid)
+                  }}
+                  onKeyDown={(e) => handleCostKeyDown(e, idx)}
+                >
+                  <CurrencyInput
+                    value={line.unit_cost}
+                    className={inv.unit_cost ? 'mv-invalid' : ''}
+                    onChange={(num) =>
+                      handlePurchaseLineChange(line.uid, 'unit_cost', num === 0 ? '' : num)
+                    }
+                    placeholder="VD: 250.000"
+                  />
+                </div>
+              </div>
+            )
+            const warnBox = dev.warn ? (
+              <div className="mv-warn">
+                ⚠️ Giá nhập {dev.pct > 0 ? 'cao hơn' : 'thấp hơn'} {Math.abs(dev.pct)}% so với lần
+                trước ({formatCurrency(last)}). Kiểm tra lại nếu nhập nhầm.
+              </div>
+            ) : null
+            if (isMobile) {
+              return (
+                <div className="mv-line mv-line-m" key={line.uid}>
+                  {pickerGroup}
+                  <div className="mv-line-nums">
+                    {qtyGroup}
+                    {costGroup}
+                  </div>
+                  <div className="mv-line-foot">
+                    <span className="mv-line-stock">
+                      {itemObj ? (
+                        <>
+                          Tồn: {formatNumber(stockNow)} →{' '}
+                          <strong>{formatNumber(stockNow + (Number.isFinite(qtyNum) ? qtyNum : 0))}</strong>
+                          {itemObj.unit ? ` ${itemObj.unit}` : ''}
+                        </>
+                      ) : (
+                        <span className="mv-muted">Dòng {idx + 1}</span>
+                      )}
+                    </span>
+                    <strong className="mv-line-sum">{formatCurrency(lineTotal)}</strong>
+                    {purchaseLines.length > 1 && (
+                      <button
+                        type="button"
+                        className="mv-icon-btn mv-line-del"
+                        aria-label={`Xóa dòng ${idx + 1}`}
+                        onClick={() => removePurchaseLine(line.uid)}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  {itemObj && last > 0 && (
+                    <button
+                      type="button"
+                      className="mv-last mv-last-m"
+                      onClick={() => handlePurchaseLineChange(line.uid, 'unit_cost', last)}
+                    >
+                      Giá nhập lần trước: {formatCurrency(last)} (bấm để điền)
+                    </button>
+                  )}
+                  {line.note && <div className="mv-hint">Ghi chú dòng: {line.note}</div>}
+                  {warnBox}
+                </div>
+              )
+            }
             return (
               <div className="mv-line" key={line.uid}>
                 <div className="mv-line-head">
@@ -661,29 +828,7 @@ export default function MovementsPage() {
                     </button>
                   )}
                 </div>
-                <div className="form-group">
-                  <label>
-                    Vật tư <Req />
-                  </label>
-                  <ItemPicker
-                    ref={(el) => {
-                      if (el) pickerRefs.current.set(line.uid, el)
-                      else pickerRefs.current.delete(line.uid)
-                    }}
-                    items={activeItems}
-                    value={line.item_id}
-                    suggestedIds={suggestedIds}
-                    showGroupChips
-                    onChange={(v) => handlePurchaseLineChange(line.uid, 'item_id', v)}
-                    onSelected={() => {
-                      pendingFocus.current = { uid: line.uid, field: 'qty' }
-                    }}
-                    placeholder="Gõ để tìm vật tư..."
-                    invalid={!!inv.item_id}
-                    stockField="in_stock"
-                    required
-                  />
-                </div>
+                {pickerGroup}
                 {itemObj && (
                   <div className="mv-info">
                     <span className={`mv-kind ${itemObj.kind === 'reusable' ? 'is-tsd' : 'is-th'}`}>
@@ -707,58 +852,15 @@ export default function MovementsPage() {
                   </div>
                 )}
                 <div className="mv-line-nums">
-                  <div className="form-group">
-                    <label>
-                      Số lượng <Req />
-                    </label>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="any"
-                      inputMode="decimal"
-                      ref={(el) => {
-                        if (el) qtyRefs.current.set(line.uid, el)
-                        else qtyRefs.current.delete(line.uid)
-                      }}
-                      className={inv.qty ? 'mv-invalid' : ''}
-                      value={line.qty}
-                      onChange={(e) => handlePurchaseLineChange(line.uid, 'qty', e.target.value)}
-                      onKeyDown={(e) => handleQtyKeyDown(e, line.uid)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>
-                      Đơn giá nhập (₫) <Req />
-                    </label>
-                    <div
-                      ref={(el) => {
-                        if (el) costRefs.current.set(line.uid, el)
-                        else costRefs.current.delete(line.uid)
-                      }}
-                      onKeyDown={(e) => handleCostKeyDown(e, idx)}
-                    >
-                      <CurrencyInput
-                        value={line.unit_cost}
-                        className={inv.unit_cost ? 'mv-invalid' : ''}
-                        onChange={(num) =>
-                          handlePurchaseLineChange(line.uid, 'unit_cost', num === 0 ? '' : num)
-                        }
-                        placeholder="VD: 250.000"
-                      />
-                    </div>
-                  </div>
+                  {qtyGroup}
+                  {costGroup}
                   <div className="mv-line-total">
                     <span className="mv-muted">Thành tiền</span>
                     <strong>{formatCurrency(lineTotal)}</strong>
                   </div>
                 </div>
                 {line.note && <div className="mv-hint">Ghi chú dòng: {line.note}</div>}
-                {dev.warn && (
-                  <div className="mv-warn">
-                    ⚠️ Giá nhập {dev.pct > 0 ? 'cao hơn' : 'thấp hơn'} {Math.abs(dev.pct)}% so với
-                    lần trước ({formatCurrency(last)}). Kiểm tra lại nếu nhập nhầm.
-                  </div>
-                )}
+                {warnBox}
               </div>
             )
           })}
@@ -788,7 +890,8 @@ export default function MovementsPage() {
         </div>
       </section>
     </form>
-  )
+    )
+  }
 
   const renderSingle = () => {
     const isAdjust = activeTab === 'adjust'
@@ -954,13 +1057,21 @@ export default function MovementsPage() {
     )
   }
 
+  const visibleTabs = isMobile ? TABS.filter((t) => MOBILE_TAB_KEYS.includes(t.key)) : TABS
+  // Điện thoại: người có quyền tạo phiếu không có tab Kiểm kho (nơi có sổ), nên hiện khối "phiếu gần đây".
+  const showRecent = isMobile && canEditCatalog && MOBILE_TAB_KEYS.includes(activeTab)
+  const recentMovements = movements.slice(0, 5)
+  const hasStickyBar = isMobile && canEditCatalog && activeTab === 'purchase'
+
   return (
-    <div className="page-container mv-page">
+    <div className={`page-container mv-page${hasStickyBar ? ' mv-has-bar' : ''}`}>
       <div className="page-header">
         <div>
           <h1>Nhập kho & Sổ phiếu kho</h1>
           <p className="text-muted">
-            Chọn việc cần làm: Nhập hàng, Chuyển kho, Đồ hỏng hoặc Kiểm kho. Sổ phiếu kho nằm ở tab Kiểm kho.
+            {isMobile
+              ? 'Nhập hàng nhanh về kho, hoặc xử lý đồ hỏng.'
+              : 'Chọn việc cần làm: Nhập hàng, Chuyển kho, Đồ hỏng hoặc Kiểm kho. Sổ phiếu kho nằm ở tab Kiểm kho.'}
           </p>
         </div>
       </div>
@@ -983,7 +1094,7 @@ export default function MovementsPage() {
         <div className="alert alert-success mv-alert" role="status">
           <span>
             {success}
-            {successHint && canEditCatalog && activeTab !== 'adjust' && (
+            {successHint && canEditCatalog && activeTab !== 'adjust' && !isMobile && (
               <span className="mv-success-hint">
                 {' '}
                 <button type="button" className="mv-link-btn" onClick={goToLedger}>
@@ -1006,8 +1117,12 @@ export default function MovementsPage() {
       {/* Khu vực tạo phiếu kho */}
       {canEditCatalog && (
         <div className="card mv-card">
-          <div className="mv-tabs" role="tablist" aria-label="Việc cần làm với kho">
-            {TABS.map((t, idx) => (
+          <div
+            className={`mv-tabs${isMobile ? ' mv-tabs-compact' : ''}`}
+            role="tablist"
+            aria-label="Việc cần làm với kho"
+          >
+            {visibleTabs.map((t, idx) => (
               <button
                 key={t.key}
                 type="button"
@@ -1019,15 +1134,17 @@ export default function MovementsPage() {
                 onClick={() => switchTab(t.key)}
               >
                 <span className="mv-tab-head">
-                  <span className="mv-tab-num" aria-hidden="true">
-                    {idx + 1}
-                  </span>
+                  {!isMobile && (
+                    <span className="mv-tab-num" aria-hidden="true">
+                      {idx + 1}
+                    </span>
+                  )}
                   <span className="mv-tab-icon" aria-hidden="true">
                     {t.icon}
                   </span>
                   <span className="mv-tab-title">{t.title}</span>
                 </span>
-                <span className="mv-tab-desc">{t.desc}</span>
+                {!isMobile && <span className="mv-tab-desc">{t.desc}</span>}
               </button>
             ))}
           </div>
@@ -1056,6 +1173,35 @@ export default function MovementsPage() {
             renderSingle()
           )}
           </div>
+
+          {showRecent && (
+            <details className="mv-recent" open>
+              <summary>📜 Phiếu vừa nhập gần đây</summary>
+              {loading && movements.length === 0 ? (
+                <p className="mv-muted mv-recent-empty">Đang tải...</p>
+              ) : recentMovements.length === 0 ? (
+                <p className="mv-muted mv-recent-empty">Chưa có phiếu nào.</p>
+              ) : (
+                <ul className="mv-recent-list">
+                  {recentMovements.map((m) => (
+                    <li key={m.id} className="mv-recent-row">
+                      <div className="mv-recent-top">
+                        <span>{formatDate(m.moved_at)}</span>
+                        <span className="mv-recent-type">{MOVEMENT_TYPE_LABELS[m.type] || m.type}</span>
+                      </div>
+                      <div className="mv-recent-main">
+                        <span className="mv-recent-name">{m.item?.name || `#${m.item_id}`}</span>
+                        <strong className="mv-recent-qty">
+                          {formatNumber(m.qty)}
+                          {m.item?.unit ? ` ${m.item.unit}` : ''}
+                        </strong>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
+          )}
         </div>
       )}
 

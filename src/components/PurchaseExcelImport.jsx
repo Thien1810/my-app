@@ -136,12 +136,12 @@ export default function PurchaseExcelImport({ items, disabled, onApply }) {
               <tbody>
                 {result.lines.map((l) => (
                   <tr key={l.rowNo} className={`pei-row-${l.status}`}>
-                    <td>{l.rowNo}</td>
-                    <td>{l.code || '—'}</td>
-                    <td>{l.name || '—'}</td>
-                    <td className="pei-num">{fmt(l.qty)}{l.unit ? ` ${l.unit}` : ''}</td>
-                    <td className="pei-num">{fmt(l.unit_cost)}</td>
-                    <td>
+                    <td data-label="Dòng Excel">{l.rowNo}</td>
+                    <td data-label="Mã">{l.code || '—'}</td>
+                    <td data-label="Tên">{l.name || '—'}</td>
+                    <td className="pei-num" data-label="SL">{fmt(l.qty)}{l.unit ? ` ${l.unit}` : ''}</td>
+                    <td className="pei-num" data-label="Đơn giá">{fmt(l.unit_cost)}</td>
+                    <td data-label="Trạng thái">
                       {STATUS_ICON[l.status]} {l.status === 'ok' ? 'Hợp lệ' : l.messages.join('; ')}
                     </td>
                   </tr>

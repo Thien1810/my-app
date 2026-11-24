@@ -27,7 +27,25 @@
 .pei-row-error td { background: #fef2f2; }
 .pei-hint-error { color: #b91c1c; font-weight: 600; margin: 8px 0 0; }
 .pei-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-@media (max-width: 600px) {
-  .pei-btn { flex: 1 1 100%; }
+@media (max-width: 768px) {
+  .pei { max-width: 100%; min-width: 0; }
+  .pei-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pei-btn { min-height: 44px; padding: 8px 6px; font-size: 14px; }
   .pei-footer .pei-btn { flex: 1 1 auto; }
+  .pei-panel { max-width: 100%; box-sizing: border-box; overflow: hidden; }
+  /* Bảng xem trước thành danh sách thẻ dọc, không cuộn ngang */
+  .pei-table-wrap { overflow-x: hidden; max-height: 60vh; background: transparent; }
+  .pei-table, .pei-table tbody, .pei-table tr, .pei-table td { display: block; width: 100%; box-sizing: border-box; }
+  .pei-table thead { display: none; }
+  .pei-table tr { margin-bottom: 8px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .pei-table td {
+    display: flex; justify-content: space-between; gap: 10px; text-align: right !important;
+    padding: 6px 10px; border-bottom: 1px solid #f1f5f9; min-width: 0; overflow-wrap: anywhere;
+  }
+  .pei-table td:last-child { border-bottom: 0; }
+  .pei-table td::before {
+    content: attr(data-label); flex: none; color: #6b7280; font-weight: 600; text-align: left;
+  }
+  .pei-row-warn, .pei-row-warn td { background: #fffbeb; }
+  .pei-row-error, .pei-row-error td { background: #fef2f2; }
 }

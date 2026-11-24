@@ -51,4 +51,13 @@
 .ip-code { font-weight: 600; color: var(--text, #0f172a); }
 .ip-name { flex: 1 1 120px; min-width: 0; color: var(--text, #0f172a); }
 .ip-stock { margin-left: auto; font-size: 12px; color: var(--text-muted, #64748b); white-space: nowrap; }
+@media (max-width: 768px) {
+  .ip-root { max-width: 100%; min-width: 0; }
+  .ip-input { min-height: 44px; font-size: 16px; padding: 9px 38px 9px 12px; box-sizing: border-box; min-width: 0; }
+  .ip-clear { width: 40px; height: 40px; right: 2px; }
+  .ip-pop { left: 0; right: 0; width: auto; max-width: 100%; box-sizing: border-box; }
+  .ip-list { max-height: 50vh; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .ip-chips { max-width: 100%; box-sizing: border-box; overscroll-behavior-x: contain; }
+  .ip-chip { min-height: 36px; }
+}
 .ip-empty { padding: 12px; font-size: 13px; color: var(--text-muted, #64748b); text-align: center; }
