@@ -15,6 +15,7 @@ import { calcProjectFinancialSummary } from '../lib/calc'
 import { exportToExcel, exportAllRawData } from '../lib/exportExcel'
 import { KindBadge, ProjectStatusBadge } from '../components/Badges'
 import MetaAdsManagerTab from '../components/MetaAdsManagerTab'
+import LeadSourceReport from '../components/LeadSourceReport'
 
 // Cấu hình nhóm báo cáo: mỗi nhóm gồm nhiều phần (view); id view = giá trị activeTab / ?tab=
 const REPORT_GROUPS = [
@@ -43,6 +44,7 @@ const REPORT_GROUPS = [
     views: [
       { id: 'profit', label: 'Lãi gộp từng đám', managerOnly: true },
       { id: 'pnl', label: 'P&L ròng, chi phí cứng & Ads', managerOnly: true },
+      { id: 'leadsource', label: 'Nguồn khách (Lead)', managerOnly: true },
     ],
   },
 ]
@@ -849,6 +851,9 @@ export default function ReportsPage() {
           {activeTab === 'pnl' && isManagerOrAdmin && (
             <MetaAdsManagerTab projectProfitReport={projectProfitReport} dataIncomplete={dataIncomplete} />
           )}
+
+          {/* 4C. BÁO CÁO NGUỒN KHÁCH (Admin/Manager) */}
+          {activeTab === 'leadsource' && isManagerOrAdmin && <LeadSourceReport />}
 
           {/* 5. VẬT TƯ DÙNG NHIỀU NHẤT */}
           {activeTab === 'most_used' && (
