@@ -5,6 +5,7 @@ import {
   defaultFromDate,
   vnTodayISO,
   removeDiacritics,
+  groupLedgerRows,
 } from './ledgerRows'
 
 const item = { id: 1, code: 'TH-HOA-001', name: 'Hoa hồng đỏ', unit: 'bó', kind: 'consumable' }
@@ -107,5 +108,34 @@ describe('defaultFromDate / vnTodayISO', () => {
 
   it('removeDiacritics', () => {
     expect(removeDiacritics('Đèn Ánh Sáng')).toBe('den anh sang')
+  })
+})
+
+describe('mã phiếu trong sổ kho', () => {
+  const mv = (id, code, qty, cost, type = 'purchase') => ({
+    id, moved_at: '2026-11-20', type, item_id: 1, qty, unit_cost: cost, note: null, item, project: null, partner: null, receipt_code: code,
+  })
+  const movs = [mv(1, 'PN-2611-001', 2, 1000), mv(2, 'PN-2611-001', 3, 2000), mv(3, null, 1, 500), mv(4, 'KK-2611-001', 1, null, 'adjust')]
+  const rows = toLedgerRows({ movements: movs, transfers: [{ id: 5, item_id: 1, from_wh: 'A', to_wh: 'B', qty: 1, transferred_at: '2026-11-20', receipt_code: 'CK-2611-001' }] })
+
+  it('đưa receiptCode vào dòng', () => {
+    expect(rows.find((r) => r.key === 'm-1').receiptCode).toBe('PN-2611-001')
+    expect(rows.find((r) => r.key === 'm-3').receiptCode).toBe('')
+    expect(rows.find((r) => r.key === 't-5').receiptCode).toBe('CK-2611-001')
+  })
+  it('gom nhóm từ 2 dòng, dòng lẻ/không mã giữ nguyên', () => {
+    const g = groupLedgerRows(rows)
+    const groups = g.filter((x) => x.kind === 'group')
+    expect(groups).toHaveLength(1)
+    expect(groups[0].code).toBe('PN-2611-001')
+    expect(groups[0].count).toBe(2)
+    expect(groups[0].total).toBe(2 * 1000 + 3 * 2000)
+    expect(g.filter((x) => x.kind === 'row')).toHaveLength(3)
+    expect(g.reduce((n, x) => n + (x.kind === 'group' ? x.rows.length : 1), 0)).toBe(rows.length)
+  })
+  it('tìm theo mã phiếu (không phân biệt hoa thường)', () => {
+    const f = filterLedgerRows(rows, { search: 'pn-2611-001' })
+    expect(f.map((r) => r.key).sort()).toEqual(['m-1', 'm-2'])
+    expect(filterLedgerRows(rows, { search: 'CK-2611' })).toHaveLength(1)
   })
 })

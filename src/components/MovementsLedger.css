@@ -170,3 +170,39 @@
     min-width: 0;
   }
 }
+
+/* Mã phiếu và nhóm phiếu */
+.ml-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ml-group-row td {
+  padding: 0;
+  background: var(--bg-muted, #f3f4f6);
+}
+.ml-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.ml-group-caret {
+  width: 14px;
+}
+.ml-group-card {
+  background: var(--bg-muted, #f3f4f6);
+  padding: 0;
+}
+.ml-row-in-group td:first-child {
+  padding-left: 24px;
+}

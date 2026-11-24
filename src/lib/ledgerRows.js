@@ -79,6 +79,7 @@ export function toLedgerRows({ movements = [], transfers = [], itemsById = {}, w
       partnerName: m.partner?.name || '',
       warehouseText: '',
       note: m.note || '',
+      receiptCode: m.receipt_code || '',
     })
   }
   for (const t of transfers) {
@@ -101,6 +102,7 @@ export function toLedgerRows({ movements = [], transfers = [], itemsById = {}, w
       partnerName: '',
       warehouseText: `${whLabel(warehouses, t.from_wh)} → ${whLabel(warehouses, t.to_wh)}`,
       note: t.note || '',
+      receiptCode: t.receipt_code || '',
     })
   }
 
@@ -132,10 +134,46 @@ export function filterLedgerRows(rows, filters = {}) {
     if (projectId && projectId !== 'all' && String(r.projectId ?? '') !== String(projectId)) return false
     if (q) {
       const hay = removeDiacritics(
-        [r.itemCode, r.itemName, r.note, r.partnerName, r.projectName].join(' ')
+        [r.itemCode, r.itemName, r.note, r.partnerName, r.projectName, r.receiptCode].join(' ')
       )
       if (!hay.includes(q)) return false
     }
     return true
   })
+}
+
+// Gom các dòng cùng receiptCode (từ 2 dòng trở lên) thành một nhóm; dòng không có mã (phiếu cũ)
+// hoặc mã chỉ có 1 dòng giữ nguyên như dòng thường. Thứ tự theo vị trí xuất hiện đầu tiên của mã.
+// Trả về mảng { kind: 'row', key, row } | { kind: 'group', key, code, date, type, count, total, rows }.
+export function groupLedgerRows(rows = []) {
+  const byCode = new Map()
+  for (const r of rows) {
+    if (!r.receiptCode) continue
+    if (!byCode.has(r.receiptCode)) byCode.set(r.receiptCode, [])
+    byCode.get(r.receiptCode).push(r)
+  }
+  const out = []
+  const done = new Set()
+  for (const r of rows) {
+    const list = r.receiptCode ? byCode.get(r.receiptCode) : null
+    if (!list || list.length < 2) {
+      out.push({ kind: 'row', key: r.key, row: r })
+      continue
+    }
+    if (done.has(r.receiptCode)) continue
+    done.add(r.receiptCode)
+    const isPurchase = list.every((x) => x.type === 'purchase')
+    out.push({
+      kind: 'group',
+      key: `g-${r.receiptCode}`,
+      code: r.receiptCode,
+      date: list[0].date,
+      type: list[0].type,
+      rowKind: list[0].kind,
+      count: list.length,
+      total: isPurchase ? list.reduce((s, x) => s + x.qty * (x.unitCost || 0), 0) : null,
+      rows: list,
+    })
+  }
+  return out
 }

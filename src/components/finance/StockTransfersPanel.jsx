@@ -4,6 +4,7 @@ import WarehouseSharePanel from './WarehouseSharePanel'
 import {
   createStockTransfer,
   deleteStockTransfer,
+  getReceiptCode,
   listMonthLocks,
   listReusableItemStock,
   listStockTransfers,
@@ -100,6 +101,8 @@ export default function StockTransfersPanel({ role, canWrite = false, onChanged,
     setError('')
     setSubmitting(true)
     try {
+      // Mã CK; không lấy được thì lưu như cũ (không có mã).
+      const { code } = await getReceiptCode('CK')
       const { error: err } = await createStockTransfer({
         item_id: Number(form.item_id),
         from_wh: form.from_wh,
@@ -107,13 +110,14 @@ export default function StockTransfersPanel({ role, canWrite = false, onChanged,
         qty: Number(form.qty),
         transferred_at: form.transferred_at || undefined,
         note: form.note.trim() || null,
+        receipt_code: code || undefined,
       })
       if (err) {
         setError(err.message || 'Không lưu được phiếu chuyển kho.')
         return
       }
       setForm((p) => ({ ...emptyForm(), item_id: p.item_id, from_wh: p.from_wh, to_wh: p.to_wh }))
-      setSuccess('Đã lưu phiếu chuyển kho.')
+      setSuccess(code ? `Đã lưu phiếu ${code} (1 dòng)` : 'Đã lưu phiếu chuyển kho.')
       reload()
     } finally {
       setSubmitting(false)
@@ -235,6 +239,7 @@ export default function StockTransfersPanel({ role, canWrite = false, onChanged,
             <table className="data-table">
               <thead>
                 <tr>
+                  <th>Mã phiếu</th>
                   <th>Ngày</th>
                   <th>Vật tư</th>
                   <th>Kho đi → Kho đến</th>
@@ -249,6 +254,7 @@ export default function StockTransfersPanel({ role, canWrite = false, onChanged,
                   const chk = canDeleteTransfer({ role, transferDate: t.transferred_at, lockedMonths })
                   return (
                     <tr key={t.id}>
+                      <td>{t.receipt_code || '—'}</td>
                       <td>{t.transferred_at}</td>
                       <td>{it ? it.name : `#${t.item_id}`}</td>
                       <td>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatCurrency, formatNumber, formatDate, MOVEMENT_TYPE_LABELS } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
@@ -6,6 +6,7 @@ import { MovementTypeBadge } from './Badges'
 import {
   LEDGER_TYPE_CHIPS,
   toLedgerRows,
+  groupLedgerRows,
   filterLedgerRows,
   defaultFromDate,
   vnTodayISO,
@@ -51,6 +52,27 @@ function WhoCell({ row }) {
   return <span>—</span>
 }
 
+function GroupHeader({ g, open, onToggle }) {
+  const typeBadge =
+    g.rowKind === 'transfer' ? (
+      <span className="badge ml-badge-transfer">Chuyển kho</span>
+    ) : (
+      <MovementTypeBadge type={g.type} />
+    )
+  return (
+    <button type="button" className="ml-group-head" onClick={onToggle} aria-expanded={open}>
+      <span className="ml-group-caret" aria-hidden="true">
+        {open ? '▾' : '▸'}
+      </span>
+      <span className="ml-code">{g.code}</span>
+      <span className="text-muted">{formatDate(g.date)}</span>
+      {typeBadge}
+      <span>{formatNumber(g.count)} dòng</span>
+      {g.total != null && <strong>{formatCurrency(g.total)}</strong>}
+    </button>
+  )
+}
+
 export default function MovementsLedger({
   movements,
   transfers = [],
@@ -62,6 +84,7 @@ export default function MovementsLedger({
   highlightIds = [],
   notice = null,
   itemsById = {},
+  searchRequest = null, // { id, search }: đổi id thì đặt ô tìm = search, về bộ lọc mặc định và cuộn tới sổ
 }) {
   const today = vnTodayISO()
   const defaultFrom = defaultFromDate(today, DEFAULT_DAYS)
@@ -73,6 +96,27 @@ export default function MovementsLedger({
   const [itemKind, setItemKind] = useState('all')
   const [projectId, setProjectId] = useState('all')
   const [limit, setLimit] = useState(PAGE_SIZE)
+  // Trạng thái mở/thu nhóm do người dùng bấm: { [mã phiếu]: true|false }
+  const [groupOpen, setGroupOpen] = useState({})
+  const rootRef = useRef(null)
+
+  const requestId = searchRequest?.id
+  const requestSearch = searchRequest?.search
+  useEffect(() => {
+    if (requestId == null) return undefined
+    setSearch(requestSearch || '')
+    setType('all')
+    setFrom(defaultFrom)
+    setTo('')
+    setItemKind('all')
+    setProjectId('all')
+    setLimit(PAGE_SIZE)
+    const t = setTimeout(() => {
+      rootRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    }, 50)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId])
 
   // Mọi thay đổi bộ lọc đều đưa danh sách về 200 dòng đầu.
   const change = (setter) => (value) => {
@@ -103,8 +147,15 @@ export default function MovementsLedger({
   )
 
   const visible = filtered.slice(0, limit)
+  const entries = groupLedgerRows(visible)
   const highlightSet = useMemo(() => new Set((highlightIds || []).map(String)), [highlightIds])
   const isNew = (row) => row.kind === 'movement' && highlightSet.has(String(row.id))
+  // Mặc định thu gọn; tự mở khi nhóm có dòng vừa tạo hoặc đang tìm kiếm.
+  const isOpen = (g) => {
+    if (groupOpen[g.code] != null) return groupOpen[g.code]
+    return g.rows.some(isNew) || !!search.trim()
+  }
+  const toggleGroup = (g) => setGroupOpen((p) => ({ ...p, [g.code]: !isOpen(g) }))
 
   const isDefaultView =
     !search &&
@@ -128,7 +179,8 @@ export default function MovementsLedger({
 
   const handleExport = () => {
     const data = filtered.map((r) => ({
-      'Mã phiếu': r.kind === 'transfer' ? `CK-${r.id}` : r.id,
+      'Mã phiếu': r.receiptCode || '',
+      'ID dòng': r.kind === 'transfer' ? `CK-${r.id}` : r.id,
       'Ngày': formatDate(r.date),
       'Loại phiếu': r.kind === 'transfer' ? 'Chuyển kho' : MOVEMENT_TYPE_LABELS[r.type] || r.type,
       'Mã vật tư': r.itemCode,
@@ -155,8 +207,67 @@ export default function MovementsLedger({
     )
   }
 
+  const colCount = isAdmin ? 9 : 8
+
+  const renderTableRow = (r, inGroup) => (
+    <tr
+      key={r.key}
+      className={[isNew(r) ? 'ml-row-new' : '', inGroup ? 'ml-row-in-group' : ''].filter(Boolean).join(' ') || undefined}
+    >
+      <td>{r.receiptCode ? <span className="ml-code">{r.receiptCode}</span> : '—'}</td>
+      <td>{formatDate(r.date)}</td>
+      <td>
+        <TypeBadge row={r} />
+        {isNew(r) && <span className="ml-new-tag">Mới</span>}
+      </td>
+      <td>
+        <ItemCell row={r} />
+      </td>
+      <td className="text-right font-bold">
+        {formatNumber(r.qty)} {r.unit}
+      </td>
+      <td className="text-right">{r.unitCost != null ? formatCurrency(r.unitCost) : '—'}</td>
+      <td>
+        <WhoCell row={r} />
+      </td>
+      <td>{r.note || '—'}</td>
+      {isAdmin && <td className="text-right">{deleteButton(r)}</td>}
+    </tr>
+  )
+
+  const renderCard = (r) => (
+    <div key={r.key} className={`ml-card ${isNew(r) ? 'ml-row-new' : ''}`}>
+      <div className="ml-card-line ml-card-top">
+        <span>
+          <TypeBadge row={r} />
+          {isNew(r) && <span className="ml-new-tag">Mới</span>}
+        </span>
+        <span className="text-muted">{formatDate(r.date)}</span>
+      </div>
+      {r.receiptCode && (
+        <div className="ml-card-line">
+          <span className="ml-code">{r.receiptCode}</span>
+        </div>
+      )}
+      <div className="ml-card-line ml-card-name">
+        <ItemCell row={r} />
+      </div>
+      <div className="ml-card-line ml-card-qty">
+        <strong>
+          {formatNumber(r.qty)} {r.unit}
+        </strong>
+        {r.unitCost != null && <span className="text-muted"> · {formatCurrency(r.unitCost)}</span>}
+      </div>
+      <div className="ml-card-line ml-card-meta">
+        <WhoCell row={r} />
+        {r.note && <div className="text-muted ml-card-note">{r.note}</div>}
+      </div>
+      {deleteButton(r, 'btn btn-sm btn-outline ml-card-delete')}
+    </div>
+  )
+
   return (
-    <div className="card ml-ledger">
+    <div className="card ml-ledger" ref={rootRef}>
       <div className="card-header ml-header">
         <h3>📜 Sổ kho chi tiết ({formatNumber(filtered.length)} dòng)</h3>
         <button type="button" className="btn btn-outline" onClick={handleExport}>
@@ -170,7 +281,7 @@ export default function MovementsLedger({
         <input
           type="search"
           className="ml-search"
-          placeholder="Tìm vật tư, ghi chú, dự án..."
+          placeholder="Tìm mã phiếu, vật tư, ghi chú, dự án..."
           value={search}
           onChange={(e) => changeSearch(e.target.value)}
         />
@@ -235,6 +346,7 @@ export default function MovementsLedger({
             <table className="data-table">
               <thead>
                 <tr>
+                  <th>Mã phiếu</th>
                   <th>Ngày</th>
                   <th>Loại phiếu</th>
                   <th>Vật tư</th>
@@ -246,61 +358,37 @@ export default function MovementsLedger({
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r) => (
-                  <tr key={r.key} className={isNew(r) ? 'ml-row-new' : undefined}>
-                    <td>{formatDate(r.date)}</td>
-                    <td>
-                      <TypeBadge row={r} />
-                      {isNew(r) && <span className="ml-new-tag">Mới</span>}
-                    </td>
-                    <td>
-                      <ItemCell row={r} />
-                    </td>
-                    <td className="text-right font-bold">
-                      {formatNumber(r.qty)} {r.unit}
-                    </td>
-                    <td className="text-right">
-                      {r.unitCost != null ? formatCurrency(r.unitCost) : '—'}
-                    </td>
-                    <td>
-                      <WhoCell row={r} />
-                    </td>
-                    <td>{r.note || '—'}</td>
-                    {isAdmin && <td className="text-right">{deleteButton(r)}</td>}
-                  </tr>
-                ))}
+                {entries.map((en) =>
+                  en.kind === 'group' ? (
+                    <Fragment key={en.key}>
+                      <tr className="ml-group-row">
+                        <td colSpan={colCount}>
+                          <GroupHeader g={en} open={isOpen(en)} onToggle={() => toggleGroup(en)} />
+                        </td>
+                      </tr>
+                      {isOpen(en) && en.rows.map((r) => renderTableRow(r, true))}
+                    </Fragment>
+                  ) : (
+                    renderTableRow(en.row, false)
+                  )
+                )}
               </tbody>
             </table>
           </div>
 
           <div className="ml-cards">
-            {visible.map((r) => (
-              <div key={r.key} className={`ml-card ${isNew(r) ? 'ml-row-new' : ''}`}>
-                <div className="ml-card-line ml-card-top">
-                  <span>
-                    <TypeBadge row={r} />
-                    {isNew(r) && <span className="ml-new-tag">Mới</span>}
-                  </span>
-                  <span className="text-muted">{formatDate(r.date)}</span>
-                </div>
-                <div className="ml-card-line ml-card-name">
-                  <ItemCell row={r} />
-                </div>
-                <div className="ml-card-line ml-card-qty">
-                  <strong>
-                    {formatNumber(r.qty)} {r.unit}
-                  </strong>
-                  {r.unitCost != null && (
-                    <span className="text-muted"> · {formatCurrency(r.unitCost)}</span>
-                  )}
-                </div>
-                <div className="ml-card-line ml-card-meta">
-                  <WhoCell row={r} />
-                  {r.note && <div className="text-muted ml-card-note">{r.note}</div>}
-                </div>
-                {deleteButton(r, 'btn btn-sm btn-outline ml-card-delete')}
-              </div>
-            ))}
+            {entries.map((en) =>
+              en.kind === 'group' ? (
+                <Fragment key={en.key}>
+                  <div className="ml-card ml-group-card">
+                    <GroupHeader g={en} open={isOpen(en)} onToggle={() => toggleGroup(en)} />
+                  </div>
+                  {isOpen(en) && en.rows.map((r) => renderCard(r))}
+                </Fragment>
+              ) : (
+                renderCard(en.row)
+              )
+            )}
           </div>
 
           {filtered.length > visible.length && (

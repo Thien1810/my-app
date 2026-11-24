@@ -11,6 +11,7 @@
 // doanh số = contract_value + discount.
 // =====================================================================
 import { supabase } from './supabase'
+import { isMissingReceiptColumnError } from './receiptCode'
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -249,14 +250,35 @@ export async function listStockTransfers() {
   return db().from('stock_transfers').select('*').order('transferred_at', { ascending: false }).order('id', { ascending: false })
 }
 
+// Lấy mã phiếu kế tiếp (PN/KK/DH/CK) từ RPC next_receipt_code.
+// Mọi lỗi (hàm chưa tồn tại, thiếu quyền, chưa cấu hình...) trả { code: null }: KHÔNG ném lỗi, không chặn lưu phiếu.
+export async function getReceiptCode(prefix) {
+  try {
+    if (!db()) return { code: null }
+    const { data, error } = await db().rpc('next_receipt_code', { p_prefix: prefix })
+    if (error || typeof data !== 'string' || !data) return { code: null }
+    return { code: data }
+  } catch {
+    return { code: null }
+  }
+}
+
 // Tạo phiếu chuyển kho; chặn qty <= 0 và from_wh == to_wh.
-export async function createStockTransfer({ item_id, from_wh, to_wh, qty, transferred_at, note }) {
+// receipt_code tùy chọn: chỉ đưa vào row khi có giá trị; nếu cột chưa tồn tại thì thử lại 1 lần không có mã.
+export async function createStockTransfer({ item_id, from_wh, to_wh, qty, transferred_at, note, receipt_code }) {
   if (!db()) return fail(NO_CLIENT)
   if (!isNum(qty) || Number(qty) <= 0) return fail('Số lượng chuyển kho phải lớn hơn 0.')
   if (!from_wh || !to_wh) return fail('Phải chọn kho đi và kho đến.')
   if (from_wh === to_wh) return fail('Kho đi và kho đến phải khác nhau.')
   const row = { item_id, from_wh, to_wh, qty: Number(qty), note: note || null }
   if (transferred_at) row.transferred_at = transferred_at
+  if (receipt_code) {
+    const res = await db().from('stock_transfers').insert({ ...row, receipt_code }).select().single()
+    if (res.error && isMissingReceiptColumnError(res.error)) {
+      return db().from('stock_transfers').insert(row).select().single()
+    }
+    return res
+  }
   return db().from('stock_transfers').insert(row).select().single()
 }
 

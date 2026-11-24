@@ -15,7 +15,14 @@ import MovementsLedger from '../components/MovementsLedger'
 import { useConfirm } from '../components/ConfirmDialog'
 import StockTransfersPanel from '../components/finance/StockTransfersPanel'
 import { fetchAllRows } from '../lib/fetchAll'
-import { listWarehouses, createStockTransfer, listStockTransfers } from '../lib/financeApi'
+import { listWarehouses, createStockTransfer, listStockTransfers, getReceiptCode } from '../lib/financeApi'
+import {
+  RECEIPT_PREFIX,
+  prefixForMovementType,
+  isMissingReceiptColumnError,
+  withReceiptCode,
+  savedReceiptMessage,
+} from '../lib/receiptCode'
 import {
   validateSingleMovement,
   validatePurchaseLines,
@@ -59,6 +66,10 @@ export default function MovementsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [highlightIds, setHighlightIds] = useState([])
   const highlightTimer = useRef(null)
+  // Yêu cầu sổ kho đặt ô tìm kiếm = mã phiếu: { id, search }
+  const [ledgerRequest, setLedgerRequest] = useState(null)
+  // Phiếu vừa lưu ở tab Nhập hàng / Đồ hỏng: { ids, code } để nút "Xem trong Sổ kho" dùng lại.
+  const lastSaved = useRef({ ids: [], code: null })
 
   // Form Nhập mua (nhiều dòng)
   const [purchaseDate, setPurchaseDate] = useState(todayISO())
@@ -150,9 +161,10 @@ export default function MovementsPage() {
   // Thông báo thành công tự ẩn sau ~6 giây; lỗi thì giữ cho đến khi đóng.
   useEffect(() => {
     if (!success) return undefined
-    const t = setTimeout(() => setSuccess(''), 6000)
+    // Thông báo có nút "Xem trong Sổ kho" ở lại lâu hơn để kịp bấm.
+    const t = setTimeout(() => setSuccess(''), successHint ? 20000 : 6000)
     return () => clearTimeout(t)
-  }, [success])
+  }, [success, successHint])
 
   useEffect(() => {
     loadAll()
@@ -209,9 +221,7 @@ export default function MovementsPage() {
     else focusInput(qtyRefs.current.get(p.uid))
   }, [purchaseLines])
 
-  // Chèn phiếu và lấy id các dòng vừa tạo để làm nổi bật trong sổ kho.
-  // Nếu RLS chặn trả dòng về thì thử lại không kèm select (chèn lỗi nghĩa là chưa có dòng nào được tạo).
-  const insertMovements = async (rows) => {
+  const insertOnce = async (rows) => {
     let res = await supabase.from('stock_movements').insert(rows).select('id')
     if (res.error) {
       const retry = await supabase.from('stock_movements').insert(rows)
@@ -221,12 +231,42 @@ export default function MovementsPage() {
     return Array.isArray(res.data) ? res.data.map((r) => r.id).filter((id) => id != null) : []
   }
 
+  // Chèn phiếu (kèm receipt_code nếu có mã) và lấy id các dòng vừa tạo để làm nổi bật trong sổ kho.
+  // Nếu RLS chặn trả dòng về thì thử lại không kèm select (chèn lỗi nghĩa là chưa có dòng nào được tạo).
+  // Nếu lỗi do cột receipt_code chưa tồn tại (SQL chưa chạy) thì thử lại một lần không có mã
+  // (an toàn vì lỗi nghĩa là chưa tạo dòng nào). Trả { ids, code } với code là mã thực sự đã ghi (hoặc null).
+  const insertMovements = async (rows, code = null) => {
+    try {
+      const ids = await insertOnce(withReceiptCode(rows, code))
+      return { ids, code: code || null }
+    } catch (err) {
+      if (code && isMissingReceiptColumnError(err)) {
+        const ids = await insertOnce(rows)
+        return { ids, code: null }
+      }
+      throw err
+    }
+  }
+
   const showHighlight = (ids) => {
     clearTimeout(highlightTimer.current)
     setHighlightIds(ids)
     if (ids.length > 0) {
       highlightTimer.current = setTimeout(() => setHighlightIds([]), 15000)
     }
+  }
+
+  // Từ thông báo thành công: sang tab Kiểm kho (nơi có sổ kho), giữ highlight các dòng vừa tạo,
+  // đặt ô tìm của sổ = mã phiếu (nếu có) và cuộn tới sổ. Không đi qua switchTab nên không xóa highlight.
+  const goToLedger = () => {
+    const { ids, code } = lastSaved.current
+    showHighlight(ids)
+    setActiveTab('adjust')
+    setSingleItemId('')
+    setSingleQty('')
+    setSingleNote('')
+    setSingleInvalid({})
+    setLedgerRequest({ id: Date.now(), search: code || '' })
   }
 
   const switchTab = (key) => {
@@ -374,7 +414,10 @@ export default function MovementsPage() {
         note: [purchaseNote.trim(), String(l.note || '').trim()].filter(Boolean).join(' — ') || null,
       }))
 
-      await insertMovements(rows)
+      // Một mã PN cho cả phiếu nhiều dòng. Không lấy được mã thì lưu như cũ (không có cột receipt_code).
+      const { code: pnCode } = await getReceiptCode(RECEIPT_PREFIX.PURCHASE)
+      const { ids: newIds, code: usedCode } = await insertMovements(rows, pnCode)
+      lastSaved.current = { ids: newIds, code: usedCode }
 
       // Nhập về kho khác kho chính: chuyển kho các vật tư tái sử dụng.
       const mainWh = warehouses.find((w) => w.is_main)
@@ -392,6 +435,8 @@ export default function MovementsPage() {
             qty: r.qty,
             transferred_at: r.moved_at,
             note: `Nhập mua về ${targetWh.name}`,
+            // Dùng chung mã PN của phiếu nhập (không cấp mã CK riêng) để dễ đối chiếu trong sổ kho.
+            receipt_code: usedCode || undefined,
           })
           if (terr) {
             transferFailed = `${itemMap.get(r.item_id)?.name || `#${r.item_id}`}: ${terr.message || 'lỗi không xác định'}`
@@ -409,7 +454,13 @@ export default function MovementsPage() {
           `Phiếu nhập mua ĐÃ được lưu (${rows.length} dòng) nhưng chuyển kho CHƯA hoàn tất (${transferFailed}). Vui lòng vào việc "Chuyển kho" để tạo phiếu chuyển kho còn thiếu, đừng nhập mua lại.`
         )
       } else {
-        setSuccess(`Đã tạo phiếu nhập mua gồm ${rows.length} dòng vật tư!${transferMsg}`)
+        setSuccess(
+          savedReceiptMessage(
+            usedCode,
+            rows.length,
+            `Đã tạo phiếu nhập mua gồm ${rows.length} dòng vật tư!`
+          ) + transferMsg
+        )
         setSuccessHint(true)
       }
       await Promise.all([loadAll(), loadTransfers()])
@@ -458,10 +509,19 @@ export default function MovementsPage() {
         qty: qtyNum,
         note: singleNote.trim() || null,
       }
-      const newIds = await insertMovements([payload])
+      const prefix = prefixForMovementType(singleType)
+      const { code: wantedCode } = prefix ? await getReceiptCode(prefix) : { code: null }
+      const { ids: newIds, code: usedCode } = await insertMovements([payload], wantedCode)
+      lastSaved.current = { ids: newIds, code: usedCode }
       if (singleType === 'adjust') showHighlight(newIds)
 
-      setSuccess(`Đã tạo phiếu ${MOVEMENT_TYPE_LABELS[singleType]} thành công!`)
+      setSuccess(
+        savedReceiptMessage(
+          usedCode,
+          1,
+          `Đã tạo phiếu ${MOVEMENT_TYPE_LABELS[singleType]} thành công!`
+        )
+      )
       setSuccessHint(singleType !== 'adjust')
       setSingleQty('')
       setSingleNote('')
@@ -926,7 +986,7 @@ export default function MovementsPage() {
             {successHint && canEditCatalog && activeTab !== 'adjust' && (
               <span className="mv-success-hint">
                 {' '}
-                <button type="button" className="mv-link-btn" onClick={() => switchTab('adjust')}>
+                <button type="button" className="mv-link-btn" onClick={goToLedger}>
                   Xem trong Sổ kho ở tab Kiểm kho
                 </button>
               </span>
@@ -1011,6 +1071,7 @@ export default function MovementsPage() {
           onDelete={handleDeleteMovement}
           highlightIds={highlightIds}
           itemsById={itemsById}
+          searchRequest={ledgerRequest}
         />
       )}
     </div>
