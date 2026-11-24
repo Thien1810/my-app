@@ -45,11 +45,57 @@ describe('calcPnl - quy tắc', () => {
     expect(r.revenue).toBe(15000000)
     expect(r.roas).toBe(10)
   })
-  it('cancelled bị loại', () => {
+  it('cancelled: không có doanh thu nhưng chi phí vẫn tính (fallback start_date)', () => {
     const c = { ...A, id: 'C', status: 'cancelled' }
     const r = calcPnl(base({ projects: [A, c] }))
     expect(r.revenue).toBe(10000000)
     expect(r.expectedRevenue).toBe(0)
+    expect(r.rotatingCost).toBe(4000000)
+    expect(r.cancelledCost).toBe(4000000)
+    expect(r.cancelledCount).toBe(1)
+    expect(r.grossProfit).toBe(2000000)
+    expect(r.netProfit).toBe(-1000000)
+    expect(r.paidAdsProjectCount).toBe(1)
+    expect(r.unknownSourceCount).toBe(0)
+    expect(r.cac).toBe(1000000)
+    expect(r.roas).toBe(10)
+  })
+  it('đám hủy tính vào tháng hủy, không vào tháng thi công', () => {
+    const c = { ...A, id: 'C', status: 'cancelled', start_date: '2026-10-10', cancelled_at: '2026-12-02' }
+    expect(calcPnl(base({ projects: [c] })).cancelledCost).toBe(4000000)
+    expect(calcPnl(base({ projects: [c], month: '2026-10' })).cancelledCost).toBe(0)
+    const d = { ...A, id: 'D', status: 'cancelled', start_date: '2026-10-10', cancelled_at: '2026-11-05' }
+    expect(calcPnl(base({ projects: [d], month: '2026-11' })).cancelledCost).toBe(4000000)
+    expect(calcPnl(base({ projects: [d], month: '2026-10' })).cancelledCost).toBe(0)
+    expect(calcPnl(base({ projects: [d], month: '2026-10' })).cancelledCount).toBe(0)
+  })
+  it('đám hủy không cộng contractValue; chi phí giảm lãi gộp và lãi ròng', () => {
+    const c = { ...A, id: 'C', status: 'cancelled', contractValue: 99000000, totalCost: 1500000 }
+    const r = calcPnl(base({ projects: [A, B, c] }))
+    expect(r.revenue).toBe(10000000)
+    expect(r.grossProfit).toBe(6000000 - 1500000)
+    expect(r.netProfit).toBe(3000000 - 1500000)
+  })
+  it('scope kho: đám hủy có kho chỉ vào kho đó; tổng kho + chưa gán khớp toàn công ty', () => {
+    const c1 = { ...A, id: 'C1', status: 'cancelled', warehouse_code: 'vinh_loc', totalCost: 700000 }
+    const c2 = { ...A, id: 'C2', status: 'cancelled', warehouse_code: null, totalCost: 300000 }
+    const projects = [A, c1, c2]
+    const r = calcPnl(base({ projects }))
+    expect(r.cancelledCost).toBe(1000000)
+    expect(r.cancelledCount).toBe(2)
+    expect(wh(r, 'vinh_loc').cancelledCost).toBe(700000)
+    expect(wh(r, 'vinh_loc').grossProfit).toBe(-700000)
+    expect(wh(r, 'xuan_loc').cancelledCost).toBe(0)
+    expect(r.unassigned.cancelledCost).toBe(300000)
+    expect(r.unassigned.cancelledCount).toBe(1)
+    const sum = r.byWarehouse.reduce((s, w) => s + w.cancelledCost, 0) + r.unassigned.cancelledCost
+    expect(sum).toBe(r.cancelledCost)
+    const grossSum =
+      r.byWarehouse.reduce((s, w) => s + w.grossProfit, 0) +
+      (r.unassigned.revenue - r.unassigned.rotatingCost - r.unassigned.cancelledCost)
+    expect(grossSum).toBe(r.grossProfit)
+    expect(calcPnl(base({ projects, scope: 'vinh_loc' })).cancelledCost).toBe(700000)
+    expect(calcPnl(base({ projects, scope: 'xuan_loc' })).cancelledCost).toBe(0)
   })
   it('dự án tháng khác không vào', () => {
     const o = { ...A, id: 'O', start_date: '2026-11-30' }

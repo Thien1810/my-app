@@ -16,14 +16,18 @@ describe('toPnlProjects', () => {
   it('anh xa truong can thiet', () => {
     const out = toPnlProjects([
       {
-        project: { id: 'a', status: 'done', start_date: '2026-03-01', lead_source: 'referral', warehouse_code: 'VL', name: 'x' },
+        project: { id: 'a', status: 'done', start_date: '2026-03-01', lead_source: 'referral', warehouse_code: 'VL', cancelled_at: '2026-03-15', name: 'x' },
         contractValue: '5000000',
         totalCost: 2000000,
       },
     ])
     expect(out).toEqual([
-      { id: 'a', status: 'done', start_date: '2026-03-01', lead_source: 'referral', warehouse_code: 'VL', contractValue: 5000000, totalCost: 2000000 },
+      { id: 'a', status: 'done', start_date: '2026-03-01', lead_source: 'referral', warehouse_code: 'VL', cancelled_at: '2026-03-15', contractValue: 5000000, totalCost: 2000000 },
     ])
+  })
+  it('cancelled_at trong thi la null', () => {
+    const out = toPnlProjects([{ project: { id: 'b', status: 'cancelled' }, contractValue: 0, totalCost: 1 }])
+    expect(out[0].cancelled_at).toBeNull()
   })
   it('chiu duoc mang rong/null', () => {
     expect(toPnlProjects(null)).toEqual([])
@@ -68,7 +72,21 @@ describe('buildPnlHistory', () => {
       P({ start_date: '2026-02-01', status: 'cancelled' }),
       P({ start_date: '2026-02-01', status: 'awaiting_return' }),
     ]
-    expect(buildPnlHistory({ projects, month: '2026-03' })[0].weddingCount).toBe(1)
+    const h = buildPnlHistory({ projects, month: '2026-03' })[0]
+    expect(h.weddingCount).toBe(1)
+    // cancelled (start_date, khong cancelled_at) tru chi phi 4.000.000 khoi lai gop 6.000.000
+    expect(h.grossProfit).toBe(6000000 - 4000000)
+  })
+  it('tru chi phi dam huy theo thang huy, giu nguyen weddingCount', () => {
+    const projects = [
+      P({ start_date: '2026-02-01' }),
+      P({ status: 'cancelled', start_date: '2025-12-10', cancelled_at: '2026-02-20', totalCost: 1500000, warehouse_code: 'VL' }),
+    ]
+    const h = buildPnlHistory({ projects, month: '2026-03' })
+    expect(h[0]).toEqual({ month: '2026-02', grossProfit: 6000000 - 1500000, weddingCount: 1 })
+    expect(h[2]).toEqual({ month: '2025-12', grossProfit: 0, weddingCount: 0 })
+    expect(buildPnlHistory({ projects, month: '2026-03', scope: 'XL' })[0].grossProfit).toBe(6000000)
+    expect(buildPnlHistory({ projects, month: '2026-03', scope: 'VL' })[0].grossProfit).toBe(-1500000)
   })
 })
 

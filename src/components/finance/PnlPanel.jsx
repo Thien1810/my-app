@@ -21,6 +21,7 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
   const netOk = pnl.netProfit >= 0
   const overhead = pnl.adsSpend + pnl.fixedCostTotal
   const rev = pnl.revenue
+  const hasCancelled = pnl.cancelledCount > 0
 
   const rows = [
     {
@@ -37,9 +38,19 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
       note: 'Vật tư tiêu hao, khấu hao, hao hụt, chi phí trực tiếp tại đám',
       value: pnl.rotatingCost,
     },
+    ...(hasCancelled
+      ? [
+          {
+            key: 'IIb',
+            label: 'II-b. Chi phí các đám đã hủy',
+            note: `Vật tư, hao hụt, chi phí đã phát sinh ở ${pnl.cancelledCount} đám hủy trong tháng (tính theo tháng hủy)`,
+            value: pnl.cancelledCost,
+          },
+        ]
+      : []),
     {
       key: 'III',
-      label: 'III. Lãi gộp (I − II)',
+      label: hasCancelled ? 'III. Lãi gộp (I − II − II-b)' : 'III. Lãi gộp (I − II)',
       note: 'Hiệu quả đội thi công và kho',
       value: pnl.grossProfit,
       strong: true,
@@ -98,7 +109,7 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
           <div className="kpi-label">Doanh thu</div>
           <div className="kpi-value">{formatCurrency(pnl.revenue)}</div>
           <div className="kpi-sub">
-            Chi phí xoay vòng: <strong>{formatCurrency(pnl.rotatingCost)}</strong>
+            Chi phí xoay vòng: <strong>{formatCurrency(pnl.rotatingCost + (pnl.cancelledCost || 0))}</strong>
           </div>
         </div>
 
@@ -232,15 +243,20 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
                       </td>
                     </tr>
                   ))}
-                  {pnl.unassigned && pnl.unassigned.projectCount > 0 && (
+                  {pnl.unassigned && (pnl.unassigned.projectCount > 0 || pnl.unassigned.cancelledCount > 0) && (
                     <tr>
                       <td className="font-bold">
                         Chưa gán kho
-                        <div className="text-xs text-muted">{pnl.unassigned.projectCount} đám</div>
+                        <div className="text-xs text-muted">
+                          {pnl.unassigned.projectCount} đám
+                          {pnl.unassigned.cancelledCount > 0 && <> • {pnl.unassigned.cancelledCount} đám hủy</>}
+                        </div>
                       </td>
                       <td className="text-right">{formatCurrency(pnl.unassigned.revenue)}</td>
                       <td className="text-right text-green font-bold">
-                        {formatCurrency(pnl.unassigned.revenue - pnl.unassigned.rotatingCost)}
+                        {formatCurrency(
+                          pnl.unassigned.revenue - pnl.unassigned.rotatingCost - (pnl.unassigned.cancelledCost || 0)
+                        )}
                       </td>
                       <td className="text-right">{DASH}</td>
                       <td className="text-right">{DASH}</td>

@@ -11,6 +11,10 @@
 //    không thuộc kho nào.
 // 5. Theo scope kho, CAC/ROAS/CIR/CPL dùng Ads đã phân bổ cho kho đó.
 // 6. Điểm hòa vốn dùng history do bên gọi truyền (đúng scope bên gọi muốn).
+// 7. Đám HỦY (status 'cancelled', anh Thiện chốt): KHÔNG có doanh thu (bỏ qua contractValue),
+//    nhưng chi phí xoay vòng đã phát sinh (totalCost) VẪN tính, vào THÁNG HỦY = tháng của
+//    cancelled_at (trống thì rơi về tháng start_date). Gộp vào cancelledCost, trừ khỏi lãi gộp.
+//    Đám hủy không vào CAC/ROAS/unknownSourceCount/doanh thu dự kiến. Lọc kho như dự án thường.
 
 const REVENUE_STATUSES = ['preparing', 'in_progress', 'awaiting_return', 'done']
 const PAID_SOURCES = ['meta_ads', 'tiktok_ads']
@@ -52,12 +56,18 @@ export function calcPnl({
   const counted = inMonth.filter((p) => REVENUE_STATUSES.includes(p.status))
   const quotes = inMonth.filter((p) => p.status === 'quote')
   const inScope = (p) => isAll || p.warehouse_code === scope
+  const cancelledMonth = (p) => monthOf(p.cancelled_at) || monthOf(p.start_date)
+  const cancelledAll = (projects || []).filter(
+    (p) => p && p.status === 'cancelled' && cancelledMonth(p) === month
+  )
+  const scopedCancelled = cancelledAll.filter(inScope)
+  const cancelledCost = scopedCancelled.reduce((s, p) => s + num(p.totalCost), 0)
   const scopedProjects = counted.filter(inScope)
   const scopedQuotes = quotes.filter(inScope)
 
   const revenue = scopedProjects.reduce((s, p) => s + num(p.contractValue), 0)
   const rotatingCost = scopedProjects.reduce((s, p) => s + num(p.totalCost), 0)
-  const grossProfit = revenue - rotatingCost
+  const grossProfit = revenue - rotatingCost - cancelledCost
   const expectedRevenue = scopedQuotes.reduce((s, p) => s + num(p.contractValue), 0)
 
   const paidProjects = scopedProjects.filter((p) => PAID_SOURCES.includes(p.lead_source))
@@ -129,6 +139,8 @@ export function calcPnl({
     revenue,
     expectedRevenue,
     rotatingCost,
+    cancelledCost,
+    cancelledCount: scopedCancelled.length,
     grossProfit,
     grossMarginPct: pct(grossProfit, revenue),
     adsSpend,
@@ -149,14 +161,17 @@ export function calcPnl({
 
   if (isAll) {
     const codes = new Set(Object.keys(shareMap))
-    ;[...counted, ...adsMonth, ...fixedMonth, ...forfeitMonth].forEach((x) => {
+    ;[...counted, ...cancelledAll, ...adsMonth, ...fixedMonth, ...forfeitMonth].forEach((x) => {
       if (x.warehouse_code) codes.add(x.warehouse_code)
     })
     result.byWarehouse = [...codes].map((code) => {
       const ps = counted.filter((p) => p.warehouse_code === code)
       const wRevenue = ps.reduce((s, p) => s + num(p.contractValue), 0)
       const wRotating = ps.reduce((s, p) => s + num(p.totalCost), 0)
-      const wGross = wRevenue - wRotating
+      const wCancelled = cancelledAll
+        .filter((p) => p.warehouse_code === code)
+        .reduce((s, p) => s + num(p.totalCost), 0)
+      const wGross = wRevenue - wRotating - wCancelled
       const wAds = adsOf(code)
       const fixedDirect = fixedDirectOf(code)
       const fixedShared = fixedPool * shareOf(code)
@@ -166,6 +181,7 @@ export function calcPnl({
         code,
         revenue: wRevenue,
         rotatingCost: wRotating,
+        cancelledCost: wCancelled,
         grossProfit: wGross,
         adsSpend: wAds,
         fixedDirect,
@@ -176,10 +192,13 @@ export function calcPnl({
       }
     })
     const un = counted.filter((p) => !p.warehouse_code)
+    const unCancelled = cancelledAll.filter((p) => !p.warehouse_code)
     result.unassigned = {
       revenue: un.reduce((s, p) => s + num(p.contractValue), 0),
       rotatingCost: un.reduce((s, p) => s + num(p.totalCost), 0),
       projectCount: un.length,
+      cancelledCost: unCancelled.reduce((s, p) => s + num(p.totalCost), 0),
+      cancelledCount: unCancelled.length,
     }
   }
 

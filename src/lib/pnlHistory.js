@@ -18,6 +18,7 @@ export function toPnlProjects(projectProfitReport) {
       start_date: r.project.start_date,
       lead_source: r.project.lead_source,
       warehouse_code: r.project.warehouse_code,
+      cancelled_at: r.project.cancelled_at || null,
       contractValue: num(r.contractValue),
       totalCost: num(r.totalCost),
     }))
@@ -41,12 +42,18 @@ export function buildPnlHistory({ projects, month, scope = 'all' } = {}) {
   const counted = (projects || []).filter(
     (p) => p && REVENUE_STATUSES.includes(p.status) && inScope(p),
   )
+  // Đám hủy: không có doanh thu, chi phí tính vào tháng hủy (cancelled_at, trống thì start_date).
+  const cancelled = (projects || []).filter((p) => p && p.status === 'cancelled' && inScope(p))
   return [1, 2, 3].map((back) => {
     const m = shiftMonth(month, back)
     const ps = counted.filter((p) => monthOf(p.start_date) === m)
+    const cancelledCost = cancelled
+      .filter((p) => (monthOf(p.cancelled_at) || monthOf(p.start_date)) === m)
+      .reduce((s, p) => s + num(p.totalCost), 0)
     return {
       month: m,
-      grossProfit: ps.reduce((s, p) => s + (num(p.contractValue) - num(p.totalCost)), 0),
+      grossProfit:
+        ps.reduce((s, p) => s + (num(p.contractValue) - num(p.totalCost)), 0) - cancelledCost,
       weddingCount: ps.length,
     }
   })
