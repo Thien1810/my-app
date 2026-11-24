@@ -577,6 +577,11 @@
     line-height: 1.3;
   }
 
+  .mv-form select {
+    padding-right: 36px;
+    text-overflow: ellipsis;
+  }
+
   /* Sửa lỗi iOS Safari: ô ngày rộng hơn các ô khác */
   .mv-form input[type='date'] {
     -webkit-appearance: none;
@@ -606,10 +611,10 @@
     gap: 0;
   }
 
-  /* Ngày + Nhập về kho cùng một hàng */
+  /* Ngày và Nhập về kho: mỗi ô một hàng để đọc đủ tên kho */
   .mv-form .mv-grid-info {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 
   .mv-form .mv-grid-info .mv-wh-hint {
@@ -659,8 +664,8 @@
   }
 
   .mv-line-m .mv-line-nums {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
   }
 
   .mv-line-foot {

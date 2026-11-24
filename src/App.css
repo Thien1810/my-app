@@ -1614,3 +1614,108 @@
     padding: 12px 0;
   }
 }
+
+/* =====================================================================
+   ĐIỆN THOẠI (<= 768px) - Bộ lọc/ô chọn 1 cột, không cắt chữ; bảng Vật tư gọn
+   ===================================================================== */
+@media (max-width: 768px) {
+  .filter-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-group > *,
+  .filter-input,
+  .filter-group select,
+  .filter-group select:only-of-type,
+  .filter-inline {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .filter-inline input {
+    width: 100%;
+  }
+  /* Form: mọi lưới nhiều cột thành 1 cột để ô chọn/ô nhập đủ rộng */
+  .form-grid-2,
+  .form-grid-3,
+  .form-grid-4 {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  /* Select/input: chừa chỗ cho mũi tên, chữ không bị đè */
+  select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding-right: 36px;
+    text-overflow: ellipsis;
+  }
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']) {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    text-overflow: ellipsis;
+  }
+
+  /* Bảng Vật tư: chỉ giữ Ảnh, Mã, Tên, Trong kho, Thao tác */
+  .items-table th:nth-child(4),
+  .items-table td:nth-child(4),
+  .items-table th:nth-child(5),
+  .items-table td:nth-child(5),
+  .items-table th:nth-child(6),
+  .items-table td:nth-child(6),
+  .items-table th:nth-child(7),
+  .items-table td:nth-child(7),
+  .items-table th:nth-child(8),
+  .items-table td:nth-child(8),
+  .items-table th:nth-child(10),
+  .items-table td:nth-child(10),
+  .items-table th:nth-child(11),
+  .items-table td:nth-child(11),
+  .items-table th:nth-child(12),
+  .items-table td:nth-child(12) {
+    display: none;
+  }
+  .items-table th,
+  .items-table td {
+    padding: 8px 6px;
+  }
+  .items-table th:first-child,
+  .items-table td:first-child {
+    width: 48px;
+    padding-left: 8px;
+    padding-right: 4px;
+  }
+  .items-table td:first-child img,
+  .items-table td:first-child > div {
+    width: 40px !important;
+    height: 40px !important;
+  }
+  .items-table .row-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .tab-btn {
+    min-height: 40px;
+  }
+  /* Tên vật tư đã là liên kết sang trang chi tiết, bỏ nút "Chi tiết" để bảng gọn */
+  .items-table .row-actions a.btn {
+    display: none;
+  }
+  .items-table .row-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .items-table th {
+    white-space: normal;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+  .items-table td:nth-child(9) {
+    white-space: nowrap;
+  }
+}

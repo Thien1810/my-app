@@ -502,7 +502,7 @@ export default function ItemsPage() {
           <div className="empty-state">Không tìm thấy vật tư phù hợp.</div>
         ) : (
           <div className="table-responsive">
-            <table className="data-table">
+            <table className="data-table items-table">
               <thead>
                 <tr>
                   <th style={{ width: 54 }}>Ảnh</th>
