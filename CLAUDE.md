@@ -46,6 +46,13 @@ Dự án **chưa có test tự động**. Tiêu chí hoàn thành tối thiểu 
 - Commit message ngắn, tiếng Việt không dấu như hiện tại (ví dụ `Sua loi bao gia`).
 - Sau mỗi thay đổi: chạy `npm run lint` và `npm run build`, báo kết quả, và tóm tắt file đã sửa.
 
+## Kiểm tra UX/UI TRƯỚC KHI push lên main (anh Thiện chốt 2026-11-24, xem `CONTEXT-DU-AN.md` mục 7)
+- Mọi thay đổi giao diện phải được kiểm tra bằng trình duyệt ở **375px (điện thoại), ~768px và desktop** TRƯỚC khi push/merge vào `main` và trước khi báo "xong"; nêu rõ đã kiểm tra gì và chưa kiểm tra gì.
+- Tiêu chí: không tràn ngang; vùng bấm >= 40-44px; ô nhập 16px (iPhone không tự phóng to); chữ >= 11px; nút chính nổi bật; thanh dính đáy không đè thanh menu dưới (cao 58px + vùng an toàn).
+- Cách làm: `preview_start` "my-app-dev" (cổng 5173, đã đăng nhập sẵn trong khung trình duyệt), `resize_window` preset mobile, chuyển trang bằng `history.pushState` + `popstate` rồi chạy đoạn JS đo (scrollWidth, nút/ô nhập nhỏ, chữ < 11px) và chụp màn hình các trang chính. KHÔNG tự đăng nhập hộ; nếu khung chưa đăng nhập thì nhờ anh Thiện đăng nhập.
+- Đã kiểm tra lần đầu 2026-11-24: 11 trang chính ở 375px, không tràn ngang; CSS chung cuối `App.css` (khối "ĐIỆN THOẠI") đã sửa nút nhỏ, ô nhập, nhãn menu dưới.
+- CHƯA làm: danh sách Vật tư / Dự án / Đối tác trên điện thoại vẫn là bảng cuộn ngang (chưa chuyển sang dạng thẻ).
+
 ## Tài liệu liên quan
 - `CONTEXT-DU-AN.md`: bối cảnh và nghiệp vụ đầy đủ (nguồn chính).
 - `HUONG-DAN.md`: cài đặt kỹ thuật. `HUONG-DAN-SU-DUNG.md`: cẩm nang cho đội ngũ.

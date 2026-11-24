@@ -170,3 +170,15 @@ Phần này **không** nằm trong mô tả ở mục 4, nhưng đã có trong c
 - **Bộ tài liệu thương hiệu và Ads:** thư mục `..\dangwed-brand\` (`BRAND_BIBLE.md`, `MARKETING_ROADMAP.md`, `ADS_PLAN_MONTH_1.md`, `ADS_TRACKER.md`).
 - **Test tự động:** `src/lib/calc.test.js` (Vitest, chạy bằng `npm test`). Test gắn nhãn "hành vi hiện tại, đang sai" hoặc `it.todo` ghi nhận lỗi tính tiền đã biết nhưng chưa sửa; khi sửa lỗi nào thì đổi test đó sang kỳ vọng đúng.
 - **Dữ liệu tài chính chỉ admin và manager** được xem (`isManagerOrAdmin`). Không lưu dữ liệu tài chính hay token Meta vào `localStorage`.
+
+---
+
+## 7. Nguyên tắc giao diện & trải nghiệm (áp dụng cho mọi màn hình)
+
+> Chủ dự án (anh Thiện) chốt: AI agent **tự chủ động tối ưu UX/UI cho từng màn hình** mình thêm hoặc sửa, không đợi nhắc, và luôn đảm bảo **responsive tốt** cho người dùng thật. Áp dụng cho cả `dangwed.com` (web khách hàng) lẫn `app.dangwed.com` (hệ thống nội bộ).
+
+1. **Mỗi màn hình phải dùng tốt trên mobile, tablet và desktop.** Kiểm tra tối thiểu ở 375px, ~768px và desktop. Không để nội dung tràn ngang; không để chữ, nút hay thẻ bị cắt, chồng lên nhau hoặc rớt hàng khó coi.
+2. **Dễ đọc, dễ bấm.** Chữ không nhỏ hơn 11px (ô nhập liệu 16px để iPhone không tự phóng to); vùng bấm tối thiểu 44px; nút xếp theo thứ bậc (1 nút chính nổi bật, nút phụ viền hoặc nhạt), các nút cùng nhóm bằng kích thước và thẳng hàng.
+3. **Gọn, đúng việc.** Nội dung dài thì rút gọn hoặc thu gọn trên mobile (cắt dòng, ẩn phần phụ); mỗi màn hình có một hành động chính rõ ràng; nút nổi (như Zalo) không che nội dung và không sát mép màn hình.
+4. **Tự kiểm tra bằng trình duyệt trước khi báo xong** (desktop và mobile), và nêu rõ đã kiểm tra những gì, chưa kiểm tra gì.
+5. **Không phá quy tắc đã chốt** ở các mục trên: phân quyền, báo giá, định dạng tiền, và với web công khai: **không hiển thị giá** (chốt ngày 24/11/2026).

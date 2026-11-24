@@ -1552,3 +1552,65 @@
     background-position: -200% 0;
   }
 }
+
+/* =====================================================================
+   ĐIỆN THOẠI (<= 768px): vùng bấm và cỡ chữ tối thiểu (nguyên tắc UX/UI: bấm >= 40-44px, ô nhập 16px,
+   chữ >= 11px). Đặt cuối file để thắng các quy tắc cùng độ ưu tiên ở trên.
+   ===================================================================== */
+@media (max-width: 768px) {
+  /* Nút nhỏ (Sửa / Xóa / Chi tiết...) vẫn đủ lớn để bấm bằng ngón tay */
+  .btn-sm {
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 13.5px;
+  }
+  /* Nút biểu tượng trên đầu trang (chuông, menu) */
+  .btn-icon,
+  .notif-bell-btn {
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
+  }
+  /* Liên kết dạng chữ trong bảng/thẻ: tăng vùng bấm theo chiều dọc mà không đổi cỡ chữ */
+  .table-link,
+  .btn-link {
+    display: inline-block;
+    padding: 10px 0;
+  }
+  /* Nhãn menu dưới không nhỏ hơn 11px */
+  .bottom-nav-label {
+    font-size: 11px;
+  }
+  /* Ô nhập 16px để iPhone không tự phóng to khi bấm vào */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  select,
+  textarea,
+  .status-select {
+    font-size: 16px;
+  }
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  select,
+  .status-select {
+    min-height: 44px;
+  }
+  /* Các quy tắc cụ thể hơn ở trên (thanh nút đầu trang, ô trạng thái) cũng phải đạt cỡ chữ/vùng bấm tối thiểu */
+  .header-actions .btn,
+  .header-actions .status-select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .header-actions .btn {
+    font-size: 14px;
+  }
+  .data-table input[type='text'],
+  .data-table input[type='number'],
+  .data-table select {
+    font-size: 16px;
+  }
+  /* Đường dẫn "Dự án / ..." ở đầu trang chi tiết */
+  .breadcrumb a {
+    display: inline-block;
+    padding: 12px 0;
+  }
+}
