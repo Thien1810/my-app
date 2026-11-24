@@ -25,9 +25,9 @@ import './MovementsPage.css'
 
 const TABS = [
   { key: 'purchase', icon: '🛒', title: 'Nhập hàng', desc: 'Mua vật tư về kho' },
-  { key: 'adjust', icon: '⚖️', title: 'Kiểm kê', desc: 'Chỉnh tồn cho khớp thực tế' },
-  { key: 'damaged', icon: '🔧', title: 'Đồ hỏng', desc: 'Sửa xong hoặc thanh lý' },
   { key: 'transfer', icon: '🔁', title: 'Chuyển kho', desc: 'Đổi nơi để đồ tái sử dụng' },
+  { key: 'damaged', icon: '🔧', title: 'Đồ hỏng', desc: 'Sửa xong hoặc thanh lý' },
+  { key: 'adjust', icon: '⚖️', title: 'Kiểm kho', desc: 'Chỉnh tồn cho khớp thực tế' },
 ]
 
 let lineSeq = 0
@@ -49,6 +49,8 @@ export default function MovementsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  // Hiện dòng "Xem trong Sổ kho" sau khi lưu phiếu ở tab không có sổ kho.
+  const [successHint, setSuccessHint] = useState(false)
 
   // Việc đang làm: 'purchase' | 'adjust' | 'damaged' | 'transfer'
   const [activeTab, setActiveTab] = useState('purchase')
@@ -225,6 +227,7 @@ export default function MovementsPage() {
     e.preventDefault()
     setError('')
     setSuccess('')
+    setSuccessHint(false)
 
     const check = validatePurchaseLines(purchaseLines)
     if (!check.ok) {
@@ -258,7 +261,7 @@ export default function MovementsPage() {
         note: purchaseNote.trim() || null,
       }))
 
-      const newIds = await insertMovements(rows)
+      await insertMovements(rows)
 
       // Nhập về kho khác kho chính: chuyển kho các vật tư tái sử dụng.
       const mainWh = warehouses.find((w) => w.is_main)
@@ -288,13 +291,13 @@ export default function MovementsPage() {
 
       setPurchaseLines([newLine()])
       setPurchaseNote('')
-      showHighlight(newIds)
       if (transferFailed) {
         setError(
           `Phiếu nhập mua ĐÃ được lưu (${rows.length} dòng) nhưng chuyển kho CHƯA hoàn tất (${transferFailed}). Vui lòng vào việc "Chuyển kho" để tạo phiếu chuyển kho còn thiếu, đừng nhập mua lại.`
         )
       } else {
         setSuccess(`Đã tạo phiếu nhập mua gồm ${rows.length} dòng vật tư!${transferMsg}`)
+        setSuccessHint(true)
       }
       await Promise.all([loadAll(), loadTransfers()])
     } catch (err) {
@@ -310,6 +313,7 @@ export default function MovementsPage() {
     e.preventDefault()
     setError('')
     setSuccess('')
+    setSuccessHint(false)
 
     const qtyNum = Number(singleQty)
     const qtyEmpty = String(singleQty).trim() === '' || !Number.isFinite(qtyNum) || qtyNum === 0
@@ -342,9 +346,10 @@ export default function MovementsPage() {
         note: singleNote.trim() || null,
       }
       const newIds = await insertMovements([payload])
-      showHighlight(newIds)
+      if (singleType === 'adjust') showHighlight(newIds)
 
       setSuccess(`Đã tạo phiếu ${MOVEMENT_TYPE_LABELS[singleType]} thành công!`)
+      setSuccessHint(singleType !== 'adjust')
       setSingleQty('')
       setSingleNote('')
       await loadAll()
@@ -358,6 +363,7 @@ export default function MovementsPage() {
   const handleDeleteMovement = async (m) => {
     setError('')
     setSuccess('')
+    setSuccessHint(false)
     const rule = canDeleteMovement({ movement: m, stock: itemMap.get(Number(m.item_id)) })
     if (!rule.ok) {
       setError(rule.reason)
@@ -597,7 +603,7 @@ export default function MovementsPage() {
       <form onSubmit={handleCreateSingleMovement} noValidate className="mv-form">
         <p className="mv-muted mv-intro">
           {isAdjust
-            ? 'Chỉnh tồn kho cho khớp thực tế khi kiểm kê: nhập số dương (+) để cộng thêm, số âm (-) để trừ bớt.'
+            ? 'Chỉnh tồn kho cho khớp thực tế khi kiểm kho: nhập số dương (+) để cộng thêm, số âm (-) để trừ bớt.'
             : 'Xử lý các vật tư đang ở trạng thái "Chờ sửa": đã sửa xong thì nhập lại kho, không cứu được thì thanh lý.'}
         </p>
 
@@ -708,7 +714,7 @@ export default function MovementsPage() {
               type="text"
               className={singleInvalid.note ? 'mv-invalid' : ''}
               placeholder={
-                isAdjust ? 'VD: Kiểm kê cuối tháng, đếm thực tế...' : 'Ghi chú sửa chữa / thanh lý...'
+                isAdjust ? 'VD: Kiểm kho cuối tháng, đếm thực tế...' : 'Ghi chú sửa chữa / thanh lý...'
               }
               value={singleNote}
               onChange={(e) => {
@@ -754,7 +760,7 @@ export default function MovementsPage() {
         <div>
           <h1>Nhập kho & Sổ phiếu kho</h1>
           <p className="text-muted">
-            Nhập hàng, kiểm kê, xử lý đồ hỏng, chuyển kho và tra cứu toàn bộ sổ phiếu kho
+            Chọn việc cần làm: Nhập hàng, Chuyển kho, Đồ hỏng hoặc Kiểm kho. Sổ phiếu kho nằm ở tab Kiểm kho.
           </p>
         </div>
       </div>
@@ -775,7 +781,17 @@ export default function MovementsPage() {
       )}
       {success && (
         <div className="alert alert-success mv-alert" role="status">
-          <span>{success}</span>
+          <span>
+            {success}
+            {successHint && canEditCatalog && activeTab !== 'adjust' && (
+              <span className="mv-success-hint">
+                {' '}
+                <button type="button" className="mv-link-btn" onClick={() => switchTab('adjust')}>
+                  Xem trong Sổ kho ở tab Kiểm kho
+                </button>
+              </span>
+            )}
+          </span>
           <button
             type="button"
             className="mv-alert-x"
@@ -790,23 +806,38 @@ export default function MovementsPage() {
       {/* Khu vực tạo phiếu kho */}
       {canEditCatalog && (
         <div className="card mv-card">
-          <div className="mv-tabs" role="tablist">
-            {TABS.map((t) => (
+          <div className="mv-tabs" role="tablist" aria-label="Việc cần làm với kho">
+            {TABS.map((t, idx) => (
               <button
                 key={t.key}
                 type="button"
                 role="tab"
+                id={`mv-tab-${t.key}`}
                 aria-selected={activeTab === t.key}
+                aria-controls="mv-tabpanel"
                 className={`mv-tab ${activeTab === t.key ? 'is-active' : ''}`}
                 onClick={() => switchTab(t.key)}
               >
-                <span className="mv-tab-icon">{t.icon}</span>
-                <span className="mv-tab-title">{t.title}</span>
+                <span className="mv-tab-head">
+                  <span className="mv-tab-num" aria-hidden="true">
+                    {idx + 1}
+                  </span>
+                  <span className="mv-tab-icon" aria-hidden="true">
+                    {t.icon}
+                  </span>
+                  <span className="mv-tab-title">{t.title}</span>
+                </span>
                 <span className="mv-tab-desc">{t.desc}</span>
               </button>
             ))}
           </div>
 
+          <div
+            className="mv-panel"
+            role="tabpanel"
+            id="mv-tabpanel"
+            aria-labelledby={`mv-tab-${activeTab}`}
+          >
           {activeTab === 'transfer' ? (
             <div className="mv-form">
               <p className="mv-muted mv-intro">
@@ -824,20 +855,24 @@ export default function MovementsPage() {
           ) : (
             renderSingle()
           )}
+          </div>
         </div>
       )}
 
-      <MovementsLedger
-        movements={movements}
-        transfers={transfers}
-        warehouses={warehouses}
-        projects={projects}
-        loading={loading}
-        isAdmin={isAdmin}
-        onDelete={handleDeleteMovement}
-        highlightIds={highlightIds}
-        itemsById={itemsById}
-      />
+      {/* Sổ kho chỉ hiện ở tab Kiểm kho; người không có quyền tạo phiếu luôn thấy sổ */}
+      {(!canEditCatalog || activeTab === 'adjust') && (
+        <MovementsLedger
+          movements={movements}
+          transfers={transfers}
+          warehouses={warehouses}
+          projects={projects}
+          loading={loading}
+          isAdmin={isAdmin}
+          onDelete={handleDeleteMovement}
+          highlightIds={highlightIds}
+          itemsById={itemsById}
+        />
+      )}
     </div>
   )
 }

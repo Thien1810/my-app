@@ -44,40 +44,90 @@
   color: var(--text-muted, #6b7280);
 }
 
-/* 4 nút việc lớn: 2x2 trên điện thoại, 4 cột trên máy tính */
+/* Dải 4 tab liền nhau: 2x2 trên điện thoại, 4 cột trên máy tính */
 .mv-tabs {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 8px;
+  padding-bottom: 14px;
 }
 
 .mv-tab {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  min-height: 84px;
-  padding: 12px;
+  gap: 4px;
+  min-height: 72px;
+  padding: 10px 12px;
   text-align: left;
   background: #fff;
-  border: 2px solid var(--border, #e5e7eb);
+  border: 2px solid #d1d5db;
   border-radius: 12px;
   cursor: pointer;
   font: inherit;
-  color: inherit;
+  color: #1f2937;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .mv-tab:hover {
+  background: #f0fdf4;
   border-color: #86efac;
 }
 
-.mv-tab.is-active {
+.mv-tab:focus-visible {
+  outline: 3px solid #86efac;
+  outline-offset: 2px;
+}
+
+.mv-tab.is-active,
+.mv-tab.is-active:hover {
+  background: #16a34a;
   border-color: #16a34a;
-  background: #f0fdf4;
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(22, 163, 74, 0.35);
+}
+
+/* Mũi tên trỏ xuống form bên dưới */
+.mv-tab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  width: 0;
+  height: 0;
+  margin-left: -9px;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 10px solid #16a34a;
+}
+
+.mv-tab-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mv-tab-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mv-tab.is-active .mv-tab-num {
+  background: #fff;
+  color: #15803d;
 }
 
 .mv-tab-icon {
-  font-size: 22px;
+  font-size: 18px;
   line-height: 1;
 }
 
@@ -87,13 +137,40 @@
 }
 
 .mv-tab.is-active .mv-tab-title {
-  color: #15803d;
+  font-weight: 800;
 }
 
 .mv-tab-desc {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted, #6b7280);
   line-height: 1.3;
+}
+
+.mv-tab.is-active .mv-tab-desc {
+  color: #dcfce7;
+}
+
+/* Khung form viền xanh cùng màu tab đang chọn */
+.mv-panel {
+  padding: 14px;
+  border: 2px solid #16a34a;
+  border-radius: 12px;
+}
+
+.mv-panel .mv-form {
+  margin-top: 0;
+}
+
+.mv-link-btn {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .mv-form {
@@ -373,6 +450,11 @@
 
   .mv-tabs {
     grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+
+  .mv-panel {
+    padding: 18px;
   }
 
   .mv-grid {
