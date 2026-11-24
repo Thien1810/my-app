@@ -81,6 +81,34 @@ describe('calcPnl - quy tắc', () => {
     expect(r.otherIncome).toBe(1500000)
     expect(r.netProfit).toBe(4500000)
   })
+  it('forfeit có kho -> chỉ vào kho đó, scope all có đủ', () => {
+    const adv = [{ received_date: '2026-12-15', kind: 'forfeit', amount: 1000000, warehouse_code: 'vinh_loc' }]
+    const r = calcPnl(base({ advances: adv }))
+    expect(r.otherIncome).toBe(1000000)
+    expect(wh(r, 'vinh_loc').otherIncome).toBe(1000000)
+    expect(wh(r, 'xuan_loc').otherIncome).toBe(0)
+    expect(calcPnl(base({ advances: adv, scope: 'vinh_loc' })).otherIncome).toBe(1000000)
+    expect(calcPnl(base({ advances: adv, scope: 'xuan_loc' })).otherIncome).toBe(0)
+  })
+  it('forfeit không kho -> chia theo share; tổng các kho khớp toàn công ty', () => {
+    const adv = [
+      { received_date: '2026-12-15', kind: 'forfeit', amount: 1000000 },
+      { received_date: '2026-12-16', kind: 'forfeit', amount: 500000, warehouse_code: 'vinh_loc' },
+    ]
+    const r = calcPnl(base({ advances: adv }))
+    expect(wh(r, 'xuan_loc').otherIncome).toBeCloseTo(700000)
+    expect(wh(r, 'vinh_loc').otherIncome).toBeCloseTo(300000 + 500000)
+    const sum = r.byWarehouse.reduce((s, w) => s + w.otherIncome, 0)
+    expect(sum).toBeCloseTo(r.otherIncome)
+    expect(r.otherIncome).toBe(1500000)
+    expect(calcPnl(base({ advances: adv, scope: 'xuan_loc' })).otherIncome).toBeCloseTo(700000)
+  })
+  it('forfeit amount âm vẫn tính dương', () => {
+    const adv = [{ received_date: '2026-12-15', kind: 'forfeit', amount: -250000, warehouse_code: 'xuan_loc' }]
+    const r = calcPnl(base({ advances: adv }))
+    expect(r.otherIncome).toBe(250000)
+    expect(wh(r, 'xuan_loc').otherIncome).toBe(250000)
+  })
   it('history rỗng => hòa vốn null', () => {
     const r = calcPnl(base())
     expect(r.breakEven).toBeNull()

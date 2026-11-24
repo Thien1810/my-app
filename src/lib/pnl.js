@@ -3,8 +3,9 @@
 // QUYẾT ĐỊNH TỰ CHỌN (SPEC không nói rõ):
 // 1. Ads có warehouse_code null: coi như chi phí chung, chia theo share kho
 //    (giống chi phí cứng chung). Ads có warehouse_code thì tính thẳng kho đó.
-// 2. Thu nhập khác (forfeit) không có kho: chia theo share khi scope là kho
-//    và khi tính byWarehouse, để tổng các kho = toàn công ty.
+// 2. Thu nhập khác (forfeit): bên gọi gắn warehouse_code (kho của dự án) vào từng dòng
+//    advances. Có kho thì tính THẲNG kho đó; không có kho (dự án chưa gán kho/không rõ)
+//    mới chia theo share. Tổng các kho = toàn công ty. Số tiền luôn lấy giá trị tuyệt đối.
 // 3. share được chuẩn hóa (share / tổng share). Tổng = 0 => chia đều cho các kho có trong shares.
 // 4. Dự án không có warehouse_code: chỉ vào scope 'all' (và `unassigned` của kết quả),
 //    không thuộc kho nào.
@@ -97,10 +98,18 @@ export function calcPnl({
   const fixedCostTotal = isAll ? fixedTotalAll : fixedDirectOf(scope) + fixedPool * shareOf(scope)
 
   // --- Thu nhập khác (forfeit) ---
-  const otherIncomeAll = (advances || [])
-    .filter((a) => a && a.kind === 'forfeit' && monthOf(a.received_date) === month)
-    .reduce((s, a) => s + num(a.amount), 0)
-  const otherIncome = isAll ? otherIncomeAll : otherIncomeAll * shareOf(scope)
+  const forfeitMonth = (advances || []).filter(
+    (a) => a && a.kind === 'forfeit' && monthOf(a.received_date) === month
+  )
+  const forfeitAmt = (a) => Math.abs(num(a.amount))
+  const otherIncomeAll = forfeitMonth.reduce((s, a) => s + forfeitAmt(a), 0)
+  const otherDirectOf = (code) =>
+    forfeitMonth.filter((a) => a.warehouse_code === code).reduce((s, a) => s + forfeitAmt(a), 0)
+  const otherPool = forfeitMonth
+    .filter((a) => !a.warehouse_code)
+    .reduce((s, a) => s + forfeitAmt(a), 0)
+  const otherOf = (code) => otherDirectOf(code) + otherPool * shareOf(code)
+  const otherIncome = isAll ? otherIncomeAll : otherOf(scope)
 
   const netProfit = grossProfit - adsSpend - fixedCostTotal + otherIncome
 
@@ -140,7 +149,7 @@ export function calcPnl({
 
   if (isAll) {
     const codes = new Set(Object.keys(shareMap))
-    ;[...counted, ...adsMonth, ...fixedMonth].forEach((x) => {
+    ;[...counted, ...adsMonth, ...fixedMonth, ...forfeitMonth].forEach((x) => {
       if (x.warehouse_code) codes.add(x.warehouse_code)
     })
     result.byWarehouse = [...codes].map((code) => {
@@ -152,7 +161,7 @@ export function calcPnl({
       const fixedDirect = fixedDirectOf(code)
       const fixedShared = fixedPool * shareOf(code)
       const wFixed = fixedDirect + fixedShared
-      const wOther = otherIncomeAll * shareOf(code)
+      const wOther = otherOf(code)
       return {
         code,
         revenue: wRevenue,

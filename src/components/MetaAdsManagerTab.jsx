@@ -145,6 +145,15 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
 
   const projects = useMemo(() => toPnlProjects(projectProfitReport), [projectProfitReport])
 
+  // Gắn kho của dự án vào từng dòng tạm ứng (bản sao, không sửa mảng gốc)
+  const advancesWithWh = useMemo(() => {
+    const whByProject = {}
+    ;(projectProfitReport || []).forEach((r) => {
+      if (r && r.project && r.project.id) whByProject[r.project.id] = r.project.warehouse_code || null
+    })
+    return (advances || []).map((a) => ({ ...a, warehouse_code: whByProject[a.project_id] || null }))
+  }, [advances, projectProfitReport])
+
   const effectiveShares = useMemo(
     () => resolveShares({ locks, month: selectedMonth, shares }),
     [locks, selectedMonth, shares],
@@ -159,10 +168,10 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
       adsRows,
       fixedCosts,
       shares: effectiveShares,
-      advances,
+      advances: advancesWithWh,
       history,
     })
-  }, [projects, selectedMonth, viewScope, adsRows, fixedCosts, effectiveShares, advances])
+  }, [projects, selectedMonth, viewScope, adsRows, fixedCosts, effectiveShares, advancesWithWh])
 
   const cashIn = useMemo(() => monthlyCashIn(advances, selectedMonth), [advances, selectedMonth])
 

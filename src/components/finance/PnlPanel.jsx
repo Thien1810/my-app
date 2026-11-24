@@ -18,6 +18,7 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
   const isAll = scope === 'all'
   const whName = (code) => warehouses.find((w) => w.code === code)?.name || code
   const scopeLabel = isAll ? 'Tất cả kho' : whName(scope)
+  const showOtherCol = (pnl.byWarehouse || []).some((w) => Number(w.otherIncome) !== 0)
   const netOk = pnl.netProfit >= 0
   const overhead = pnl.adsSpend + pnl.fixedCostTotal
   const rev = pnl.revenue
@@ -236,6 +237,7 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
                     <th className="text-right">Lãi gộp</th>
                     <th className="text-right">Ads</th>
                     <th className="text-right">Chi phí cứng</th>
+                    {showOtherCol && <th className="text-right">Thu nhập khác</th>}
                     <th className="text-right">Lợi nhuận ròng</th>
                   </tr>
                 </thead>
@@ -249,6 +251,7 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
                       <td className="text-right text-green font-bold">{formatCurrency(w.grossProfit)}</td>
                       <td className="text-right text-blue">{formatCurrency(w.adsSpend)}</td>
                       <td className="text-right text-amber">{formatCurrency(w.fixedCostTotal)}</td>
+                      {showOtherCol && <td className="text-right">{formatCurrency(w.otherIncome || 0)}</td>}
                       <td className={`text-right font-bold ${w.netProfit >= 0 ? 'text-green' : 'text-red'}`}>
                         {formatCurrency(w.netProfit)}
                       </td>
@@ -266,6 +269,7 @@ export default function PnlPanel({ pnl, bySource = [], month, scope = 'all', war
                       </td>
                       <td className="text-right">{DASH}</td>
                       <td className="text-right">{DASH}</td>
+                      {showOtherCol && <td className="text-right">{DASH}</td>}
                       <td className="text-right">{DASH}</td>
                     </tr>
                   )}
