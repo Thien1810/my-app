@@ -44,6 +44,7 @@ export default function MonthLockBar({ month, locks = [], lockLog = [], isLocked
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [showLog, setShowLog] = useState(false)
+  const [modalError, setModalError] = useState('')
 
   const label = formatMonthVN(month)
   const lock = locks.find((l) => l.month === month)
@@ -60,14 +61,17 @@ export default function MonthLockBar({ month, locks = [], lockLog = [], isLocked
     setDialog(null)
     setNote('')
     setReason('')
+    setModalError('')
   }
 
   const submitLock = async () => {
     if (busy) return
     setBusy(true)
+    setModalError('')
     try {
-      const ok = await actions.lockMonth(note.trim())
-      if (ok) close()
+      const res = await actions.lockMonth(note.trim())
+      if (res?.ok) close()
+      else setModalError(res?.message || 'Không khóa được sổ.')
     } finally {
       setBusy(false)
     }
@@ -75,9 +79,11 @@ export default function MonthLockBar({ month, locks = [], lockLog = [], isLocked
   const submitUnlock = async () => {
     if (busy || !reason.trim()) return
     setBusy(true)
+    setModalError('')
     try {
-      const ok = await actions.unlockMonth(reason.trim())
-      if (ok) close()
+      const res = await actions.unlockMonth(reason.trim())
+      if (res?.ok) close()
+      else setModalError(res?.message || 'Không mở khóa được sổ.')
     } finally {
       setBusy(false)
     }
@@ -172,6 +178,11 @@ export default function MonthLockBar({ month, locks = [], lockLog = [], isLocked
             onChange={(e) => setNote(e.target.value)}
             style={{ width: '100%' }}
           />
+          {modalError && (
+            <div className="alert alert-error" role="alert" style={{ marginTop: 10 }}>
+              {modalError}
+            </div>
+          )}
           <div className="modal-footer">
             <button type="button" className="btn btn-outline" style={{ minHeight: 40 }} disabled={busy} onClick={close}>
               Hủy
@@ -201,6 +212,11 @@ export default function MonthLockBar({ month, locks = [], lockLog = [], isLocked
             onChange={(e) => setReason(e.target.value)}
             style={{ width: '100%' }}
           />
+          {modalError && (
+            <div className="alert alert-error" role="alert" style={{ marginTop: 10 }}>
+              {modalError}
+            </div>
+          )}
           <div className="modal-footer">
             <button type="button" className="btn btn-outline" style={{ minHeight: 40 }} disabled={busy} onClick={close}>
               Hủy

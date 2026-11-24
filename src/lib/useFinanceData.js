@@ -121,11 +121,11 @@ export function useFinanceData({ month }) {
       const { error } = await lockMonth(monthRef.current, note)
       if (error) {
         setNotice({ type: 'error', text: error.message })
-        return false
+        return { ok: false, message: error.message }
       }
       setNotice({ type: 'success', text: `Đã khóa sổ tháng ${monthRef.current}.` })
       reload()
-      return true
+      return { ok: true, message: '' }
     },
     unlockMonth: async (reason) => {
       const { error } = await unlockMonth(monthRef.current, reason)
@@ -134,17 +134,15 @@ export function useFinanceData({ month }) {
           error.code === 'PGRST202' ||
           error.code === '42883' ||
           (/unlock_month/i.test(error.message || '') && /not find|does not exist|schema cache/i.test(error.message || ''))
-        setNotice({
-          type: 'error',
-          text: missing
-            ? 'Chưa mở khóa được: cần chạy file supabase/month_lock_controls.sql trên Supabase trước.'
-            : error.message,
-        })
-        return false
+        const text = missing
+          ? 'Chưa mở khóa được: cần chạy file supabase/month_lock_controls.sql trên Supabase trước.'
+          : error.message
+        setNotice({ type: 'error', text })
+        return { ok: false, message: text }
       }
       setNotice({ type: 'success', text: `Đã mở khóa sổ tháng ${monthRef.current}.` })
       reload()
-      return true
+      return { ok: true, message: '' }
     },
     saveMonthAsTemplate: async () => {
       const current = fixedCostsRef.current
