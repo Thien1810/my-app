@@ -1,3 +1,5 @@
+import { getLeadAttribution, getLeadChannel } from './leadSource'
+
 // Trạng thái lead (khách đăng ký từ website, bảng public.site_leads) — MỘT nơi duy nhất.
 export const LEAD_STATUS_META = {
   new: { label: 'Mới đăng ký', cls: 'badge-amber' },
@@ -21,13 +23,16 @@ export function countLeadsByStatus(leads) {
   return counts
 }
 
-// Lọc theo trạng thái ('all' = tất cả) và ô tìm kiếm (tên, SĐT, khu vực, dịch vụ, mẫu).
-export function filterLeads(leads, { status = 'all', search = '' } = {}) {
+// Lọc theo trạng thái ('all' = tất cả), kênh ('all' = tất cả) và ô tìm kiếm
+// (tên, SĐT, khu vực, dịch vụ, mẫu, chiến dịch, nội dung, trang vào).
+export function filterLeads(leads, { status = 'all', channel = 'all', search = '' } = {}) {
   const q = (search || '').trim().toLowerCase()
   return (leads || []).filter((l) => {
     if (status !== 'all' && l.status !== status) return false
+    if (channel !== 'all' && getLeadChannel(l).key !== channel) return false
     if (q) {
-      const hay = `${l.customer_name || ''} ${l.phone || ''} ${l.location || ''} ${l.service_interest || ''} ${l.selected_template || ''}`.toLowerCase()
+      const a = getLeadAttribution(l)
+      const hay = `${l.customer_name || ''} ${l.phone || ''} ${l.location || ''} ${l.service_interest || ''} ${l.selected_template || ''} ${a.utm_campaign} ${a.utm_content} ${a.landing_path}`.toLowerCase()
       if (!hay.includes(q)) return false
     }
     return true

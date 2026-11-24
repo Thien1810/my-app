@@ -10,6 +10,7 @@ import {
   countLeadsByStatus,
   filterLeads,
 } from '../../lib/leadStatus'
+import { CHANNEL_FILTER_OPTIONS } from '../../lib/leadSource'
 import LeadCard from './LeadCard'
 
 function isMissingTableErr(err) {
@@ -47,6 +48,7 @@ export default function LeadsTab({
   const [leads, setLeads] = useState([])
   const [loaded, setLoaded] = useState(false)
   const [statusFilter, setStatusFilter] = useState('all')
+  const [channelFilter, setChannelFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [convertingId, setConvertingId] = useState(null)
 
@@ -225,7 +227,7 @@ export default function LeadsTab({
   if (!visible) return null
   if (!loaded) return <div className="loading-state">Đang tải dữ liệu Website...</div>
 
-  const filteredLeads = filterLeads(leads, { status: statusFilter, search })
+  const filteredLeads = filterLeads(leads, { status: statusFilter, channel: channelFilter, search })
 
   return (
     <>
@@ -254,7 +256,7 @@ export default function LeadsTab({
         <input
           type="text"
           className="filter-input"
-          placeholder="Tìm tên khách, SĐT, khu vực, mẫu..."
+          placeholder="Tìm tên khách, SĐT, khu vực, mẫu, chiến dịch, trang vào..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -269,6 +271,16 @@ export default function LeadsTab({
             </option>
           ))}
         </select>
+        <select
+          value={channelFilter}
+          onChange={(e) => setChannelFilter(e.target.value)}
+        >
+          {CHANNEL_FILTER_OPTIONS.map((o) => (
+            <option key={o.key} value={o.key}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           className="btn btn-outline"
@@ -277,6 +289,12 @@ export default function LeadsTab({
           🔄 Làm mới
         </button>
       </div>
+      </div>
+
+      <div className="text-xs text-muted" style={{ marginBottom: 8 }}>
+        {channelFilter === 'all'
+          ? `Hiển thị ${filteredLeads.length} / ${leads.length} yêu cầu`
+          : `Kênh "${CHANNEL_FILTER_OPTIONS.find((o) => o.key === channelFilter)?.label}": ${filteredLeads.length} yêu cầu`}
       </div>
 
       {/* Leads list */}

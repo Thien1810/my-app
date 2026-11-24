@@ -38,4 +38,16 @@ describe('filterLeads', () => {
     expect(filterLeads(leads, { search: '  cổng ' }).map((l) => l.id)).toEqual([2])
     expect(filterLeads(leads, { search: '0911' }).map((l) => l.id)).toEqual([1])
   })
+  it('lọc theo kênh, kết hợp tìm kiếm chiến dịch / trang vào', () => {
+    const ls = [
+      { id: 1, status: 'new', utm_source: 'facebook', utm_campaign: 'Gia_Tien', landing_path: '/khu-vuc/long-khanh' },
+      { id: 2, status: 'new', utm_source: 'tiktok' },
+      { id: 3, status: 'closed' },
+    ]
+    expect(filterLeads(ls, { channel: 'meta_ads' }).map((l) => l.id)).toEqual([1])
+    expect(filterLeads(ls, { channel: 'unknown' }).map((l) => l.id)).toEqual([3])
+    expect(filterLeads(ls, { search: 'gia_tien' }).map((l) => l.id)).toEqual([1])
+    expect(filterLeads(ls, { search: 'long-khanh' }).map((l) => l.id)).toEqual([1])
+    expect(filterLeads(ls, { channel: 'tiktok_ads', search: 'gia_tien' })).toHaveLength(0)
+  })
 })

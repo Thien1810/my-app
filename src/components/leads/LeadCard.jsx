@@ -1,5 +1,7 @@
 import { formatDate } from '../../lib/formatters'
-import { parseLeadAdsSource } from '../../lib/metaAdsClient'
+import { useState } from 'react'
+import { getLeadAttribution, getLeadChannel } from '../../lib/leadSource'
+import './leads.css'
 import { LEAD_STATUS_META, LEAD_STATUS_ORDER } from '../../lib/leadStatus'
 
 export default function LeadCard({
@@ -11,6 +13,16 @@ export default function LeadCard({
   onDelete,
 }) {
   const meta = LEAD_STATUS_META[lead.status] || LEAD_STATUS_META.new
+  const [showSource, setShowSource] = useState(false)
+  const channel = getLeadChannel(lead)
+  const attr = getLeadAttribution(lead)
+  const sourceRows = [
+    ['Chiến dịch', attr.utm_campaign],
+    ['Nội dung', attr.utm_content],
+    ['Trang vào đầu tiên', attr.landing_path],
+    ['Biết qua', attr.heard_from],
+    ['Nguồn giới thiệu', attr.referrer],
+  ].filter(([, v]) => v)
   const cleanDigits = (lead.phone || '').replace(/\D/g, '')
   return (
     <div className="card" style={{ padding: 16 }}>
@@ -28,11 +40,9 @@ export default function LeadCard({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <strong style={{ fontSize: 16 }}>{lead.customer_name}</strong>
             <span className={`badge ${meta.cls}`}>{meta.label}</span>
-            {isManagerOrAdmin && parseLeadAdsSource(lead.note) && (
-              <span className="badge badge-blue">
-                📢 Ads: {parseLeadAdsSource(lead.note)}
-              </span>
-            )}
+            <span className={`badge lead-channel lead-channel-${channel.group}`}>
+              {channel.label}
+            </span>
           </div>
           <div className="text-xs text-muted" style={{ marginTop: 4 }}>
             Gửi lúc: {formatDate(lead.created_at)}
@@ -100,6 +110,29 @@ export default function LeadCard({
           </div>
         )}
       </div>
+
+      {sourceRows.length > 0 && (
+        <div className="lead-source-box">
+          <button
+            type="button"
+            className="lead-source-toggle"
+            aria-expanded={showSource}
+            onClick={() => setShowSource((v) => !v)}
+          >
+            {showSource ? '▾' : '▸'} Chi tiết nguồn
+          </button>
+          {showSource && (
+            <div className="lead-source-rows">
+              {sourceRows.map(([label, value]) => (
+                <div key={label}>
+                  <span className="text-muted">{label}: </span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {lead.note && (
         <div style={{ fontSize: 13.5, marginBottom: 12, color: '#334155' }}>
