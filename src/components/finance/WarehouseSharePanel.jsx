@@ -35,7 +35,7 @@ export default function WarehouseSharePanel({ shares = [], title = 'Giá trị t
       {!hideNote && (
         <p className="text-muted" style={{ fontSize: 13 }}>
           Tỷ trọng quyết định cách chia chi phí chung. Muốn chuyển tài sản giữa các kho, vào{' '}
-          <Link to="/phieu-kho">Nhập kho / Phiếu kho</Link> → tab Chuyển kho.
+          <Link to="/phieu-kho" style={{ display: "inline-block", padding: "10px 0" }}>Nhập kho / Phiếu kho</Link> → tab Chuyển kho.
         </p>
       )}
     </div>

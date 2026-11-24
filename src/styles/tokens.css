@@ -48,6 +48,20 @@
   --z-modal: 200;
   --z-toast: 300;
 
+  /* Màu chữ/viền cho trạng thái (huy hiệu, cảnh báo): đổi ở đây khi đổi thương hiệu */
+  --warn-text: #92400e;
+  --warn-border: #fcd34d;
+  --danger-text: #991b1b;
+  --danger-border: #fca5a5;
+  --info-text: #1d4ed8;
+  --info-border: #93c5fd;
+
+  /* Màu nền phụ, lớp phủ hộp thoại, bóng */
+  --surface-muted: #f8fafc;
+  --overlay: rgba(15, 23, 42, 0.5);
+  --primary-shadow: rgba(22, 163, 74, 0.28);
+  --danger-shadow: rgba(220, 38, 38, 0.25);
+
   /* Viền focus */
   --focus-ring: 0 0 0 3px rgba(22, 163, 74, 0.35);
 }

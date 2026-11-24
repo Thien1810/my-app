@@ -31,9 +31,9 @@
 }
 .ui-btn:hover { text-decoration: none; }
 .ui-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.ui-btn--primary { background: var(--primary); color: #fff; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.28); }
+.ui-btn--primary { background: var(--primary); color: #fff; box-shadow: 0 2px 6px var(--primary-shadow); }
 .ui-btn--primary:hover { background: var(--primary-hover); }
-.ui-btn--primary:active { transform: translateY(1px); box-shadow: 0 1px 3px rgba(22, 163, 74, 0.28); }
+.ui-btn--primary:active { transform: translateY(1px); box-shadow: 0 1px 3px var(--primary-shadow); }
 .ui-btn--secondary { background: var(--surface); color: var(--primary-hover); border-color: var(--primary); }
 .ui-btn--secondary:hover { background: var(--primary-subtle); }
 .ui-btn--danger { background: var(--red); color: #fff; }
@@ -90,7 +90,7 @@
 .ui-field.is-invalid .ui-input, .ui-field.is-invalid .ui-select, .ui-field.is-invalid .ui-textarea,
 .ui-input.is-invalid, .ui-select.is-invalid, .ui-textarea.is-invalid { border-color: var(--red); }
 .ui-field.is-invalid .ui-input:focus, .ui-field.is-invalid .ui-select:focus, .ui-field.is-invalid .ui-textarea:focus {
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.25);
+  box-shadow: 0 0 0 3px var(--danger-shadow);
 }
 .ui-form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 @media (min-width: 640px) {
@@ -110,17 +110,17 @@
   background: var(--bg); color: var(--text-muted);
 }
 .ui-badge--success { background: var(--primary-light); color: var(--primary-hover); }
-.ui-badge--warn { background: var(--amber-light); color: #92400e; }
-.ui-badge--danger { background: var(--red-light); color: #991b1b; }
-.ui-badge--info { background: var(--blue-light); color: #1d4ed8; }
+.ui-badge--warn { background: var(--amber-light); color: var(--warn-text); }
+.ui-badge--danger { background: var(--red-light); color: var(--danger-text); }
+.ui-badge--info { background: var(--blue-light); color: var(--info-text); }
 .ui-badge--neutral { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 .ui-badge--accent { background: var(--accent-light); color: var(--accent); }
 
 .ui-alert { padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); border: 1px solid; font-size: var(--fs-md); overflow-wrap: anywhere; }
 .ui-alert--success { background: var(--primary-subtle); border-color: var(--primary-light); color: var(--primary-hover); }
-.ui-alert--warn { background: var(--amber-light); border-color: #fcd34d; color: #92400e; }
-.ui-alert--danger { background: var(--red-light); border-color: #fca5a5; color: #991b1b; }
-.ui-alert--info { background: var(--blue-light); border-color: #93c5fd; color: #1d4ed8; }
+.ui-alert--warn { background: var(--amber-light); border-color: var(--warn-border); color: var(--warn-text); }
+.ui-alert--danger { background: var(--red-light); border-color: var(--danger-border); color: var(--danger-text); }
+.ui-alert--info { background: var(--blue-light); border-color: var(--info-border); color: var(--info-text); }
 
 .ui-empty { text-align: center; padding: var(--space-8) var(--space-4); color: var(--text-muted); font-size: var(--fs-md); }
 .ui-empty__title { font-size: var(--fs-lg); font-weight: 600; color: var(--text); margin-bottom: var(--space-1); }
@@ -150,7 +150,7 @@
 /* ===== Hộp thoại ===== */
 .ui-modal-backdrop {
   position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: flex-end; justify-content: center;
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--overlay);
 }
 .ui-modal {
   display: flex; flex-direction: column; width: 100%; max-height: 92vh; max-height: 92dvh;
@@ -197,7 +197,7 @@
 @media (min-width: 769px) {
   .data-table.ui-table { font-size: 13.5px; }
   .data-table.ui-table th, .data-table.ui-table td { padding: 10px 12px; }
-  .data-table.ui-table th { font-size: 12px; background: #f8fafc; }
+  .data-table.ui-table th { font-size: 12px; background: var(--surface-muted); }
 }
 @media (max-width: 768px) {
   .data-table.ui-table td { text-align: right; }

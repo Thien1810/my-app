@@ -242,7 +242,7 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
               padding: '6px 10px',
               borderRadius: 6,
               border: 'none',
-              fontSize: 13,
+              fontSize: 16,
               fontWeight: 600,
               color: '#163828',
             }}
@@ -263,7 +263,7 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
               padding: '5px 10px',
               borderRadius: 6,
               border: 'none',
-              fontSize: 13,
+              fontSize: 16,
               fontWeight: 600,
               color: '#163828',
             }}
