@@ -11,6 +11,8 @@ import {
   CartesianGrid,
 } from 'recharts'
 import { supabase } from '../lib/supabase'
+import { fetchAllRows } from '../lib/fetchAll'
+import { buildMonthlyFinanceSeries } from '../lib/dashboardFinance'
 import { useAuth } from '../lib/AuthContext'
 import { formatCurrency, formatNumber, formatDate, todayISO } from '../lib/formatters'
 import { calcProjectItemStats, calcProjectFinancialSummary } from '../lib/calc'
@@ -25,15 +27,32 @@ export default function DashboardPage() {
   const [movements, setMovements] = useState([])
   const [finances, setFinances] = useState([])
   const [costs, setCosts] = useState([])
+  const [dataIncomplete, setDataIncomplete] = useState(false)
 
   const loadData = async () => {
     setLoading(true)
     setError('')
+    setDataIncomplete(false)
     try {
+      // Phân trang vượt giới hạn 1000 dòng; order ổn định để không lặp/mất dòng.
       const [itemsRes, projectsRes, movesRes] = await Promise.all([
         supabase.from('item_stock').select('*').order('name'),
-        supabase.from('projects').select('*, customer:partners(name)').order('start_date', { ascending: false }),
-        supabase.from('stock_movements').select('*').order('moved_at', { ascending: false }),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('projects')
+            .select('*, customer:partners(name)')
+            .order('start_date', { ascending: false })
+            .order('id')
+            .range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('stock_movements')
+            .select('*')
+            .order('moved_at', { ascending: false })
+            .order('id')
+            .range(from, to)
+        ),
       ])
 
       if (itemsRes.error) throw itemsRes.error
@@ -46,11 +65,25 @@ export default function DashboardPage() {
 
       if (isManagerOrAdmin) {
         const [finRes, costRes] = await Promise.all([
-          supabase.from('project_finance').select('*'),
-          supabase.from('project_costs').select('*'),
+          fetchAllRows((from, to) =>
+            supabase.from('project_finance').select('*').order('project_id').range(from, to)
+          ),
+          fetchAllRows((from, to) =>
+            supabase.from('project_costs').select('*').order('id').range(from, to)
+          ),
         ])
         setFinances(finRes.data || [])
         setCosts(costRes.data || [])
+        const partial = []
+        if (finRes.error) partial.push(`tài chính dự án (${finRes.error.message})`)
+        if (costRes.error) partial.push(`chi phí dự án (${costRes.error.message})`)
+        if (partial.length) {
+          setDataIncomplete(true)
+          setError(`Dữ liệu chưa đầy đủ: không tải được ${partial.join('; ')}. Số liệu tài chính có thể thiếu hoặc sai.`)
+        }
+      } else {
+        setFinances([])
+        setCosts([])
       }
     } catch (err) {
       setError(err.message || 'Không thể tải dữ liệu tổng quan')
@@ -151,52 +184,33 @@ export default function DashboardPage() {
       .slice(-6)
   }, [movements])
 
-  // Biểu đồ Doanh thu & Lãi theo tháng (chỉ Admin/Manager)
-  const monthlyFinanceChart = useMemo(() => {
-    if (!isManagerOrAdmin) return []
+  // Biểu đồ Doanh thu & Lãi theo tháng (chỉ Admin/Manager) — cùng quy tắc P&L (calcPnl).
+  const financeSeries = useMemo(() => {
+    if (!isManagerOrAdmin || dataIncomplete) return { rows: [], skippedCount: 0 }
     const financeMap = new Map()
     for (const f of finances) financeMap.set(Number(f.project_id), Number(f.contract_value || 0))
-
-    const byMonth = new Map()
-    for (const p of projects) {
-      const isCancelled = p.status === 'cancelled'
-      // Dự án hủy: chi phí tính vào tháng hủy (rơi về ngày bắt đầu, rồi ngày tạo); doanh thu = 0.
-      const dateStr = isCancelled
-        ? String(p.cancelled_at || '').slice(0, 10) ||
-          p.start_date ||
-          String(p.created_at || '').slice(0, 10)
-        : p.start_date || String(p.created_at || '').slice(0, 10)
-      const month = dateStr.slice(0, 7)
-      if (!month) continue
-      if (!byMonth.has(month)) {
-        byMonth.set(month, {
-          month,
-          doanhThu: 0,
-          chiPhi: 0,
-          loiNhuan: 0,
-        })
-      }
-      const projMoves = movements.filter((m) => m.project_id === p.id)
-      const projCosts = costs.filter((c) => c.project_id === p.id)
-      const contractValue = isCancelled ? 0 : financeMap.get(p.id) || 0
-
-      const summary = calcProjectFinancialSummary({
-        movements: projMoves,
-        itemStockMap: itemMap,
-        otherCosts: projCosts,
-        contractValue,
-      })
-
-      const row = byMonth.get(month)
-      row.doanhThu += Math.round(summary.contractValue)
-      row.chiPhi += Math.round(summary.totalCost)
-      row.loiNhuan += Math.round(summary.profit)
+    const movesByProject = new Map()
+    for (const m of movements) {
+      if (!movesByProject.has(m.project_id)) movesByProject.set(m.project_id, [])
+      movesByProject.get(m.project_id).push(m)
     }
-
-    return Array.from(byMonth.values())
-      .sort((a, b) => a.month.localeCompare(b.month))
-      .slice(-6)
-  }, [isManagerOrAdmin, projects, finances, costs, movements, itemMap])
+    const costsByProject = new Map()
+    for (const c of costs) {
+      if (!costsByProject.has(c.project_id)) costsByProject.set(c.project_id, [])
+      costsByProject.get(c.project_id).push(c)
+    }
+    const rows = projects.map((p) => {
+      const summary = calcProjectFinancialSummary({
+        movements: movesByProject.get(p.id) || [],
+        itemStockMap: itemMap,
+        otherCosts: costsByProject.get(p.id) || [],
+        contractValue: p.status === 'cancelled' ? 0 : financeMap.get(Number(p.id)) || 0,
+      })
+      return { ...p, contractValue: summary.contractValue, totalCost: summary.totalCost }
+    })
+    return buildMonthlyFinanceSeries(rows, 6)
+  }, [isManagerOrAdmin, dataIncomplete, projects, finances, costs, movements, itemMap])
+  const monthlyFinanceChart = financeSeries.rows
 
   if (loading) {
     return <div className="loading-state">Đang tải dữ liệu tổng quan...</div>
@@ -351,7 +365,11 @@ export default function DashboardPage() {
             <div className="card-header">
               <h3>Doanh thu & Lợi nhuận theo tháng (Quản trị / Quản lý)</h3>
             </div>
-            {monthlyFinanceChart.length === 0 ? (
+            {dataIncomplete ? (
+              <div className="alert alert-warning">
+                Dữ liệu chưa đầy đủ nên biểu đồ doanh thu/lợi nhuận tạm ẩn. Bấm "Làm mới" để thử lại.
+              </div>
+            ) : monthlyFinanceChart.length === 0 ? (
               <div className="empty-state">Chưa có dữ liệu tài chính dự án</div>
             ) : (
               <div style={{ width: '100%', height: 280 }}>
@@ -364,9 +382,14 @@ export default function DashboardPage() {
                     <Legend />
                     <Bar dataKey="doanhThu" name="Doanh thu HĐ" fill="#16a34a" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="chiPhi" name="Tổng chi phí" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="loiNhuan" name="Lợi nhuận" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="loiNhuan" name="Lãi gộp" fill="#2563eb" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+            )}
+            {financeSeries.skippedCount > 0 && !dataIncomplete && (
+              <div className="text-xs text-muted">
+                Có {financeSeries.skippedCount} dự án thiếu ngày nên không tính vào biểu đồ (giống báo cáo P&L).
               </div>
             )}
           </div>

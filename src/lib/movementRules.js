@@ -41,6 +41,39 @@ export function validateSingleMovement({ type, qty, stock, note } = {}) {
   return { ok: true, error: '' }
 }
 
+// Kiểm tồn khi xuất cho dự án -> { ok, error, shortages:[{ item_id, name, need, have }] }.
+// lines: [{ item_id, qty }] (cùng vật tư nhiều dòng thì cộng dồn); stockMap: Map hoặc object
+// theo item_id -> { name, in_stock } lấy từ item_stock mới nhất. Vật tư không có trong stockMap
+// coi như còn 0.
+export function checkIssueStock(lines, stockMap) {
+  const need = new Map()
+  for (const l of lines || []) {
+    const q = num(l?.qty)
+    if (!Number.isFinite(q) || q <= 0 || l?.item_id === '' || l?.item_id == null) continue
+    const key = Number(l.item_id)
+    need.set(key, (need.get(key) || 0) + q)
+  }
+  const get = (id) => (stockMap instanceof Map ? stockMap.get(id) : stockMap?.[id])
+  const shortages = []
+  for (const [item_id, n] of need) {
+    const s = get(item_id)
+    const have = Math.max(0, Number(s?.in_stock) || 0)
+    // Làm tròn 2 chữ số để số lẻ (0.1 + 0.2) không báo thiếu nhầm
+    if (Math.round(n * 100) > Math.round(have * 100)) {
+      shortages.push({ item_id, name: s?.name || `Vật tư #${item_id}`, need: n, have })
+    }
+  }
+  if (shortages.length === 0) return { ok: true, error: '', shortages: [] }
+  const detail = shortages
+    .map((s) => `- ${s.name}: cần ${fmt(s.need)}, trong kho còn ${fmt(s.have)} (thiếu ${fmt(s.need - s.have)})`)
+    .join('\n')
+  return {
+    ok: false,
+    error: `Không đủ tồn trong kho để xuất, chưa ghi phiếu nào:\n${detail}`,
+    shortages,
+  }
+}
+
 // Dòng nhập mua hoàn toàn trống (chưa chọn vật tư, chưa nhập giá, số lượng mặc định/0) thì được bỏ qua.
 export function isBlankPurchaseLine(l) {
   const q = num(l?.qty)

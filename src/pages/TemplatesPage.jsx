@@ -168,6 +168,19 @@ export default function TemplatesPage() {
       setError('Số lượng vật tư không được là số âm. Vui lòng kiểm tra lại.')
       return
     }
+
+    // Gộp các dòng trùng item_id; chặn lưu nếu không còn dòng hợp lệ (tránh xóa sạch mẫu)
+    const mergedMap = new Map()
+    for (const l of lines) {
+      if (!l.item_id || Number(l.qty) <= 0) continue
+      const idNum = Number(l.item_id)
+      mergedMap.set(idNum, (mergedMap.get(idNum) || 0) + Number(l.qty))
+    }
+    if (mergedMap.size === 0) {
+      setError('Mẫu set phải có ít nhất 1 vật tư với số lượng lớn hơn 0.')
+      return
+    }
+
     setSaving(true)
     try {
       let templateId = editingTemplate?.id
@@ -205,25 +218,44 @@ export default function TemplatesPage() {
         templateId = res.data.id
       }
 
-      // Gộp các dòng trùng item_id
-      const mergedMap = new Map()
-      for (const l of lines) {
-        if (!l.item_id || Number(l.qty) <= 0) continue
-        const idNum = Number(l.item_id)
-        mergedMap.set(idNum, (mergedMap.get(idNum) || 0) + Number(l.qty))
-      }
-
-      await supabase.from('set_template_items').delete().eq('template_id', templateId)
-
       const itemRows = Array.from(mergedMap.entries()).map(([item_id, qty]) => ({
         template_id: templateId,
         item_id,
         qty,
       }))
 
-      if (itemRows.length > 0) {
-        const { error: itemErr } = await supabase.from('set_template_items').insert(itemRows)
-        if (itemErr) throw itemErr
+      // 1) Ghi/ cập nhật các dòng còn lại TRƯỚC (không xóa gì trước khi ghi thành công)
+      const { error: itemErr } = await supabase
+        .from('set_template_items')
+        .upsert(itemRows, { onConflict: 'template_id,item_id' })
+      if (itemErr) {
+        if (!editingTemplate && templateId) {
+          // Mẫu mới tạo dở: dọn phần đầu mẫu (nếu RLS cho phép) để không để mẫu rỗng
+          await supabase.from('set_templates').delete().eq('id', templateId)
+        }
+        throw itemErr
+      }
+
+      // 2) Xóa đúng các vật tư bị bỏ khỏi mẫu
+      const keep = new Set(mergedMap.keys())
+      const removed = (editingTemplate?.items || [])
+        .map((ti) => Number(ti.item_id))
+        .filter((id) => !keep.has(id))
+      if (removed.length > 0) {
+        const { data: deleted, error: delErr } = await supabase
+          .from('set_template_items')
+          .delete()
+          .eq('template_id', templateId)
+          .in('item_id', removed)
+          .select('item_id')
+        if (delErr) throw delErr
+        if ((deleted || []).length < removed.length) {
+          await loadData()
+          setError(
+            `Đã lưu các thay đổi khác, nhưng chưa bỏ được ${removed.length - (deleted || []).length}/${removed.length} vật tư khỏi mẫu: chỉ admin/quản lý được bỏ vật tư khỏi mẫu. Hãy nhờ admin/quản lý xóa, hoặc thêm lại vật tư đó vào mẫu.`
+          )
+          return
+        }
       }
 
       setModalOpen(false)
@@ -239,8 +271,16 @@ export default function TemplatesPage() {
   const handleDelete = async (tpl) => {
     if (!window.confirm(`Xóa mẫu set "${tpl.name}"?`)) return
     try {
-      const { error: err } = await supabase.from('set_templates').delete().eq('id', tpl.id)
+      const { data: deleted, error: err } = await supabase
+        .from('set_templates')
+        .delete()
+        .eq('id', tpl.id)
+        .select('id')
       if (err) throw err
+      if (!deleted || deleted.length === 0) {
+        setError('Không xóa được mẫu set: bạn không có quyền xóa (chỉ admin/quản lý) hoặc mẫu không còn tồn tại.')
+        return
+      }
       await loadData()
     } catch (err) {
       setError(err.message || 'Không thể xóa mẫu set')

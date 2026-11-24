@@ -1,12 +1,31 @@
 // Gọi Google Gemini API (gói miễn phí) qua /api/ai-seo (bảo mật) hoặc key lưu ở trình duyệt
+import { supabase } from './supabase'
 
 const GEMINI_STORAGE_KEY = 'dangwed_gemini_api_key'
 
+// Lấy header xác thực cho các API serverless /api/ai-*
+async function getAuthHeaders() {
+  const { data } = (await supabase?.auth.getSession()) || {}
+  const token = data?.session?.access_token
+  if (!token) {
+    throw new Error('Bạn chưa đăng nhập hoặc phiên đã hết hạn. Vui lòng đăng nhập lại.')
+  }
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+}
+
+function authErrorMessage(status, fallback) {
+  if (status === 401) return 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.'
+  if (status === 403) return 'Tài khoản của anh/chị không có quyền dùng chức năng AI.'
+  if (status === 413) return fallback || 'Nội dung gửi lên quá dài.'
+  if (status === 429) return fallback || 'Thao tác quá nhanh, vui lòng thử lại sau ít giây.'
+  return ''
+}
+
 export function getSavedGeminiKey() {
   try {
-    return localStorage.getItem(GEMINI_STORAGE_KEY) || import.meta.env.VITE_GEMINI_API_KEY || ''
+    return localStorage.getItem(GEMINI_STORAGE_KEY) || ''
   } catch {
-    return import.meta.env.VITE_GEMINI_API_KEY || ''
+    return ''
   }
 }
 
@@ -31,12 +50,14 @@ async function callAiPayload(apiKey, payload, directPrompt) {
     try {
       const srvRes = await fetch('/api/ai-seo', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         signal: controller.signal,
         body: JSON.stringify({ topic: payload.topic, ...payload }),
       })
       const srvData = await srvRes.json().catch(() => ({}))
       if (srvRes.ok) return srvData
+      const authMsg = authErrorMessage(srvRes.status, srvData?.error)
+      if (authMsg) throw new Error(authMsg)
       if (srvData?.error === 'MISSING_SERVER_KEY') {
         throw new Error('Vui lòng nhập Google Gemini API Key hoặc cấu hình GEMINI_API_KEY trên Vercel.')
       }
@@ -224,11 +245,13 @@ export async function generateAiWeddingImage({ prompt, style = 'luxury' }) {
   try {
     const res = await fetch('/api/ai-image', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       signal: controller.signal,
       body: JSON.stringify({ prompt, style }),
     })
     const data = await res.json().catch(() => ({}))
+    const authMsg = res.ok ? '' : authErrorMessage(res.status, data?.error)
+    if (authMsg) throw new Error(authMsg)
     if (!res.ok || !data?.dataUrl) {
       throw new Error(data?.error || `Lỗi tạo ảnh HTTP ${res.status}`)
     }

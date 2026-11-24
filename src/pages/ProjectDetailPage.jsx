@@ -15,6 +15,8 @@ import {
   calcProjectItemStats,
   calcProjectFinancialSummary,
 } from '../lib/calc'
+import { fetchAllRows } from '../lib/fetchAll'
+import { checkIssueStock } from '../lib/movementRules'
 import { exportToExcel } from '../lib/exportExcel'
 import {
   KindBadge,
@@ -37,6 +39,10 @@ export default function ProjectDetailPage() {
   const [items, setItems] = useState([])
   const [allProjects, setAllProjects] = useState([])
   const [allPlans, setAllPlans] = useState([])
+  const [projectPlanRows, setProjectPlanRows] = useState([])
+  const [planLoadFailed, setPlanLoadFailed] = useState(false)
+  const [movesLoadFailed, setMovesLoadFailed] = useState(false)
+  const [dataWarnings, setDataWarnings] = useState([])
   const [templates, setTemplates] = useState([])
   const [movements, setMovements] = useState([])
   const [otherCosts, setOtherCosts] = useState([])
@@ -88,6 +94,7 @@ export default function ProjectDetailPage() {
         itemsRes,
         allProjRes,
         allPlansRes,
+        myPlanRes,
         tplRes,
         movesRes,
         memRes,
@@ -101,7 +108,15 @@ export default function ProjectDetailPage() {
           .maybeSingle(),
         supabase.from('item_stock').select('*').order('name'),
         supabase.from('projects').select('id, code, name, start_date, end_date, status'),
-        supabase.from('project_plan').select('*'),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('project_plan')
+            .select('*')
+            .order('project_id')
+            .order('item_id')
+            .range(from, to)
+        ),
+        supabase.from('project_plan').select('*').eq('project_id', projectId),
         supabase
           .from('set_templates')
           .select('*, items:set_template_items(item_id, qty, item:items(id, code, name, unit, kind, cost))')
@@ -123,6 +138,16 @@ export default function ProjectDetailPage() {
 
       setProject(projRes.data)
       setItems(itemsRes.data || [])
+      const warnings = []
+      if (allProjRes.error) warnings.push('danh sách dự án (cảnh báo trùng lịch)')
+      if (allPlansRes.error) warnings.push('kế hoạch các dự án khác (cảnh báo trùng lịch)')
+      if (myPlanRes.error) warnings.push('kế hoạch vật tư của dự án này')
+      if (tplRes.error) warnings.push('mẫu set')
+      if (movesRes.error) warnings.push('phiếu kho của dự án')
+      if (memRes.error) warnings.push('thành viên dự án')
+      setPlanLoadFailed(!!myPlanRes.error)
+      setMovesLoadFailed(!!movesRes.error)
+      setProjectPlanRows(myPlanRes.data || [])
       setAllProjects(allProjRes.data || [])
       setAllPlans(allPlansRes.data || [])
       setTemplates(tplRes.data || [])
@@ -146,8 +171,10 @@ export default function ProjectDetailPage() {
           .select('*')
           .eq('project_id', projectId)
           .order('cost_date', { ascending: false })
+        if (costRes.error) warnings.push('chi phí khác')
         setOtherCosts(costRes.data || [])
       }
+      setDataWarnings(warnings)
     } catch (err) {
       setError(err.message || 'Không thể tải dữ liệu dự án')
     } finally {
@@ -166,13 +193,11 @@ export default function ProjectDetailPage() {
   }, [items])
 
   const projectPlan = useMemo(() => {
-    return allPlans
-      .filter((p) => Number(p.project_id) === projectId)
-      .map((p) => ({
-        ...p,
-        item: itemMap.get(Number(p.item_id)),
-      }))
-  }, [allPlans, projectId, itemMap])
+    return projectPlanRows.map((p) => ({
+      ...p,
+      item: itemMap.get(Number(p.item_id)),
+    }))
+  }, [projectPlanRows, itemMap])
 
   const conflicts = useMemo(() => {
     return calcScheduleConflicts(project, allProjects, allPlans, itemMap)
@@ -373,7 +398,29 @@ export default function ProjectDetailPage() {
   }
 
   // --- TAB 2: XUẤT CHO DỰ ÁN ---
+  // Tải tồn kho mới nhất ngay trước khi ghi phiếu xuất (không dùng số đã cache).
+  // Trả { map, error }.
+  const fetchFreshStock = async (itemIds) => {
+    const ids = [...new Set(itemIds.map(Number))]
+    const { data, error: err } = await supabase
+      .from('item_stock')
+      .select('id, name, in_stock')
+      .in('id', ids)
+    if (err) return { map: null, error: err }
+    const map = new Map()
+    for (const r of data || []) map.set(Number(r.id), r)
+    return { map, error: null }
+  }
+
   const handleIssueByPlan = async () => {
+    if (planLoadFailed) {
+      setError('Không tải được kế hoạch vật tư của dự án nên không thể xuất theo kế hoạch. Hãy tải lại trang.')
+      return
+    }
+    if (movesLoadFailed) {
+      setError('Không tải được phiếu kho của dự án nên không biết đã xuất những gì, không thể xuất theo kế hoạch (tránh xuất trùng). Hãy tải lại trang.')
+      return
+    }
     if (projectPlan.length === 0) {
       setError('Kế hoạch vật tư đang trống. Hãy lập kế hoạch trước hoặc xuất thủ công.')
       return
@@ -404,6 +451,15 @@ export default function ProjectDetailPage() {
     setError('')
     setSuccess('')
     try {
+      const { map, error: stockErr } = await fetchFreshStock(toIssue.map((r) => r.item_id))
+      if (stockErr) throw stockErr
+      const check = checkIssueStock(toIssue, map)
+      if (!check.ok) {
+        setError(check.error)
+        return
+      }
+      // Sắp theo item_id: khóa dòng vật tư ở DB luôn theo cùng thứ tự, tránh deadlock khi 2 người xuất cùng lúc
+      toIssue.sort((a, b) => a.item_id - b.item_id)
       const { error: err } = await supabase.from('stock_movements').insert(toIssue)
       if (err) throw err
       setSuccess(`Đã xuất kho tự động ${toIssue.length} dòng vật tư theo kế hoạch!`)
@@ -441,6 +497,13 @@ export default function ProjectDetailPage() {
         note: issueNote.trim() || 'Xuất bổ sung cho dự án',
       }))
 
+      const { map, error: stockErr } = await fetchFreshStock(rows.map((r) => r.item_id))
+      if (stockErr) throw stockErr
+      const check = checkIssueStock(rows, map)
+      if (!check.ok) {
+        setError(check.error)
+        return
+      }
       const { error: err } = await supabase.from('stock_movements').insert(rows)
       if (err) throw err
       setSuccess(`Đã lập phiếu xuất ${rows.length} dòng vật tư cho dự án!`)
@@ -538,6 +601,7 @@ export default function ProjectDetailPage() {
 
     setBusyReturn(true)
     try {
+      rowsToInsert.sort((a, b) => a.item_id - b.item_id)
       const { error: err } = await supabase.from('stock_movements').insert(rowsToInsert)
       if (err) throw err
       setSuccess(`Đã ghi nhận ${rowsToInsert.length} dòng phiếu thu hồi vật tư!`)
@@ -716,7 +780,12 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {dataWarnings.length > 0 && (
+        <div className="alert alert-error">
+          Dữ liệu chưa đầy đủ: không tải được {dataWarnings.join(', ')}. Số liệu trên trang có thể thiếu; hãy tải lại trang.
+        </div>
+      )}
+      {error && <div className="alert alert-error" style={{ whiteSpace: 'pre-line' }}>{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
 
       {/* Thanh Tabs */}

@@ -1,6 +1,8 @@
 // Vercel Serverless Function: tự động dò model tạo ảnh khả dụng trên Google AI Studio,
 // nếu key Google chưa bật tạo ảnh thì gọi ngay Pollinations Flux miễn phí (~6 giây).
 
+import { requireStaffAuth } from './_auth.js'
+
 export const config = {
   maxDuration: 60,
 }
@@ -56,8 +58,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  // Bắt buộc đăng nhập + đúng vai trò (admin/manager/storekeeper) + giới hạn tần suất
+  const userId = await requireStaffAuth(req, res)
+  if (!userId) return
+
   const apiKey = (process.env.GEMINI_API_KEY || '').trim()
   const { prompt = '' } = req.body || {}
+  if (typeof prompt !== 'string') {
+    return res.status(400).json({ error: 'Dữ liệu gửi lên không hợp lệ.' })
+  }
+  if (prompt.length > 1000) {
+    return res.status(413).json({ error: 'Mô tả ảnh quá dài (tối đa 1000 ký tự).' })
+  }
   if (!prompt.trim()) {
     return res.status(400).json({ error: 'Vui lòng nhập mô tả bức ảnh cần tạo.' })
   }

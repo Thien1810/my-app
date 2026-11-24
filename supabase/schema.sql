@@ -297,11 +297,21 @@ grant usage, select on all sequences in schema public to authenticated;
 alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
 alter default privileges in schema public grant usage, select on sequences to authenticated;
 
--- Đảm bảo mọi tài khoản đã đăng ký hiện tại được tạo hồ sơ Quản trị (admin)
-insert into public.profiles (id, email, full_name, role)
-select id, email, coalesce(raw_user_meta_data->>'full_name', split_part(email, '@', 1)), 'admin'
-from auth.users
-on conflict (id) do update set role = 'admin';
+-- !!! CẢNH BÁO AN TOÀN !!!
+-- Trước đây ở đây có câu lệnh đặt MỌI tài khoản trong auth.users thành 'admin'
+-- (insert ... 'admin' from auth.users on conflict do update set role='admin').
+-- Đã GỠ BỎ: chạy lại file này sẽ nâng toàn bộ tài khoản (kể cả nhân viên, thủ kho)
+-- lên admin. KHÔNG thêm lại câu lệnh đó.
+-- Tài khoản mới được tạo hồ sơ 'pending' bởi trigger; admin duyệt ở menu Người dùng.
+--
+-- Chỉ khi hệ thống CHƯA có admin nào, tạo admin đầu tiên bằng tay (chạy 1 lần
+-- trong SQL Editor, thay email của bạn, rồi để nguyên dạng comment trong file):
+--   update public.profiles set role = 'admin' where email = 'email-cua-ban@example.com';
+--   -- nếu chưa có dòng profiles cho tài khoản đó:
+--   -- insert into public.profiles (id, email, full_name, role)
+--   -- select id, email, coalesce(raw_user_meta_data->>'full_name', split_part(email, '@', 1)), 'admin'
+--   -- from auth.users where email = 'email-cua-ban@example.com'
+--   -- on conflict (id) do update set role = 'admin';
 
 -- Hàm hỗ trợ Quản trị xóa hoàn toàn tài khoản người dùng (cả trong profiles và auth.users)
 create or replace function public.admin_delete_user(target_user_id uuid)

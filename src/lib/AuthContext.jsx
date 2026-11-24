@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(isSupabaseConfigured)
   const [authError, setAuthError] = useState('')
+  const [profileError, setProfileError] = useState(false)
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
 
   const fetchProfile = useCallback(async (user) => {
@@ -24,20 +25,29 @@ export function AuthProvider({ children }) {
         .maybeSingle()
 
       if (error) {
+        // Lỗi mạng/DB: KHÔNG đặt pending. Giữ profile cũ (nếu cùng người dùng).
         setAuthError(error.message)
-      }
-      if (data) {
-        setProfile(data)
+        setProfileError(true)
+        setProfile((prev) => (prev && prev.id === user.id ? prev : null))
       } else {
-        setProfile({
-          id: user.id,
-          email: user.email,
-          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
-          role: 'pending',
-        })
+        setAuthError('')
+        setProfileError(false)
+        if (data) {
+          setProfile(data)
+        } else {
+          // Truy vấn thành công nhưng chưa có dòng: mới thực sự là chờ duyệt.
+          setProfile({
+            id: user.id,
+            email: user.email,
+            full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
+            role: 'pending',
+          })
+        }
       }
     } catch (err) {
       setAuthError(err.message || 'Lỗi tải thông tin tài khoản')
+      setProfileError(true)
+      setProfile((prev) => (prev && prev.id === user.id ? prev : null))
     } finally {
       setLoading(false)
     }
@@ -49,14 +59,20 @@ export function AuthProvider({ children }) {
       return
     }
 
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s)
-      if (s?.user) {
-        fetchProfile(s.user)
-      } else {
+    supabase.auth
+      .getSession()
+      .then(({ data: { session: s } }) => {
+        setSession(s)
+        if (s?.user) {
+          fetchProfile(s.user)
+        } else {
+          setLoading(false)
+        }
+      })
+      .catch((err) => {
+        setAuthError(err?.message || 'Lỗi tải phiên đăng nhập')
         setLoading(false)
-      }
-    })
+      })
 
     const {
       data: { subscription },
@@ -69,6 +85,7 @@ export function AuthProvider({ children }) {
         fetchProfile(s.user)
       } else {
         setProfile(null)
+        setProfileError(false)
         setLoading(false)
       }
     })
@@ -120,9 +137,16 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     if (!supabase) return
-    await supabase.auth.signOut()
-    setSession(null)
-    setProfile(null)
+    try {
+      await supabase.auth.signOut({ scope: 'local' })
+    } catch (err) {
+      console.error('signOut lỗi:', err)
+    } finally {
+      setSession(null)
+      setProfile(null)
+      setProfileError(false)
+      setAuthError('')
+    }
   }
 
   const refreshProfile = async () => {
@@ -149,6 +173,7 @@ export function AuthProvider({ children }) {
         role,
         loading,
         authError,
+        profileError,
         isAdmin,
         isManagerOrAdmin,
         canEditCatalog,

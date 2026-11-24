@@ -1,6 +1,8 @@
 // Vercel Serverless Function: gọi Google Gemini API từ server để giấu kín GEMINI_API_KEY
 // Hỗ trợ 3 chế độ: 'article' (viết bài mới), 'optimize_article' (tối ưu bài có sẵn), 'optimize_home' (tối ưu SEO trang chủ)
 
+import { requireStaffAuth, tooLong } from './_auth.js'
+
 export const config = {
   maxDuration: 60,
 }
@@ -9,6 +11,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
+
+  // Bắt buộc đăng nhập + đúng vai trò (admin/manager/storekeeper) + giới hạn tần suất
+  const userId = await requireStaffAuth(req, res)
+  if (!userId) return
 
   const apiKey = (process.env.GEMINI_API_KEY || '').trim()
   if (!apiKey) {
@@ -19,11 +25,31 @@ export default async function handler(req, res) {
     mode = 'article',
     topic = '',
     keyword = '',
-    category = 'Kinh nghiệm cưới',
+    category: rawCategory = 'Kinh nghiệm cưới',
     existingPost = null,
     currentSettings = null,
     fbContext = null,
   } = req.body || {}
+  // category null (bài cũ chưa có chuyên mục) -> dùng mặc định thay vì báo lỗi
+  const category = rawCategory == null ? 'Kinh nghiệm cưới' : rawCategory
+
+  if (typeof topic !== 'string' || typeof keyword !== 'string' || typeof category !== 'string') {
+    return res.status(400).json({ error: 'Dữ liệu gửi lên không hợp lệ.' })
+  }
+  const limitError =
+    tooLong(topic, 500, 'Chủ đề') ||
+    tooLong(keyword, 200, 'Từ khóa') ||
+    tooLong(category, 100, 'Chuyên mục') ||
+    tooLong(existingPost?.title, 500, 'Tiêu đề') ||
+    tooLong(existingPost?.category, 100, 'Chuyên mục') ||
+    tooLong(existingPost?.seo_keywords, 500, 'Từ khóa bài viết') ||
+    tooLong(existingPost?.excerpt, 1000, 'Tóm tắt') ||
+    tooLong(existingPost?.content, 60000, 'Nội dung bài viết') ||
+    tooLong(currentSettings, 8000, 'Nội dung trang chủ') ||
+    tooLong(fbContext, 5000, 'Thông tin dự án')
+  if (limitError) {
+    return res.status(413).json({ error: limitError })
+  }
 
   let prompt = ''
 

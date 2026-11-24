@@ -5,6 +5,7 @@ import {
   canDeleteMovement,
   isBlankPurchaseLine,
   priceDeviation,
+  checkIssueStock,
 } from './movementRules'
 
 const stock = { name: 'Ghế', in_stock: 5, in_repair: 2, at_project: 3, kind: 'reusable' }
@@ -136,5 +137,33 @@ describe('canDeleteMovement', () => {
   })
   it('không có số liệu tồn thì cho qua', () => {
     expect(canDeleteMovement({ movement: { type: 'purchase', qty: 1 }, stock: null }).ok).toBe(true)
+  })
+})
+
+describe('checkIssueStock', () => {
+  const map = new Map([
+    [1, { name: 'Ghế', in_stock: 5 }],
+    [2, { name: 'Hoa', in_stock: 0 }],
+  ])
+  it('đủ tồn thì ok', () => {
+    expect(checkIssueStock([{ item_id: 1, qty: 5 }], map).ok).toBe(true)
+  })
+  it('thiếu thì liệt kê tên, cần, còn', () => {
+    const r = checkIssueStock([{ item_id: 1, qty: 6 }, { item_id: 2, qty: 1 }], map)
+    expect(r.ok).toBe(false)
+    expect(r.shortages).toEqual([
+      { item_id: 1, name: 'Ghế', need: 6, have: 5 },
+      { item_id: 2, name: 'Hoa', need: 1, have: 0 },
+    ])
+    expect(r.error).toContain('Ghế')
+  })
+  it('cộng dồn dòng trùng vật tư', () => {
+    const r = checkIssueStock([{ item_id: '1', qty: 3 }, { item_id: 1, qty: 3 }], map)
+    expect(r.ok).toBe(false)
+    expect(r.shortages[0].need).toBe(6)
+  })
+  it('vật tư không có trong map coi như hết; dòng rỗng bị bỏ qua', () => {
+    expect(checkIssueStock([{ item_id: 9, qty: 1 }], map).ok).toBe(false)
+    expect(checkIssueStock([{ item_id: '', qty: 1 }, { item_id: 1, qty: 0 }], map).ok).toBe(true)
   })
 })

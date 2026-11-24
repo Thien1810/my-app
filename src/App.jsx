@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './lib/AuthContext'
 import { translateAuthError } from './lib/formatters'
 import SetupScreen from './components/SetupScreen'
 import PendingApprovalScreen from './components/PendingApprovalScreen'
+import RequireRole from './components/RequireRole'
 import Layout from './components/Layout'
 import AuthPage from './pages/AuthPage'
 import DashboardPage from './pages/DashboardPage'
@@ -115,8 +116,55 @@ function UpdatePasswordScreen() {
   )
 }
 
+// Khớp menu trong Layout.jsx: các mục `!isStaff` (ẩn với nhân viên thi công).
+const NOT_STAFF = ['admin', 'manager', 'storekeeper']
+
+function ProfileErrorScreen() {
+  const { authError, refreshProfile, signOut } = useAuth()
+  const [busy, setBusy] = useState(false)
+
+  const retry = async () => {
+    setBusy(true)
+    try {
+      await refreshProfile()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="auth-wrapper">
+      <div className="auth-card" style={{ textAlign: 'center' }}>
+        <div className="auth-logo-wrap" style={{ justifyContent: 'center' }}>
+          <img src="/logo.jpg" alt="Đặng Wedding" className="auth-logo-img" />
+          <div className="brand-badge">ĐẶNG WEDDING</div>
+        </div>
+        <h2>Không tải được thông tin tài khoản</h2>
+        <p className="text-muted" style={{ marginTop: 8 }}>
+          Có thể do mất kết nối mạng hoặc lỗi hệ thống. Tài khoản của bạn không bị ảnh hưởng.
+          Vui lòng thử lại.
+        </p>
+        {authError && (
+          <div className="alert alert-error" style={{ marginTop: 12, textAlign: 'left' }}>
+            {authError}
+          </div>
+        )}
+        <div className="form-actions" style={{ justifyContent: 'center', marginTop: 24 }}>
+          <button className="btn btn-primary" onClick={retry} disabled={busy}>
+            {busy ? 'Đang thử lại...' : 'Thử lại'}
+          </button>
+          <button className="btn btn-outline" onClick={signOut}>
+            Đăng xuất
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AppRouter() {
-  const { session, loading, isPending, isPasswordRecovery } = useAuth()
+  const { session, loading, isPending, isPasswordRecovery, profile, profileError, refreshProfile } =
+    useAuth()
 
   if (!isSupabaseConfigured) {
     return <SetupScreen />
@@ -138,24 +186,37 @@ function AppRouter() {
     return <AuthPage />
   }
 
+  // Lỗi tải profile và chưa có profile nào: không coi là pending, cho thử lại.
+  if (!profile && profileError) {
+    return <ProfileErrorScreen />
+  }
+
   if (isPending) {
     return <PendingApprovalScreen />
   }
 
   return (
     <BrowserRouter>
+      {profileError && (
+        <div className="alert alert-error" style={{ margin: 8, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>Không làm mới được thông tin tài khoản (lỗi mạng). Đang dùng quyền đã tải trước đó.</span>
+          <button type="button" className="btn btn-outline btn-sm" onClick={refreshProfile}>
+            Thử lại
+          </button>
+        </div>
+      )}
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/vat-tu" element={<ItemsPage />} />
           <Route path="/vat-tu/:id" element={<ItemDetailPage />} />
-          <Route path="/phieu-kho" element={<MovementsPage />} />
+          <Route path="/phieu-kho" element={<RequireRole allow={NOT_STAFF}><MovementsPage /></RequireRole>} />
           <Route path="/du-an" element={<ProjectsPage />} />
           <Route path="/du-an/:id" element={<ProjectDetailPage />} />
-          <Route path="/mau-set" element={<TemplatesPage />} />
-          <Route path="/doi-tac" element={<PartnersPage />} />
-          <Route path="/bao-cao" element={<ReportsPage />} />
-          <Route path="/quan-tri-web" element={<WebsiteAdminPage />} />
+          <Route path="/mau-set" element={<RequireRole allow={NOT_STAFF}><TemplatesPage /></RequireRole>} />
+          <Route path="/doi-tac" element={<RequireRole allow={NOT_STAFF}><PartnersPage /></RequireRole>} />
+          <Route path="/bao-cao" element={<RequireRole allow={NOT_STAFF}><ReportsPage /></RequireRole>} />
+          <Route path="/quan-tri-web" element={<RequireRole allow={NOT_STAFF}><WebsiteAdminPage /></RequireRole>} />
           <Route path="/nguoi-dung" element={<UsersPage />} />
           <Route path="/ui-kit" element={<UiKitPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
