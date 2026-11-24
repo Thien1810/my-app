@@ -1,8 +1,8 @@
 ﻿import { useEffect, useState, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { formatDate, generateProjectCode } from '../lib/formatters'
+import { formatDate } from '../lib/formatters'
 import { compressImageUnder1MB, formatBytes } from '../lib/imageCompressor'
 import {
   buildMarkdownFromSeoStructure,
@@ -26,17 +26,7 @@ import {
 } from '../lib/comfyUiClient'
 import AiLoadingBanner from '../components/AiLoadingBanner'
 import GiaTienAiStudioModal from '../components/GiaTienAiStudioModal'
-import {
-  parseLeadAdsSource,
-  inferHubFromLocation,
-} from '../lib/metaAdsClient'
-
-const LEAD_STATUS_META = {
-  new: { label: 'Mới đăng ký', cls: 'badge-amber' },
-  contacted: { label: 'Đã liên hệ', cls: 'badge-blue' },
-  converted: { label: 'Đã tạo dự án', cls: 'badge-green' },
-  closed: { label: 'Đã đóng', cls: 'badge-gray' },
-}
+import LeadsTab from '../components/leads/LeadsTab'
 
 const DEFAULT_SETTINGS = {
   id: 1,
@@ -99,7 +89,6 @@ function isMissingTableErr(err) {
 
 export default function WebsiteAdminPage() {
   const { isManagerOrAdmin, isStaff } = useAuth()
-  const navigate = useNavigate()
 
   const [tab, setTab] = useState('leads') // 'leads' | 'gallery' | 'posts' | 'settings'
   const [loading, setLoading] = useState(true)
@@ -107,11 +96,9 @@ export default function WebsiteAdminPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [toast, setToast] = useState('')
 
-  // Leads state
-  const [leads, setLeads] = useState([])
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [search, setSearch] = useState('')
-  const [convertingId, setConvertingId] = useState(null)
+  // Leads: dữ liệu nằm trong <LeadsTab/>, trang chỉ giữ số đếm cho badge
+  const [leadCounts, setLeadCounts] = useState({ total: 0, new: 0, contacted: 0, converted: 0, closed: 0 })
+  const [leadsReloadKey, setLeadsReloadKey] = useState(0)
 
   // Gallery state (ảnh đám thực tế tải lên riêng)
   const [gallery, setGallery] = useState([])
@@ -190,14 +177,13 @@ export default function WebsiteAdminPage() {
     setGalleryMissing(false)
     setPostsMissing(false)
     try {
-      const [leadsRes, settingsRes, galleryRes, postsRes] = await Promise.all([
-        supabase.from('site_leads').select('*').order('created_at', { ascending: false }),
+      const [settingsRes, galleryRes, postsRes] = await Promise.all([
         supabase.from('site_settings').select('*').eq('id', 1).maybeSingle(),
         supabase.from('site_gallery').select('*').order('created_at', { ascending: false }),
         supabase.from('site_posts').select('*').order('published_at', { ascending: false }),
       ])
 
-      const err = leadsRes.error || settingsRes.error
+      const err = settingsRes.error
       if (err) {
         if (isMissingTableErr(err)) {
           setSchemaMissing(true)
@@ -205,7 +191,6 @@ export default function WebsiteAdminPage() {
           setErrorMsg(err.message)
         }
       } else {
-        setLeads(leadsRes.data || [])
         if (settingsRes.data) {
           setSettings({ ...DEFAULT_SETTINGS, ...settingsRes.data })
         }
@@ -233,6 +218,12 @@ export default function WebsiteAdminPage() {
     loadData()
   }, [loadData])
 
+  // Nút "Làm mới"/"Kiểm tra lại": tải lại cả trang và cả danh sách lead
+  const reloadAll = () => {
+    setLeadsReloadKey((k) => k + 1)
+    loadData()
+  }
+
   if (isStaff) {
     return (
       <div className="page-container">
@@ -241,139 +232,6 @@ export default function WebsiteAdminPage() {
         </div>
       </div>
     )
-  }
-
-  const handleUpdateLeadStatus = async (leadId, newStatus) => {
-    const { error } = await supabase
-      .from('site_leads')
-      .update({ status: newStatus })
-      .eq('id', leadId)
-    if (error) {
-      setErrorMsg('Không thể cập nhật trạng thái: ' + error.message)
-      return
-    }
-    setLeads((prev) =>
-      prev.map((l) => (l.id === leadId ? { ...l, status: newStatus } : l))
-    )
-    showToast('Đã cập nhật trạng thái khách hàng.')
-  }
-
-  const handleDeleteLead = async (lead) => {
-    if (!window.confirm(`Xóa yêu cầu báo giá của "${lead.customer_name}"?`)) return
-    const { error } = await supabase.from('site_leads').delete().eq('id', lead.id)
-    if (error) {
-      setErrorMsg('Không thể xóa yêu cầu: ' + error.message)
-      return
-    }
-    setLeads((prev) => prev.filter((l) => l.id !== lead.id))
-    showToast('Đã xóa yêu cầu báo giá.')
-  }
-
-  const handleConvertToProject = async (lead) => {
-    if (
-      !window.confirm(
-        `Tạo khách hàng "${lead.customer_name}" và một Dự án Báo giá mới từ yêu cầu này?`
-      )
-    ) {
-      return
-    }
-
-    setConvertingId(lead.id)
-    setErrorMsg('')
-    try {
-      // 1. Tìm khách hàng trùng SĐT hoặc tạo mới
-      const cleanPhone = (lead.phone || '').trim()
-      let customerId = null
-
-      if (cleanPhone) {
-        const { data: existingPartners } = await supabase
-          .from('partners')
-          .select('id, phone')
-          .eq('kind', 'customer')
-          .eq('phone', cleanPhone)
-          .limit(1)
-        if (existingPartners && existingPartners.length > 0) {
-          customerId = existingPartners[0].id
-        }
-      }
-
-      if (!customerId) {
-        const { data: newPartner, error: partnerErr } = await supabase
-          .from('partners')
-          .insert({
-            kind: 'customer',
-            name: lead.customer_name,
-            phone: cleanPhone || null,
-            address: lead.location || null,
-            note: 'Khách đăng ký từ Website dangwed.com',
-          })
-          .select('id')
-          .single()
-        if (partnerErr) throw partnerErr
-        customerId = newPartner.id
-      }
-
-      // 2. Tạo mã dự án tự động DA-YYMM-XXX
-      const { data: existingProjects } = await supabase
-        .from('projects')
-        .select('id, code')
-      const code = generateProjectCode(lead.event_date || '', existingProjects || [])
-
-      const noteParts = []
-      if (lead.selected_template) noteParts.push(`Mẫu quan tâm: ${lead.selected_template}`)
-      if (lead.service_interest) noteParts.push(`Dịch vụ: ${lead.service_interest}`)
-      if (lead.note) noteParts.push(`Ghi chú khách: ${lead.note}`)
-      noteParts.push('Nguồn: Website dangwed.com')
-
-      const adsSrcStr = (parseLeadAdsSource(lead.note) || '').toLowerCase()
-      let detectedSource = 'google_seo'
-      if (adsSrcStr.includes('tiktok')) detectedSource = 'tiktok_ads'
-      else if (adsSrcStr) detectedSource = 'meta_ads'
-
-      const detectedHub = adsSrcStr.includes('vinhloc')
-        ? 'vinh_loc'
-        : adsSrcStr.includes('xuanloc')
-        ? 'xuan_loc'
-        : inferHubFromLocation(lead.location || '')
-
-      // Nguồn khách và đầu kho ghi vào CỘT projects.lead_source / projects.warehouse_code (không còn thẻ [DW_ATTR] trong note)
-      const finalNote = noteParts.join('\n')
-      const VALID_LEAD_SOURCES = ['meta_ads', 'tiktok_ads', 'google_seo', 'referral', 'partner']
-      const leadSourceCol = VALID_LEAD_SOURCES.includes(detectedSource) ? detectedSource : 'unknown'
-      const warehouseCodeCol = detectedHub === 'xuan_loc' || detectedHub === 'vinh_loc' ? detectedHub : null
-
-      const projectName = `${lead.service_interest || 'Tiệc cưới'} - ${lead.customer_name}`
-
-      const { data: newProject, error: projErr } = await supabase
-        .from('projects')
-        .insert({
-          code,
-          name: projectName,
-          customer_id: customerId,
-          location: lead.location || null,
-          start_date: lead.event_date || null,
-          end_date: lead.event_date || null,
-          status: 'quote',
-          lead_source: leadSourceCol,
-          warehouse_code: warehouseCodeCol,
-          note: finalNote,
-        })
-        .select('id')
-        .single()
-      if (projErr) throw projErr
-
-      // 3. Đánh dấu lead đã chuyển đổi
-      await supabase.from('site_leads').update({ status: 'converted' }).eq('id', lead.id)
-      setLeads((prev) =>
-        prev.map((l) => (l.id === lead.id ? { ...l, status: 'converted' } : l))
-      )
-
-      navigate(`/du-an/${newProject.id}`)
-    } catch (e) {
-      setErrorMsg('Lỗi khi tạo dự án từ yêu cầu: ' + e.message)
-    } finally {
-      setConvertingId(null)
-    }
   }
 
   const handleBannerUpload = async (e) => {
@@ -929,20 +787,6 @@ export default function WebsiteAdminPage() {
     showToast('Đã xóa bài viết.')
   }
 
-  const filteredLeads = leads.filter((l) => {
-    if (statusFilter !== 'all' && l.status !== statusFilter) return false
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      const hay = `${l.customer_name || ''} ${l.phone || ''} ${l.location || ''} ${l.service_interest || ''} ${l.selected_template || ''}`.toLowerCase()
-      if (!hay.includes(q)) return false
-    }
-    return true
-  })
-
-  const newLeadsCount = leads.filter((l) => l.status === 'new').length
-  const contactedCount = leads.filter((l) => l.status === 'contacted').length
-  const convertedCount = leads.filter((l) => l.status === 'converted').length
-
   return (
     <div className="page-container">
       <div className="page-header">
@@ -984,7 +828,7 @@ export default function WebsiteAdminPage() {
             <code>my-app/supabase/website_schema.sql</code> rồi bấm <strong>Run</strong>, sau đó tải
             lại trang này.
           </p>
-          <button type="button" className="btn btn-primary" onClick={loadData}>
+          <button type="button" className="btn btn-primary" onClick={reloadAll}>
             🔄 Kiểm tra lại kết nối
           </button>
         </div>
@@ -998,9 +842,9 @@ export default function WebsiteAdminPage() {
               onClick={() => setTab('leads')}
             >
               📩 Khách đăng ký báo giá
-              {newLeadsCount > 0 && (
+              {leadCounts.new > 0 && (
                 <span className="badge badge-amber" style={{ marginLeft: 8 }}>
-                  {newLeadsCount} mới
+                  {leadCounts.new} mới
                 </span>
               )}
             </button>
@@ -1027,202 +871,20 @@ export default function WebsiteAdminPage() {
             </button>
           </div>
 
+          {/* Tab 1: Khách đăng ký báo giá — luôn mounted để badge "N mới" đúng */}
+          <LeadsTab
+            visible={tab === 'leads' && !loading}
+            reloadKey={leadsReloadKey}
+            onRefresh={reloadAll}
+            onCountsChange={(c) => setLeadCounts(c)}
+            onError={setErrorMsg}
+            onToast={showToast}
+            onSchemaMissing={() => setSchemaMissing(true)}
+          />
+
           {loading ? (
             <div className="loading-state">Đang tải dữ liệu Website...</div>
-          ) : tab === 'leads' ? (
-            <>
-              {/* KPI */}
-              <div className="kpi-grid" style={{ marginBottom: 18 }}>
-                <div className="kpi-card">
-                  <div className="kpi-label">Tổng yêu cầu từ Web</div>
-                  <div className="kpi-value">{leads.length}</div>
-                </div>
-                <div className="kpi-card">
-                  <div className="kpi-label">Chưa liên hệ</div>
-                  <div className="kpi-value text-amber">{newLeadsCount}</div>
-                </div>
-                <div className="kpi-card">
-                  <div className="kpi-label">Đã tư vấn</div>
-                  <div className="kpi-value">{contactedCount}</div>
-                </div>
-                <div className="kpi-card">
-                  <div className="kpi-label">Đã chuyển thành Dự án</div>
-                  <div className="kpi-value text-green">{convertedCount}</div>
-                </div>
-              </div>
-
-              {/* Filter bar */}
-              <div className="card filter-bar" style={{ marginBottom: 16 }}><div className="filter-group" style={{ alignItems: "center" }}>
-                <input
-                  type="text"
-                  className="filter-input"
-                  placeholder="Tìm tên khách, SĐT, khu vực, mẫu..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="all">Tất cả trạng thái</option>
-                  <option value="new">Mới đăng ký</option>
-                  <option value="contacted">Đã liên hệ</option>
-                  <option value="converted">Đã tạo dự án</option>
-                  <option value="closed">Đã đóng</option>
-                </select>
-                <button type="button" className="btn btn-outline" onClick={loadData}>
-                  🔄 Làm mới
-                </button>
-              </div>
-              </div>
-
-              {/* Leads list */}
-              {filteredLeads.length === 0 ? (
-                <div className="card">
-                  <div className="empty-state" style={{ padding: 36 }}>
-                    {leads.length === 0
-                      ? 'Chưa có yêu cầu báo giá nào từ dangwed.com. Khi khách điền form trên website, thông tin sẽ tự động đổ về đây.'
-                      : 'Không tìm thấy yêu cầu nào khớp bộ lọc.'}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: 12 }}>
-                  {filteredLeads.map((lead) => {
-                    const meta = LEAD_STATUS_META[lead.status] || LEAD_STATUS_META.new
-                    const cleanDigits = (lead.phone || '').replace(/\D/g, '')
-                    return (
-                      <div key={lead.id} className="card" style={{ padding: 16 }}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'flex-start',
-                            gap: 12,
-                            flexWrap: 'wrap',
-                            marginBottom: 10,
-                          }}
-                        >
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              <strong style={{ fontSize: 16 }}>{lead.customer_name}</strong>
-                              <span className={`badge ${meta.cls}`}>{meta.label}</span>
-                              {isManagerOrAdmin && parseLeadAdsSource(lead.note) && (
-                                <span className="badge badge-blue">
-                                  📢 Ads: {parseLeadAdsSource(lead.note)}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-muted" style={{ marginTop: 4 }}>
-                              Gửi lúc: {formatDate(lead.created_at)}
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            {cleanDigits && (
-                              <>
-                                <a
-                                  href={`tel:${cleanDigits}`}
-                                  className="btn btn-outline btn-sm"
-                                >
-                                  📞 {lead.phone}
-                                </a>
-                                <a
-                                  href={`https://zalo.me/${cleanDigits}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="btn btn-outline btn-sm"
-                                >
-                                  💬 Zalo
-                                </a>
-                              </>
-                            )}
-                            <select
-                              value={lead.status}
-                              onChange={(e) => handleUpdateLeadStatus(lead.id, e.target.value)}
-                              style={{ padding: '6px 10px', fontSize: 13 }}
-                            >
-                              <option value="new">Mới đăng ký</option>
-                              <option value="contacted">Đã liên hệ</option>
-                              <option value="converted">Đã tạo dự án</option>
-                              <option value="closed">Đã đóng</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                            gap: 10,
-                            padding: '10px 12px',
-                            background: '#f8fafc',
-                            borderRadius: 8,
-                            fontSize: 13.5,
-                            marginBottom: 12,
-                          }}
-                        >
-                          <div>
-                            <span className="text-muted">Dịch vụ: </span>
-                            <strong>{lead.service_interest || '—'}</strong>
-                          </div>
-                          <div>
-                            <span className="text-muted">Ngày tổ chức: </span>
-                            <strong>{lead.event_date ? formatDate(lead.event_date) : 'Chưa rõ'}</strong>
-                          </div>
-                          <div>
-                            <span className="text-muted">Khu vực: </span>
-                            <strong>{lead.location || '—'}</strong>
-                          </div>
-                          {lead.selected_template && (
-                            <div>
-                              <span className="text-muted">Mẫu đã chọn: </span>
-                              <strong style={{ color: '#163828' }}>{lead.selected_template}</strong>
-                            </div>
-                          )}
-                        </div>
-
-                        {lead.note && (
-                          <div style={{ fontSize: 13.5, marginBottom: 12, color: '#334155' }}>
-                            <strong>Ghi chú khách:</strong> {lead.note}
-                          </div>
-                        )}
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                          {lead.status !== 'converted' ? (
-                            <button
-                              type="button"
-                              className="btn btn-primary btn-sm"
-                              disabled={convertingId === lead.id}
-                              onClick={() => handleConvertToProject(lead)}
-                            >
-                              {convertingId === lead.id
-                                ? 'Đang tạo dự án...'
-                                : '✨ Tạo Khách & Dự án Báo giá'}
-                            </button>
-                          ) : (
-                            <span className="text-xs text-green" style={{ alignSelf: 'center' }}>
-                              ✓ Đã chuyển sang mục Dự án
-                            </span>
-                          )}
-
-                          {isManagerOrAdmin && (
-                            <button
-                              type="button"
-                              className="btn btn-outline btn-sm"
-                              style={{ color: '#dc2626', borderColor: '#fecaca' }}
-                              onClick={() => handleDeleteLead(lead)}
-                            >
-                              🗑 Xóa
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          ) : tab === 'gallery' ? (
+          ) : tab === 'leads' ? null : tab === 'gallery' ? (
             /* Tab 2: Thư viện ảnh đám thực tế */
             <div style={{ display: 'grid', gap: 18 }}>
               {galleryMissing ? (
