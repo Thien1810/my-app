@@ -1,10 +1,8 @@
-import { useEffect, useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import {
-  formatCurrency,
-  formatNumber,
   KIND_LABELS,
   ITEM_CATEGORY_PRESETS,
   ITEM_COLOR_PRESETS,
@@ -16,15 +14,55 @@ import {
   generateItemCode,
   findDuplicateCode,
 } from '../lib/formatters'
+import {
+  buildCategoryOptions,
+  deriveCategoriesFromItems,
+  findDuplicateCategory,
+  findSimilarCategories,
+  generateCategoryCode,
+  isItemCodeLocked,
+} from '../lib/itemCategories'
+import { generateItemCodeFromCategory } from '../lib/itemCode'
+import ItemsList from '../components/items/ItemsList'
 import { exportToExcel } from '../lib/exportExcel'
-import { KindBadge } from '../components/Badges'
 import CurrencyInput from '../components/CurrencyInput'
 import { compressImageUnder1MB, formatBytes } from '../lib/imageCompressor'
+
+// Lỗi do bảng/cột chưa tồn tại (supabase/item_categories.sql chưa chạy).
+function isMissingTableError(err) {
+  const msg = String(err?.message || '').toLowerCase()
+  return (
+    err?.code === '42P01' ||
+    err?.code === 'PGRST205' ||
+    msg.includes('does not exist') ||
+    msg.includes('could not find the table')
+  )
+}
+
+function describeCategoryError(err) {
+  const msg = String(err?.message || '')
+  const low = msg.toLowerCase()
+  if (isMissingTableError(err)) {
+    return 'Chưa có bảng nhóm vật tư. Hãy nhờ quản trị chạy supabase/item_categories.sql.'
+  }
+  if (err?.code === '42501' || low.includes('row-level security') || low.includes('permission denied')) {
+    return 'Tài khoản của bạn không có quyền tạo nhóm vật tư. Hãy báo quản trị viên.'
+  }
+  if (err?.code === '23505' || low.includes('duplicate key') || low.includes('unique')) {
+    return 'Nhóm này đã tồn tại (trùng tên trong cùng nhóm cha hoặc trùng mã nhóm). Hãy chọn nhóm có sẵn.'
+  }
+  if (err?.code === '23514' || low.includes('check constraint')) {
+    return 'Tên hoặc mã nhóm không hợp lệ. Hãy đặt tên khác.'
+  }
+  return `Không tạo được nhóm: ${msg || 'lỗi không xác định'}`
+}
 
 const INITIAL_FORM = {
   code: '',
   name: '',
   category: '',
+  category_id: '', // nhóm cha (chỉ dùng khi đã có bảng item_categories)
+  subcategory_id: '', // nhóm con, tùy chọn
   color: '',
   kind: 'consumable',
   unit: 'cái',
@@ -37,15 +75,11 @@ const INITIAL_FORM = {
 }
 
 export default function ItemsPage() {
-  const { canEditCatalog, canDeleteCatalog } = useAuth()
+  const { canEditCatalog, canDeleteCatalog, isAdmin } = useAuth()
+  const navigate = useNavigate()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
-  const [filterKind, setFilterKind] = useState('all')
-  const [filterCategory, setFilterCategory] = useState('all')
-  const [filterColor, setFilterColor] = useState('all')
-  const [showInactive, setShowInactive] = useState(false)
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false)
@@ -57,7 +91,19 @@ export default function ItemsPage() {
   const [isCustomColor, setIsCustomColor] = useState(false)
   const [imageCompressing, setImageCompressing] = useState(false)
   const [imageStats, setImageStats] = useState(null)
-  const [previewLightbox, setPreviewLightbox] = useState(null)
+
+  // Nhóm vật tư (bảng item_categories). status: 'loading' | 'ready' | 'missing' | 'error'
+  const [categoryRows, setCategoryRows] = useState([])
+  const [categoriesStatus, setCategoriesStatus] = useState('loading')
+  // Khóa mã khi sửa: đã có phiếu kho thì không đổi mã
+  const [codeLock, setCodeLock] = useState({ checking: false, locked: false })
+  const codeLockReq = useRef(0)
+  // Khung "+ Thêm nhóm" trong form: { parentId: null | id, name }
+  const [newCat, setNewCat] = useState(null)
+  const [newCatError, setNewCatError] = useState('')
+  const [newCatSaving, setNewCatSaving] = useState(false)
+  // 'save' | 'receive' (nút nào vừa được bấm)
+  const saveMode = useRef('save')
 
   const loadItems = async () => {
     setLoading(true)
@@ -69,6 +115,24 @@ export default function ItemsPage() {
         .order('name', { ascending: true })
       if (err) throw err
       setItems(data || [])
+
+      const { data: catData, error: catErr } = await supabase
+        .from('item_categories')
+        .select('*')
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true })
+      if (catErr) {
+        if (isMissingTableError(catErr)) {
+          setCategoryRows([])
+          setCategoriesStatus('missing')
+        } else {
+          setCategoriesStatus('error')
+          throw catErr
+        }
+      } else {
+        setCategoryRows(catData || [])
+        setCategoriesStatus('ready')
+      }
     } catch (err) {
       setError(err.message || 'Không thể tải danh sách vật tư')
     } finally {
@@ -80,6 +144,14 @@ export default function ItemsPage() {
     loadItems()
   }, [])
 
+  const categoriesReady = categoriesStatus === 'ready'
+  // Nhóm chuẩn để ghép vào ItemsList: bảng item_categories, hoặc nhóm suy ra từ chữ gõ tay khi chưa có bảng.
+  const itemCategories = useMemo(
+    () => (categoriesStatus === 'ready' ? categoryRows : deriveCategoriesFromItems(items)),
+    [categoriesStatus, categoryRows, items]
+  )
+
+  // Danh sách tên nhóm dạng chữ (giữ cho khối bộ lọc cũ và chế độ chưa có bảng nhóm)
   const categories = useMemo(() => {
     const set = new Set()
     for (const i of items) {
@@ -124,32 +196,46 @@ export default function ItemsPage() {
     return Array.from(map.values())
   }, [colors])
 
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      if (!showInactive && !item.active) return false
-      if (filterKind !== 'all' && item.kind !== filterKind) return false
-      if (filterCategory !== 'all' && (item.category || '') !== filterCategory) return false
-      const itemColor = extractItemColor(item)
-      if (filterColor !== 'all' && itemColor !== filterColor) return false
-      if (search.trim()) {
-        const q = search.toLowerCase()
-        const matchName = item.name?.toLowerCase().includes(q)
-        const matchCode = item.code?.toLowerCase().includes(q)
-        const matchCat = item.category?.toLowerCase().includes(q)
-        const matchColor = itemColor.toLowerCase().includes(q)
-        if (!matchName && !matchCode && !matchCat && !matchColor) return false
-      }
-      return true
-    })
-  }, [items, showInactive, filterKind, filterCategory, filterColor, search])
+  const findCategory = (id) =>
+    id === '' || id == null ? null : categoryRows.find((c) => String(c.id) === String(id)) || null
+
+  // Nhóm dùng để sinh mã và ghi category_id: nhóm con nếu có, không thì nhóm cha.
+  const effectiveCategory = (f) =>
+    categoriesReady ? findCategory(f.subcategory_id) || findCategory(f.category_id) : null
+
+  const makeCode = (kind, catRow, categoryName, list, excludeId = null) =>
+    categoriesReady && catRow?.code
+      ? generateItemCodeFromCategory(kind, catRow.code, list, excludeId)
+      : generateItemCode(kind, categoryName, list, excludeId)
+
+  const resetNewCat = () => {
+    setNewCat(null)
+    setNewCatError('')
+  }
 
   const openCreateModal = () => {
     setEditingItem(null)
     setIsCustomCategory(false)
     setIsCustomColor(false)
     setImageStats(null)
-    const defaultCategory = categories[0] || 'Hoa & Lá'
+    setCodeLock({ checking: false, locked: false })
+    resetNewCat()
     const defaultKind = 'consumable'
+    if (categoriesReady) {
+      const firstRoot = buildCategoryOptions(categoryRows).find((c) => c.parent_id == null)
+      const kind = firstRoot?.default_kind || defaultKind
+      setForm({
+        ...INITIAL_FORM,
+        kind,
+        category: firstRoot?.name || '',
+        category_id: firstRoot?.id ?? '',
+        unit: firstRoot?.default_unit || 'cái',
+        code: makeCode(kind, firstRoot, firstRoot?.name || '', items),
+      })
+      setModalOpen(true)
+      return
+    }
+    const defaultCategory = categories[0] || 'Hoa & Lá'
     const preset = ITEM_CATEGORY_PRESETS.find(
       (p) => p.name.toLowerCase() === defaultCategory.toLowerCase()
     )
@@ -163,13 +249,14 @@ export default function ItemsPage() {
     setModalOpen(true)
   }
 
+  // Đổi loại (hoặc nhóm chữ khi chưa có bảng nhóm). Khi sửa vật tư thì không tự đổi mã.
   const handleKindOrCategoryChange = (newKind, newCategory) => {
     const preset = ITEM_CATEGORY_PRESETS.find(
       (p) => p.name.toLowerCase() === (newCategory || '').trim().toLowerCase()
     )
-    const nextUnit = !editingItem && preset ? preset.unit : form.unit
+    const nextUnit = !editingItem && preset && !categoriesReady ? preset.unit : form.unit
     const nextCode = !editingItem
-      ? generateItemCode(newKind, newCategory, items)
+      ? makeCode(newKind, effectiveCategory(form), newCategory, items)
       : form.code
     setForm({
       ...form,
@@ -180,15 +267,57 @@ export default function ItemsPage() {
     })
   }
 
+  // Chọn nhóm cha + nhóm con (hàng của bảng item_categories). Thêm mới thì đặt sẵn loại/đơn vị mặc định.
+  const applyCategory = (parentRow, childRow = null) => {
+    const eff = childRow || parentRow
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        category_id: parentRow?.id ?? '',
+        subcategory_id: childRow?.id ?? '',
+        category: parentRow?.name ?? '',
+      }
+      if (editingItem) return next
+      const defKind = eff?.default_kind || parentRow?.default_kind
+      const defUnit = eff?.default_unit || parentRow?.default_unit
+      if (defKind) next.kind = defKind
+      if (defUnit) next.unit = defUnit
+      next.code = makeCode(next.kind, eff, next.category, items)
+      return next
+    })
+  }
+
   const openEditModal = (item) => {
     setEditingItem(item)
     setIsCustomCategory(false)
     setIsCustomColor(false)
     setImageStats(null)
+    resetNewCat()
+
+    let categoryId = ''
+    let subcategoryId = ''
+    if (categoriesReady) {
+      const own = findCategory(item.category_id)
+      if (own && own.parent_id != null && findCategory(own.parent_id)) {
+        categoryId = own.parent_id
+        subcategoryId = own.id
+      } else if (own) {
+        categoryId = own.id
+      } else if (item.category) {
+        // Vật tư cũ chưa có category_id: ghép theo tên nhóm cha
+        const name = String(item.category).trim().toLowerCase()
+        const byName = categoryRows.find(
+          (c) => c.parent_id == null && String(c.name).trim().toLowerCase() === name
+        )
+        if (byName) categoryId = byName.id
+      }
+    }
     setForm({
       code: item.code || '',
       name: item.name || '',
       category: item.category || '',
+      category_id: categoryId,
+      subcategory_id: subcategoryId,
       color: extractItemColor(item),
       kind: item.kind || 'consumable',
       unit: item.unit || 'cái',
@@ -200,6 +329,119 @@ export default function ItemsPage() {
       active: item.active ?? true,
     })
     setModalOpen(true)
+    checkCodeLock(item)
+  }
+
+  // Đếm phiếu kho của vật tư để biết có khóa mã hay không (chưa biết kết quả thì khóa tạm).
+  const checkCodeLock = async (item) => {
+    const req = ++codeLockReq.current
+    setCodeLock({ checking: true, locked: true })
+    let count = 0
+    let failed = false
+    try {
+      const { count: movCount, error: movErr } = await supabase
+        .from('stock_movements')
+        .select('id', { count: 'exact', head: true })
+        .eq('item_id', item.id)
+      if (movErr) throw movErr
+      count += movCount || 0
+      if (count === 0) {
+        // Bảng chuyển kho có thể chưa có hoặc không đọc được: bỏ qua lỗi, chỉ cộng khi đọc được.
+        const { count: trCount, error: trErr } = await supabase
+          .from('stock_transfers')
+          .select('id', { count: 'exact', head: true })
+          .eq('item_id', item.id)
+        if (!trErr) count += trCount || 0
+      }
+    } catch (err) {
+      failed = true
+      if (req === codeLockReq.current) {
+        setError(`Không kiểm tra được phiếu kho của vật tư nên tạm khóa mã: ${err.message || 'lỗi không xác định'}`)
+      }
+    }
+    if (req !== codeLockReq.current) return
+    setCodeLock({ checking: false, locked: failed || isItemCodeLocked(item, count) })
+  }
+
+  const closeModal = () => {
+    codeLockReq.current += 1
+    setModalOpen(false)
+  }
+
+  const subcategories = useMemo(() => {
+    if (!categoriesReady || form.category_id === '') return []
+    return buildCategoryOptions(categoryRows, form.subcategory_id || null).filter(
+      (c) => String(c.parent_id) === String(form.category_id)
+    )
+  }, [categoriesReady, categoryRows, form.category_id, form.subcategory_id])
+
+  const parentOptions = useMemo(
+    () =>
+      categoriesReady
+        ? buildCategoryOptions(categoryRows, form.category_id || null).filter((c) => c.parent_id == null)
+        : [],
+    [categoriesReady, categoryRows, form.category_id]
+  )
+
+  // Nhóm cùng cấp với nhóm đang định tạo (để kiểm trùng và gợi ý)
+  const newCatSiblings = useMemo(
+    () =>
+      newCat
+        ? categoryRows.filter((c) => String(c.parent_id ?? '') === String(newCat.parentId ?? ''))
+        : [],
+    [newCat, categoryRows]
+  )
+  const newCatDuplicate = useMemo(
+    () => (newCat ? findDuplicateCategory(newCat.name, newCat.parentId, categoryRows) : null),
+    [newCat, categoryRows]
+  )
+  const newCatSimilar = useMemo(
+    () => (newCat && newCat.name.trim() ? findSimilarCategories(newCat.name, newCatSiblings) : []),
+    [newCat, newCatSiblings]
+  )
+
+  const pickExistingCategory = (cat) => {
+    if (cat.parent_id == null) applyCategory(cat, null)
+    else applyCategory(findCategory(cat.parent_id), cat)
+    resetNewCat()
+  }
+
+  const handleCreateCategory = async () => {
+    if (!newCat) return
+    const name = newCat.name.trim().replace(/\s+/g, ' ')
+    if (!name) {
+      setNewCatError('Hãy nhập tên nhóm.')
+      return
+    }
+    if (newCatDuplicate) {
+      setNewCatError(`Nhóm "${newCatDuplicate.name}" đã có. Hãy chọn nhóm này thay vì tạo mới.`)
+      return
+    }
+    setNewCatSaving(true)
+    setNewCatError('')
+    try {
+      const row = {
+        name,
+        code: generateCategoryCode(name, categoryRows),
+        parent_id: newCat.parentId ?? null,
+        default_kind: form.kind || null,
+        default_unit: form.unit.trim() || null,
+      }
+      const { data, error: err } = await supabase
+        .from('item_categories')
+        .insert([row])
+        .select()
+        .single()
+      if (err) throw err
+      setCategoryRows((prev) => [...prev, data])
+      if (data.parent_id == null) applyCategory(data, null)
+      else applyCategory(findCategory(data.parent_id), data)
+      resetNewCat()
+    } catch (err) {
+      setNewCatError(describeCategoryError(err))
+    } finally {
+      setNewCatSaving(false)
+    }
   }
 
   const duplicateItem = useMemo(
@@ -226,7 +468,11 @@ export default function ItemsPage() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (duplicateItem) {
+    const receiveAfter = saveMode.current === 'receive' && !editingItem && canEditCatalog
+    saveMode.current = 'save'
+    const codeLocked = Boolean(editingItem) && codeLock.locked
+    if (codeLock.checking) return
+    if (duplicateItem && !codeLocked) {
       setError(`Mã "${form.code}" đã trùng với vật tư "${duplicateItem.name}". Vui lòng bấm "⚡ Sinh mã" để lấy mã kế tiếp.`)
       return
     }
@@ -234,9 +480,10 @@ export default function ItemsPage() {
     setError('')
     try {
       let finalCode = form.code.trim().toUpperCase() || null
+      const catRow = effectiveCategory(form)
 
-      // Kiểm tra lại trên database phòng trường hợp nhiều người cùng nhập một lúc
-      if (finalCode) {
+      // Kiểm tra lại trên database phòng trường hợp nhiều người cùng nhập một lúc (mã đã khóa thì không đổi nên bỏ qua)
+      if (finalCode && !codeLocked) {
         let checkQuery = supabase
           .from('items')
           .select('id, code, name')
@@ -247,8 +494,9 @@ export default function ItemsPage() {
         const { data: dupRows } = await checkQuery
         if (dupRows && dupRows.length > 0) {
           const freshRes = await supabase.from('items').select('id, code')
-          const nextAvailable = generateItemCode(
+          const nextAvailable = makeCode(
             form.kind,
+            catRow,
             form.category,
             freshRes.data || items,
             editingItem?.id
@@ -260,9 +508,10 @@ export default function ItemsPage() {
         }
       }
 
-      const basePayload = {
+      const payload = {
         code: finalCode,
         name: form.name.trim(),
+        // Giữ cột chữ cũ = tên nhóm cha để báo cáo, mẫu set, xuất Excel không vỡ
         category: form.category.trim() || null,
         kind: form.kind,
         unit: form.unit.trim() || 'cái',
@@ -275,29 +524,49 @@ export default function ItemsPage() {
         image_url: form.image_url.trim() || null,
         note: packNoteWithColorFallback(form.color, form.note),
         active: Boolean(form.active),
-      }
-
-      const payloadWithColor = {
-        ...basePayload,
         color: form.color.trim() || null,
+      }
+      // Chỉ gửi category_id khi đã có bảng nhóm (chưa có thì bỏ để khỏi lỗi cột)
+      if (categoriesReady) {
+        payload.category_id = catRow?.id ?? null
+        // Cột chữ lấy tên nhóm cha từ bảng nhóm (không dùng chữ cũ trong form), để người khác đổi tên nhóm
+        // lúc đang sửa không làm vật tư rời nhóm
+        const parentRow = catRow?.parent_id ? findCategory(catRow.parent_id) : catRow
+        if (parentRow) payload.category = parentRow.name
       }
 
       const saveRow = async (pl) => {
         if (editingItem) {
           return supabase.from('items').update(pl).eq('id', editingItem.id)
         }
+        if (receiveAfter) {
+          return supabase.from('items').insert([pl]).select('id').single()
+        }
         return supabase.from('items').insert([pl])
       }
 
-      let { error: err } = await saveRow(payloadWithColor)
-      if (err && String(err.message || '').toLowerCase().includes('color')) {
-        // Fallback nếu database trên Supabase chưa chạy lệnh thêm cột color
-        const retry = await saveRow(basePayload)
-        err = retry.error
+      let res = await saveRow(payload)
+      // Fallback nếu database trên Supabase chưa chạy lệnh thêm cột color / category_id
+      if (res.error && String(res.error.message || '').toLowerCase().includes('color')) {
+        delete payload.color
+        res = await saveRow(payload)
       }
-      if (err) throw err
+      // Chỉ bỏ category_id khi lỗi là thiếu cột (42703 / PGRST204), không nuốt lỗi khóa ngoại
+      if (
+        res.error &&
+        (res.error.code === '42703' || res.error.code === 'PGRST204') &&
+        String(res.error.message || '').toLowerCase().includes('category_id')
+      ) {
+        delete payload.category_id
+        res = await saveRow(payload)
+      }
+      if (res.error) throw res.error
 
-      setModalOpen(false)
+      closeModal()
+      if (receiveAfter && res.data?.id != null) {
+        navigate(`/phieu-kho?item=${encodeURIComponent(res.data.id)}`)
+        return
+      }
       await loadItems()
     } catch (err) {
       setError(err.message || 'Lỗi khi lưu vật tư')
@@ -352,7 +621,7 @@ export default function ItemsPage() {
   }
 
   const handleExport = () => {
-    const rows = filteredItems.map((i) => ({
+    const rows = items.filter((i) => i.active).map((i) => ({
       'Mã vật tư': i.code || '',
       'Tên vật tư': i.name,
       'Danh mục': i.category || '',
@@ -451,248 +720,38 @@ export default function ItemsPage() {
       )}
 
       {error && <div className="alert alert-error">{error}</div>}
-
-      {/* Bộ lọc */}
-      <div className="card filter-bar">
-        <div className="filter-group">
-          <input
-            type="text"
-            placeholder="Tìm theo mã, tên vật tư, danh mục..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="filter-input"
-          />
-          <select value={filterKind} onChange={(e) => setFilterKind(e.target.value)}>
-            <option value="all">Tất cả phân loại</option>
-            <option value="consumable">Tiêu hao</option>
-            <option value="reusable">Tái sử dụng</option>
-          </select>
-          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
-            <option value="all">Tất cả danh mục</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <select value={filterColor} onChange={(e) => setFilterColor(e.target.value)}>
-            <option value="all">Tất cả màu sắc</option>
-            {colors.map((c) => (
-              <option key={c} value={c}>
-                {formatColorWithIcon(c)}
-              </option>
-            ))}
-          </select>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-            />
-            Hiện cả vật tư ngưng dùng
-          </label>
+      {isAdmin && categoriesStatus === 'missing' && (
+        <div className="ui-hint" style={{ marginBottom: 12 }}>
+          Chưa có bảng nhóm vật tư, đang dùng nhóm gõ tay. Chạy supabase/item_categories.sql để bật nhóm chuẩn.
         </div>
-      </div>
+      )}
 
-      {/* Bảng danh sách */}
-      <div className="card">
-        {loading ? (
+      {/* Danh sách phân cấp: Loại → Nhóm → Vật tư */}
+      {loading && items.length === 0 ? (
+        <div className="card">
           <div className="loading-state">Đang tải danh sách vật tư...</div>
-        ) : filteredItems.length === 0 ? (
-          <div className="empty-state">Không tìm thấy vật tư phù hợp.</div>
-        ) : (
-          <div className="table-responsive ui-table-wrap">
-            <table className="data-table ui-table ui-table--thumb">
-              <thead>
-                <tr>
-                  <th style={{ width: 54 }}>Ảnh</th>
-                  <th>Mã</th>
-                  <th>Tên vật tư</th>
-                  <th>Danh mục</th>
-                  <th>Màu sắc</th>
-                  <th>Loại</th>
-                  <th>ĐVT</th>
-                  <th className="text-right">Giá nhập</th>
-                  <th className="text-right">Trong kho</th>
-                  <th className="text-right">Ở dự án</th>
-                  <th className="text-right">Chờ sửa</th>
-                  <th>Cảnh báo tồn</th>
-                  <th className="text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((item) => {
-                  const isLowStock =
-                    Number(item.min_stock || 0) > 0 &&
-                    Number(item.in_stock || 0) < Number(item.min_stock || 0)
-                  const itemColor = extractItemColor(item)
-                  const swatch = getColorSwatch(itemColor)
-                  return (
-                    <tr key={item.id} className={!item.active ? 'row-inactive' : ''}>
-                      <td className="ui-table__thumb" data-label="Ảnh">
-                        {item.image_url ? (
-                          <img
-                            src={item.image_url}
-                            alt={item.name}
-                            title="Bấm để phóng to ảnh"
-                            onClick={() =>
-                              setPreviewLightbox({ url: item.image_url, name: item.name })
-                            }
-                            style={{
-                              width: 42,
-                              height: 42,
-                              objectFit: 'cover',
-                              borderRadius: 8,
-                              border: '1px solid #cbd5e1',
-                              cursor: 'zoom-in',
-                              display: 'block',
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: 42,
-                              height: 42,
-                              borderRadius: 8,
-                              border: '1px dashed #cbd5e1',
-                              background: '#f8fafc',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: 16,
-                              color: '#94a3b8',
-                            }}
-                          >
-                            🖼️
-                          </div>
-                        )}
-                      </td>
-                      <td className="ui-table__sub" data-label="Mã">
-                        <code>{item.code || `#${item.id}`}</code>
-                      </td>
-                      <td className="ui-table__primary" data-label="Tên vật tư">
-                        <Link to={`/vat-tu/${item.id}`} className="table-link font-bold">
-                          {item.name}
-                        </Link>
-                        {!item.active && (
-                          <span className="badge badge-muted" style={{ marginLeft: 6 }}>
-                            Ngưng dùng
-                          </span>
-                        )}
-                      </td>
-                      <td className="ui-col-hide-mobile" data-label="Danh mục">
-                        {item.category || '—'}
-                      </td>
-                      <td className="ui-col-hide-mobile" data-label="Màu sắc">
-                        {itemColor ? (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 6,
-                              fontSize: '0.85rem',
-                              fontWeight: 500,
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: 12,
-                                height: 12,
-                                borderRadius: '50%',
-                                backgroundColor: swatch?.hex || '#e2e8f0',
-                                border: `1.5px solid ${swatch?.border || '#94a3b8'}`,
-                                display: 'inline-block',
-                                flexShrink: 0,
-                              }}
-                            />
-                            {itemColor}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="ui-col-hide-mobile" data-label="Loại">
-                        <KindBadge kind={item.kind} />
-                      </td>
-                      <td className="ui-col-hide-mobile" data-label="ĐVT">
-                        {item.unit}
-                      </td>
-                      <td className="text-right ui-col-hide-mobile" data-label="Giá nhập">
-                        {formatCurrency(item.cost)}
-                      </td>
-                      <td
-                        className={`text-right font-bold ${isLowStock ? 'text-red' : 'text-green'}`}
-                        data-label="Trong kho"
-                      >
-                        {formatNumber(item.in_stock)}
-                      </td>
-                      <td className="text-right text-blue ui-col-hide-mobile" data-label="Ở dự án">
-                        {item.kind === 'reusable' ? formatNumber(item.at_project) : '—'}
-                      </td>
-                      <td className="text-right text-amber ui-col-hide-mobile" data-label="Chờ sửa">
-                        {Number(item.in_repair || 0) > 0 ? formatNumber(item.in_repair) : '0'}
-                      </td>
-                      <td data-label="Cảnh báo tồn">
-                        {isLowStock ? (
-                          <span className="badge badge-danger">
-                            ⚠️ Dưới tối thiểu ({formatNumber(item.min_stock)})
-                          </span>
-                        ) : Number(item.min_stock || 0) > 0 ? (
-                          <span className="text-xs text-muted">
-                            Tối thiểu: {formatNumber(item.min_stock)}
-                          </span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="text-right ui-table__actions">
-                        <div className="row-actions">
-                          <Link to={`/vat-tu/${item.id}`} className="btn btn-sm btn-outline">
-                            Chi tiết
-                          </Link>
-                          {canEditCatalog && (
-                            <>
-                              <button
-                                className="btn btn-sm btn-outline"
-                                onClick={() => openEditModal(item)}
-                              >
-                                Sửa
-                              </button>
-                              <button
-                                className="btn btn-sm btn-outline"
-                                onClick={() => handleToggleActive(item)}
-                              >
-                                {item.active ? 'Ẩn' : 'Mở'}
-                              </button>
-                            </>
-                          )}
-                          {canDeleteCatalog && (
-                            <button
-                              className="btn btn-sm btn-outline"
-                              style={{ color: '#dc2626', borderColor: '#fecaca' }}
-                              onClick={() => handleDeleteItem(item)}
-                            >
-                              Xóa
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <ItemsList
+          items={items}
+          categories={itemCategories}
+          canEditCatalog={canEditCatalog}
+          canDeleteCatalog={canDeleteCatalog}
+          showCost
+          onEdit={openEditModal}
+          onToggleActive={handleToggleActive}
+          onDelete={handleDeleteItem}
+          onCategoriesChanged={loadItems}
+        />
+      )}
 
       {/* Modal Thêm / Sửa vật tư */}
       {modalOpen && (
-        <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
+        <div className="modal-backdrop" onClick={closeModal}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingItem ? 'Cập nhật vật tư' : 'Thêm vật tư mới'}</h3>
-              <button className="btn-icon" onClick={() => setModalOpen(false)}>
+              <button className="btn-icon" onClick={closeModal}>
                 ✕
               </button>
             </div>
@@ -709,6 +768,40 @@ export default function ItemsPage() {
                     <option value="reusable">🔵 Tái sử dụng</option>
                   </select>
                 </div>
+                {categoriesReady ? (
+                  <div className="form-group">
+                    <label>Nhóm *</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <select
+                        className="ui-select"
+                        required
+                        value={form.category_id === '' ? '' : String(form.category_id)}
+                        onChange={(e) => {
+                          const row = findCategory(e.target.value)
+                          applyCategory(row, null)
+                        }}
+                      >
+                        <option value="">-- Chọn nhóm --</option>
+                        {parentOptions.map((c) => (
+                          <option key={c.id} value={String(c.id)}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn--secondary ui-btn--sm"
+                        style={{ flexShrink: 0 }}
+                        onClick={() => {
+                          setNewCat({ parentId: null, name: '' })
+                          setNewCatError('')
+                        }}
+                      >
+                        + Thêm nhóm
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                 <div className="form-group">
                   <label>Danh mục / Nhóm</label>
                   {!isCustomCategory ? (
@@ -767,14 +860,119 @@ export default function ItemsPage() {
                     </div>
                   )}
                 </div>
+                )}
               </div>
+
+              {categoriesReady && (
+                <div className="form-group">
+                  <label>Nhóm con (tùy chọn)</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select
+                      className="ui-select"
+                      value={form.subcategory_id === '' ? '' : String(form.subcategory_id)}
+                      disabled={form.category_id === ''}
+                      onChange={(e) =>
+                        applyCategory(findCategory(form.category_id), findCategory(e.target.value))
+                      }
+                    >
+                      <option value="">-- Không chọn nhóm con --</option>
+                      {subcategories.map((c) => (
+                        <option key={c.id} value={String(c.id)}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--secondary ui-btn--sm"
+                      style={{ flexShrink: 0 }}
+                      disabled={form.category_id === ''}
+                      onClick={() => {
+                        setNewCat({ parentId: form.category_id, name: '' })
+                        setNewCatError('')
+                      }}
+                    >
+                      + Thêm nhóm con
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {categoriesReady && newCat && (
+                <div className="ui-card ui-card__body ui-stack ui-stack--sm" style={{ marginBottom: 12 }}>
+                  <strong>
+                    {newCat.parentId == null
+                      ? 'Thêm nhóm mới'
+                      : `Thêm nhóm con của "${findCategory(newCat.parentId)?.name || ''}"`}
+                  </strong>
+                  <input
+                    type="text"
+                    className={`ui-input${newCatDuplicate ? ' is-invalid' : ''}`}
+                    autoFocus
+                    placeholder="Tên nhóm..."
+                    value={newCat.name}
+                    onChange={(e) => {
+                      setNewCat({ ...newCat, name: e.target.value })
+                      setNewCatError('')
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleCreateCategory()
+                      }
+                    }}
+                  />
+                  {newCatDuplicate && (
+                    <div className="ui-error">
+                      Nhóm &quot;{newCatDuplicate.name}&quot; đã có, không thể tạo trùng. Hãy chọn nhóm có sẵn.
+                    </div>
+                  )}
+                  {!newCatDuplicate && newCatSimilar.length > 0 && (
+                    <div className="ui-hint">
+                      Có phải ý anh là:{' '}
+                      {newCatSimilar.map((c, i) => (
+                        <span key={c.id}>
+                          {i > 0 && ', '}
+                          <button
+                            type="button"
+                            className="ui-btn ui-btn--ghost ui-btn--sm"
+                            style={{ textDecoration: 'underline' }}
+                            onClick={() => pickExistingCategory(c)}
+                          >
+                            {c.name}
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {newCat.name.trim() && !newCatDuplicate && (
+                    <div className="ui-hint">
+                      Mã nhóm tự sinh: <code>{generateCategoryCode(newCat.name, categoryRows)}</code>
+                    </div>
+                  )}
+                  {newCatError && <div className="ui-error">{newCatError}</div>}
+                  <div className="ui-btn-group ui-btn-group--end">
+                    <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm" onClick={resetNewCat}>
+                      Hủy
+                    </button>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--primary ui-btn--sm"
+                      disabled={newCatSaving || !newCat.name.trim() || Boolean(newCatDuplicate)}
+                      onClick={handleCreateCategory}
+                    >
+                      {newCatSaving ? 'Đang tạo...' : 'Tạo nhóm'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Hàng 2: Mã vật tư + Đơn vị tính (2 cột trên 1 hàng) */}
               <div className="form-grid-2">
                 <div className="form-group">
                   <label>
                     Mã vật tư{' '}
-                    {duplicateItem ? (
+                    {duplicateItem && !(editingItem && codeLock.locked) ? (
                       <span className="text-red">(⚠️ Trùng)</span>
                     ) : form.code.trim() ? (
                       <span className="text-green">(✓ Hợp lệ)</span>
@@ -785,28 +983,44 @@ export default function ItemsPage() {
                       type="text"
                       placeholder="TH-HOA-001"
                       value={form.code}
+                      disabled={Boolean(editingItem) && codeLock.locked}
                       onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
                       style={
-                        duplicateItem
+                        duplicateItem && !(editingItem && codeLock.locked)
                           ? { borderColor: '#dc2626', backgroundColor: '#fef2f2' }
                           : undefined
                       }
                     />
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      title="Sinh mã tự động không trùng"
-                      onClick={() =>
-                        setForm({
-                          ...form,
-                          code: generateItemCode(form.kind, form.category, items, editingItem?.id),
-                        })
-                      }
-                      style={{ padding: '0 8px', flexShrink: 0 }}
-                    >
-                      ⚡
-                    </button>
+                    {!(editingItem && codeLock.locked) && (
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        title="Sinh mã tự động không trùng"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            code: makeCode(
+                              form.kind,
+                              effectiveCategory(form),
+                              form.category,
+                              items,
+                              editingItem?.id
+                            ),
+                          })
+                        }
+                        style={{ padding: '0 8px', flexShrink: 0 }}
+                      >
+                        ⚡
+                      </button>
+                    )}
                   </div>
+                  {editingItem && codeLock.locked && (
+                    <div className="ui-hint">
+                      {codeLock.checking
+                        ? 'Đang kiểm tra phiếu kho của vật tư...'
+                        : 'Mã đã khóa vì vật tư đã có phiếu kho'}
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Đơn vị tính *</label>
@@ -976,12 +1190,15 @@ export default function ItemsPage() {
               {/* Hàng 5: Giá nhập + Tồn tối thiểu (2 cột trên 1 hàng) */}
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label>Giá nhập (₫)</label>
+                  <label>{editingItem ? 'Giá nhập (₫)' : 'Giá nhập ban đầu (tùy chọn)'}</label>
                   <CurrencyInput
                     value={form.cost}
                     onChange={(num) => setForm({ ...form, cost: num })}
                     placeholder="VD: 250.000"
                   />
+                  {!editingItem && (
+                    <div className="ui-hint">Giá thực tế lấy từ phiếu nhập kho</div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Tồn tối thiểu</label>
@@ -1044,53 +1261,39 @@ export default function ItemsPage() {
                 <button
                   type="button"
                   className="btn btn-outline"
-                  onClick={() => setModalOpen(false)}
+                  onClick={closeModal}
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={saving || imageCompressing || Boolean(duplicateItem)}
+                  disabled={
+                    saving ||
+                    imageCompressing ||
+                    codeLock.checking ||
+                    Boolean(duplicateItem && !(editingItem && codeLock.locked))
+                  }
+                  onClick={() => {
+                    saveMode.current = 'save'
+                  }}
                 >
                   {saving ? 'Đang lưu...' : 'Lưu vật tư'}
                 </button>
+                {!editingItem && canEditCatalog && (
+                  <button
+                    type="submit"
+                    className="btn btn-outline"
+                    disabled={saving || imageCompressing || Boolean(duplicateItem)}
+                    onClick={() => {
+                      saveMode.current = 'receive'
+                    }}
+                  >
+                    Lưu và nhập kho
+                  </button>
+                )}
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Lightbox phóng to ảnh vật tư */}
-      {previewLightbox && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setPreviewLightbox(null)}
-          style={{ zIndex: 100 }}
-        >
-          <div
-            className="modal-card"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: 620, textAlign: 'center' }}
-          >
-            <div className="modal-header">
-              <h3>{previewLightbox.name}</h3>
-              <button className="btn-icon" onClick={() => setPreviewLightbox(null)}>
-                ✕
-              </button>
-            </div>
-            <div className="modal-body">
-              <img
-                src={previewLightbox.url}
-                alt={previewLightbox.name}
-                style={{
-                  maxWidth: '100%',
-                  maxHeight: '70vh',
-                  borderRadius: 12,
-                  objectFit: 'contain',
-                }}
-              />
-            </div>
           </div>
         </div>
       )}

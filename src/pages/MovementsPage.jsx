@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import {
@@ -90,6 +91,7 @@ export default function MovementsPage() {
   const qtyRefs = useRef(new Map())
   const costRefs = useRef(new Map())
   const pendingFocus = useRef(null) // { uid, field: 'picker' | 'qty' }
+  const [searchParams, setSearchParams] = useSearchParams()
 
   // Form đơn dòng cho Kiểm kê / Đồ hỏng
   const [singleDate, setSingleDate] = useState(todayISO())
@@ -227,6 +229,31 @@ export default function MovementsPage() {
     if (p.field === 'picker') pickerRefs.current.get(p.uid)?.focus()
     else focusInput(qtyRefs.current.get(p.uid))
   }, [purchaseLines])
+
+  // Mở từ "Lưu và nhập kho" bên trang Vật tư: /phieu-kho?item=<id>.
+  // Khi danh sách vật tư đã tải: sang tab Nhập hàng, điền vật tư vào dòng đầu, focus ô số lượng.
+  // Id không tồn tại thì bỏ qua im lặng. Luôn xóa tham số khỏi URL.
+  const itemParam = searchParams.get('item')
+  useEffect(() => {
+    if (!itemParam || loading) return
+    const found = activeItems.find((i) => String(i.id) === String(itemParam))
+    if (found) {
+      setActiveTab('purchase')
+      setPurchaseLines((prev) => {
+        const [first, ...rest] = prev
+        const filled = {
+          ...first,
+          item_id: found.id,
+          unit_cost: Number(found.cost) > 0 ? Number(found.cost) : '',
+        }
+        pendingFocus.current = { uid: first.uid, field: 'qty' }
+        return [filled, ...rest]
+      })
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('item')
+    setSearchParams(next, { replace: true })
+  }, [itemParam, loading, activeItems, searchParams, setSearchParams])
 
   const insertOnce = async (rows) => {
     let res = await supabase.from('stock_movements').insert(rows).select('id')
