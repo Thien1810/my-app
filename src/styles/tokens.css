@@ -2,6 +2,10 @@
    --primary, --red, --amber, --blue, --bg, --surface, --border, --text, --text-muted...).
    Đổi thương hiệu = đổi các biến này; ui.css không chứa màu thương hiệu cố định. */
 :root {
+  /* Font giao diện (nạp ở index.html). Đổi font = đổi một dòng này. */
+  --font-body: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+
   /* Khoảng cách */
   --space-1: 4px;
   --space-2: 8px;
