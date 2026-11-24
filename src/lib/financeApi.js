@@ -260,6 +260,23 @@ export async function createStockTransfer({ item_id, from_wh, to_wh, qty, transf
   return db().from('stock_transfers').insert(row).select().single()
 }
 
+// Xóa một phiếu chuyển kho theo id (RLS: chỉ admin/manager).
+export async function deleteStockTransfer(id) {
+  if (!db()) return fail(NO_CLIENT)
+  return db().from('stock_transfers').delete().eq('id', id)
+}
+
+// Vật tư tái sử dụng đang hoạt động (view item_stock), chỉ các cột cần để tính chuyển kho.
+export async function listReusableItemStock() {
+  if (!db()) return fail(NO_CLIENT)
+  return db()
+    .from('item_stock')
+    .select('id, name, code, kind, cost, in_stock, at_project, in_repair, active')
+    .eq('kind', 'reusable')
+    .eq('active', true)
+    .order('name')
+}
+
 // ---------------------------------------------------------------------
 // 7. Đọc view / bảng kho
 // ---------------------------------------------------------------------

@@ -8,6 +8,7 @@ import { toPnlProjects, buildPnlHistory, calcBySource, resolveShares } from '../
 import PnlPanel from './finance/PnlPanel'
 import FixedCostsPanel from './finance/FixedCostsPanel'
 import AdsLedgerPanel from './finance/AdsLedgerPanel'
+import StockTransfersPanel from './finance/StockTransfersPanel'
 
 const TARGET_GROUPS = [
   {
@@ -111,7 +112,7 @@ const LEGACY_KEYS = [
 ]
 
 export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomplete = false }) {
-  const { isManagerOrAdmin } = useAuth()
+  const { isManagerOrAdmin, role } = useAuth()
 
   useEffect(() => {
     for (const k of LEGACY_KEYS) {
@@ -140,6 +141,7 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
     isLocked,
     notice,
     setNotice,
+    reload,
     actions,
   } = useFinanceData({ month: selectedMonth })
 
@@ -315,6 +317,17 @@ export default function MetaAdsManagerTab({ projectProfitReport = [], dataIncomp
         onApplyTemplates={actions.applyTemplates}
         onSaveAsTemplate={actions.saveMonthAsTemplate}
       />
+
+      {isManagerOrAdmin && (
+        <StockTransfersPanel
+          role={role}
+          canWrite={isManagerOrAdmin}
+          warehouses={warehouses}
+          shares={shares}
+          locks={locks}
+          onChanged={reload}
+        />
+      )}
 
       <AdsLedgerPanel
         key={selectedMonth}
