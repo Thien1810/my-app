@@ -51,6 +51,9 @@ export default function LeadCard({
             <span className={`badge lead-channel lead-channel-${channel.group}`}>
               {channel.label}
             </span>
+            {String(lead.created_via || '').toLowerCase() === 'manual' && channel.key !== 'manual' && (
+              <span className="badge lead-channel lead-channel-manual">Nhập tay</span>
+            )}
           </div>
           <div className="text-xs text-muted" style={{ marginTop: 4 }}>
             Gửi lúc: {formatDate(lead.created_at)}

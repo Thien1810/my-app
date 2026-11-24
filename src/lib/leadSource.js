@@ -99,6 +99,6 @@ export const CHANNEL_FILTER_OPTIONS = [
   { key: 'google_organic', label: CHANNELS.google_organic.label },
   { key: 'social_organic', label: CHANNELS.social_organic.label },
   { key: 'heard_from', label: 'Khách tự chọn "biết qua"' },
-  { key: 'manual', label: 'Nhập tay' },
+  { key: 'manual', label: 'Nhập tay (tất cả nguồn)' },
   { key: 'unknown', label: CHANNELS.unknown.label },
 ]

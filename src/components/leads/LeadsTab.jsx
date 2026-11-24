@@ -11,7 +11,9 @@ import {
   filterLeads,
 } from '../../lib/leadStatus'
 import { CHANNEL_FILTER_OPTIONS } from '../../lib/leadSource'
+import { validateNewLead, buildManualLeadRow, isMissingLeadColumnErr } from '../../lib/leadInput'
 import LeadCard from './LeadCard'
+import AddLeadModal from './AddLeadModal'
 import LostReasonDialog from './LostReasonDialog'
 
 function isMissingTableErr(err) {
@@ -55,8 +57,42 @@ export default function LeadsTab({
   const [lostLead, setLostLead] = useState(null) // lead đang chờ chọn lý do mất
   const [savingLost, setSavingLost] = useState(false)
 
+  const [addOpen, setAddOpen] = useState(false)
+  const [addSaving, setAddSaving] = useState(false)
+  const [addError, setAddError] = useState('')
+
   const reportError = (msg) => {
     if (onError) onError(msg)
+  }
+
+  const handleAddLead = async (input) => {
+    if (addSaving) return
+    const v = validateNewLead(input)
+    if (!v.ok) return
+    setAddSaving(true)
+    setAddError('')
+    try {
+      const { data, error } = await supabase
+        .from('site_leads')
+        .insert([buildManualLeadRow(input)])
+        .select()
+        .single()
+      if (error) {
+        setAddError(
+          isMissingLeadColumnErr(error)
+            ? 'Chưa thêm được: cần chạy file supabase/site_leads_workflow.sql trên Supabase trước.'
+            : error.message || 'Không thể thêm khách.'
+        )
+        return
+      }
+      setLeads((prev) => [data, ...prev])
+      setAddOpen(false)
+      if (onToast) onToast(`Đã thêm khách ${data.customer_name || input.customer_name}.`)
+    } catch (e) {
+      setAddError(e.message || 'Không thể thêm khách.')
+    } finally {
+      setAddSaving(false)
+    }
   }
 
   const loadLeads = useCallback(async () => {
@@ -321,6 +357,16 @@ export default function LeadsTab({
         </select>
         <button
           type="button"
+          className="btn btn-primary"
+          onClick={() => {
+            setAddError('')
+            setAddOpen(true)
+          }}
+        >
+          + Thêm khách
+        </button>
+        <button
+          type="button"
           className="btn btn-outline"
           onClick={() => (onRefresh ? onRefresh() : loadLeads())}
         >
@@ -358,6 +404,15 @@ export default function LeadsTab({
             />
           ))}
         </div>
+      )}
+      {addOpen && (
+        <AddLeadModal
+          leads={leads}
+          saving={addSaving}
+          error={addError}
+          onSubmit={handleAddLead}
+          onClose={() => setAddOpen(false)}
+        />
       )}
       {lostLead && (
         <LostReasonDialog
