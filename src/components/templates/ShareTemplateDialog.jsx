@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { imageUrlToFile } from '../../lib/setTemplateImages'
+import { useEffect, useMemo, useState } from 'react'
+import { extractCardDescription, renderTemplateCard } from '../../lib/setTemplateCard'
+import { safeFileBase } from '../../lib/setTemplateImages'
 import { buildShareText } from '../../lib/setTemplates'
 import TemplateLightbox from './TemplateLightbox'
 import TemplateModal from './TemplateModal'
 import './Templates.css'
 
 const MAX_SHARE_IMAGES = 10
+const COPIED_NOTE = 'Đã chép sẵn chữ, nếu Zalo chỉ nhận ảnh thì dán vào.'
 // Cảnh báo mềm: nội dung gửi khách không được có giá/tiền.
 const PRICE_HINT =
   /\d[\d.,]*\s*(?:đ|₫|vnđ|vnd|k|tr|triệu|nghìn|ngàn)(?!\p{L})|(?<!\p{L})giá(?!\p{L})/iu
@@ -41,12 +43,12 @@ function zaloUrl() {
 }
 
 /**
- * Gửi mẫu cho khách: chọn ảnh, sửa nội dung, rồi chia sẻ (Web Share có file) hoặc sao chép + tải ảnh + mở Zalo.
+ * Gửi mẫu cho khách: gộp ảnh đã chọn + tên + loại + mô tả thành MỘT ảnh thẻ (JPEG) rồi chia sẻ đúng 1 file đó.
  * Nội dung chỉ lấy tên, loại, mô tả: KHÔNG có số lượng vật tư, giá vốn hay giá.
  */
 export default function ShareTemplateDialog({ template, onClose }) {
   const urls = template.imageUrls
-  // Danh sách theo thứ tự chọn: số thứ tự trên ảnh cũng là thứ tự gửi
+  // Danh sách theo thứ tự chọn: số thứ tự trên ảnh cũng là thứ tự xếp trong thẻ
   const [selected, setSelected] = useState(() => urls.slice(0, MAX_SHARE_IMAGES))
   const [text, setText] = useState(() =>
     buildShareText({
@@ -55,46 +57,55 @@ export default function ShareTemplateDialog({ template, onClose }) {
       description: template.description,
     })
   )
-  const [preparing, setPreparing] = useState(false)
+  const [card, setCard] = useState({ status: 'building', file: null, url: '', skipped: [], error: '' })
   const [message, setMessage] = useState({ kind: '', text: '' })
+  const [manualOpen, setManualOpen] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
-  const filesRef = useRef(new Map())
   const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 
   const priceWarning = PRICE_HINT.test(text)
   const selectedKey = useMemo(() => selected.join('\n'), [selected])
+  const cardDescription = useMemo(
+    () => extractCardDescription(text, { name: template.name, category: template.parsedCategory }),
+    [text, template.name, template.parsedCategory]
+  )
 
-  const fileFor = (url) => {
-    const index = urls.indexOf(url)
-    if (!filesRef.current.has(url)) {
-      const promise = imageUrlToFile(url, template.name, index)
-      promise.catch(() => {})
-      filesRef.current.set(url, promise)
-    }
-    return filesRef.current.get(url)
-  }
-
-  // Tải sẵn ảnh đã chọn thành File để nút chia sẻ không phải chờ (trình duyệt di động đòi chia sẻ ngay sau khi bấm).
+  // Dựng ảnh thẻ ngay khi mở; dựng lại (chờ 450ms) khi đổi ảnh đã chọn hoặc sửa nội dung
   useEffect(() => {
-    if (!canNativeShare || selected.length === 0) return undefined
     let alive = true
-    setPreparing(true)
-    Promise.allSettled(selected.map(fileFor)).then(() => {
-      if (alive) setPreparing(false)
-    })
+    let objectUrl = ''
+    setCard((prev) => ({ ...prev, status: 'building' }))
+    const timer = setTimeout(async () => {
+      try {
+        const result = await renderTemplateCard({
+          name: template.name,
+          category: template.parsedCategory,
+          description: cardDescription,
+          imageUrls: selected,
+        })
+        if (!alive) return
+        objectUrl = URL.createObjectURL(result.blob)
+        const file = new File([result.blob], `${safeFileBase(template.name)}.jpg`, { type: 'image/jpeg' })
+        setCard({ status: 'ready', file, url: objectUrl, skipped: result.skipped, error: '' })
+      } catch (err) {
+        if (alive) setCard({ status: 'error', file: null, url: '', skipped: [], error: err?.message || '' })
+      }
+    }, 450)
     return () => {
       alive = false
+      clearTimeout(timer)
+      if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
     }
-    // fileFor chỉ phụ thuộc urls/template đã cố định khi mở hộp thoại
+    // selected được đại diện bởi selectedKey; template cố định khi mở hộp thoại
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedKey, canNativeShare])
+  }, [selectedKey, cardDescription])
 
   const toggle = (url) => {
     setMessage({ kind: '', text: '' })
     if (selected.includes(url)) {
       setSelected(selected.filter((u) => u !== url))
     } else if (selected.length >= MAX_SHARE_IMAGES) {
-      setMessage({ kind: 'warn', text: `Chỉ gửi được tối đa ${MAX_SHARE_IMAGES} ảnh một lần. Bỏ bớt ảnh để chọn ảnh khác.` })
+      setMessage({ kind: 'warn', text: `Chỉ chọn được tối đa ${MAX_SHARE_IMAGES} ảnh. Bỏ bớt ảnh để chọn ảnh khác.` })
     } else {
       setSelected([...selected, url])
     }
@@ -104,44 +115,39 @@ export default function ShareTemplateDialog({ template, onClose }) {
     setSelected(urls.slice(0, MAX_SHARE_IMAGES))
     setMessage(
       urls.length > MAX_SHARE_IMAGES
-        ? { kind: 'warn', text: `Mẫu có ${urls.length} ảnh, chỉ chọn ${MAX_SHARE_IMAGES} ảnh đầu (tối đa mỗi lần gửi).` }
+        ? { kind: 'warn', text: `Mẫu có ${urls.length} ảnh, chỉ chọn ${MAX_SHARE_IMAGES} ảnh đầu (tối đa mỗi lần).` }
         : { kind: '', text: '' }
     )
   }
 
-  const loadFiles = async () => {
-    const results = await Promise.allSettled(selected.map(fileFor))
-    const files = results.filter((r) => r.status === 'fulfilled').map((r) => r.value)
-    return { files, failed: results.length - files.length }
-  }
-
   const handleShare = async () => {
+    if (!card.file) return
     setMessage({ kind: '', text: '' })
     // Chép sẵn lời nhắn ngay trong thao tác bấm (một số app như Zalo chỉ nhận ảnh, bỏ qua chữ)
     const copying = copyText(text)
     try {
-      const { files, failed } = await loadFiles()
-      const data = { title: template.name, text }
-      let note = failed > 0 ? `Có ${failed} ảnh không tải được nên không được gửi kèm.` : ''
-      if (files.length > 0) {
-        if (!navigator.canShare || navigator.canShare({ files })) {
-          data.files = files
-        } else {
-          note = 'Thiết bị này không gửi kèm ảnh được. Đã chia sẻ nội dung, hãy mở phần "Cách khác" để tải ảnh về rồi gửi thủ công.'
-        }
-      }
-      await navigator.share(data)
-      const copied = await copying
-      setMessage({
-        kind: note ? 'warn' : 'success',
-        text: `${note ? `${note} ` : ''}${copied ? 'Đã chép sẵn chữ, nếu Zalo chỉ nhận ảnh thì dán vào.' : ''}`.trim(),
-      })
-    } catch (err) {
-      if (err?.name === 'AbortError') {
-        if (await copying) setMessage({ kind: 'success', text: 'Đã chép sẵn chữ, nếu Zalo chỉ nhận ảnh thì dán vào.' })
+      const data = { files: [card.file], text }
+      if (navigator.canShare && !navigator.canShare({ files: data.files })) {
+        setManualOpen(true)
+        setMessage({
+          kind: 'warn',
+          text: 'Thiết bị này không chia sẻ kèm ảnh được. Hãy bấm "Tải ảnh về" rồi gửi ảnh thủ công; chữ đã được chép sẵn để dán.',
+        })
         return
       }
-      setMessage({ kind: 'danger', text: err?.message || 'Không chia sẻ được. Hãy dùng Sao chép nội dung và Tải ảnh về.' })
+      await navigator.share(data)
+      setMessage((await copying) ? { kind: 'success', text: COPIED_NOTE } : { kind: '', text: '' })
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        if (await copying) setMessage({ kind: 'success', text: COPIED_NOTE })
+        return
+      }
+      setManualOpen(true)
+      const copied = await copying
+      setMessage({
+        kind: 'danger',
+        text: `Không chia sẻ được${err?.message ? ` (${err.message})` : ''}. Hãy bấm "Tải ảnh về" rồi gửi ảnh thủ công${copied ? '; chữ đã được chép sẵn để dán' : ''}.`,
+      })
     }
   }
 
@@ -154,39 +160,29 @@ export default function ShareTemplateDialog({ template, onClose }) {
     )
   }
 
-  const handleDownload = async () => {
-    setMessage({ kind: '', text: '' })
-    const { files, failed } = await loadFiles()
-    for (const file of files) {
-      const href = URL.createObjectURL(file)
-      const anchor = document.createElement('a')
-      anchor.href = href
-      anchor.download = file.name
-      document.body.appendChild(anchor)
-      anchor.click()
-      document.body.removeChild(anchor)
-      setTimeout(() => URL.revokeObjectURL(href), 10000)
-      await new Promise((resolve) => setTimeout(resolve, 250))
-    }
-    setMessage(
-      failed > 0
-        ? { kind: 'warn', text: `Đã tải ${files.length} ảnh, ${failed} ảnh không tải được.` }
-        : { kind: 'success', text: `Đã tải ${files.length} ảnh về máy.` }
-    )
+  const handleDownload = () => {
+    if (!card.file) return
+    const anchor = document.createElement('a')
+    anchor.href = card.url
+    anchor.download = card.file.name
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    setMessage({ kind: 'success', text: 'Đã tải ảnh thẻ về máy.' })
   }
 
   const manual = (
     <div className="ui-btn-group tpl-share-manual">
-      <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={handleCopy}>
-        Sao chép nội dung
-      </button>
       <button
         type="button"
         className="ui-btn ui-btn--secondary ui-btn--sm"
-        disabled={selected.length === 0}
+        disabled={card.status !== 'ready'}
         onClick={handleDownload}
       >
         Tải ảnh về
+      </button>
+      <button type="button" className="ui-btn ui-btn--secondary ui-btn--sm" onClick={handleCopy}>
+        Sao chép nội dung
       </button>
       <button
         type="button"
@@ -213,10 +209,10 @@ export default function ShareTemplateDialog({ template, onClose }) {
               <button
                 type="button"
                 className="ui-btn ui-btn--primary"
-                disabled={preparing || !text.trim()}
+                disabled={card.status !== 'ready' || !text.trim()}
                 onClick={handleShare}
               >
-                {preparing ? `Đang chuẩn bị ${selected.length} ảnh…` : 'Chia sẻ'}
+                {card.status === 'building' ? 'Đang dựng ảnh thẻ…' : 'Gửi khách'}
               </button>
             </>
           ) : (
@@ -230,11 +226,38 @@ export default function ShareTemplateDialog({ template, onClose }) {
           {message.text && <div className={`ui-alert ui-alert--${message.kind}`}>{message.text}</div>}
 
           <div className="ui-field">
+            <span className="ui-label">Ảnh thẻ sẽ gửi (1 file)</span>
+            <div className="tpl-card-preview">
+              {card.url && (
+                <img
+                  src={card.url}
+                  alt="Xem trước ảnh thẻ mẫu set"
+                  className={card.status === 'building' ? 'is-stale' : ''}
+                />
+              )}
+              {card.status === 'building' && <span className="ui-hint">Đang dựng ảnh thẻ…</span>}
+              {card.status === 'error' && (
+                <div className="ui-alert ui-alert--danger">
+                  Không dựng được ảnh thẻ{card.error ? `: ${card.error}` : ''}. Thử bỏ bớt ảnh đã chọn.
+                </div>
+              )}
+            </div>
+            {card.skipped.length > 0 && (
+              <div className="ui-alert ui-alert--warn">
+                Bỏ qua {card.skipped.length} ảnh không tải được ({card.skipped[0].message})
+                {card.skipped.some((item) => item.code === 'cors')
+                  ? ' Kiểm tra đã chạy set_templates_v2.sql (bucket công khai, có CORS).'
+                  : ''}
+              </div>
+            )}
+          </div>
+
+          <div className="ui-field">
             <span className="ui-label">
-              Chọn ảnh gửi khách ({selected.length}/{Math.min(urls.length, MAX_SHARE_IMAGES)})
+              Chọn ảnh đưa vào thẻ ({selected.length}/{Math.min(urls.length, MAX_SHARE_IMAGES)})
             </span>
             {urls.length === 0 ? (
-              <span className="ui-hint">Mẫu này chưa có ảnh, chỉ gửi được nội dung.</span>
+              <span className="ui-hint">Mẫu này chưa có ảnh, thẻ chỉ có tên và mô tả.</span>
             ) : (
               <>
                 <div className="tpl-share-tools">
@@ -292,6 +315,7 @@ export default function ShareTemplateDialog({ template, onClose }) {
                     )
                   })}
                 </div>
+                <span className="ui-hint">Thẻ xếp tối đa 9 ảnh: ảnh chọn đầu tiên là ảnh bìa lớn.</span>
               </>
             )}
           </div>
@@ -305,7 +329,9 @@ export default function ShareTemplateDialog({ template, onClose }) {
               value={text}
               onChange={(event) => setText(event.target.value)}
             />
-            <span className="ui-hint">Chỉ gồm tên, loại và mô tả. Không ghi số lượng vật tư, giá vốn hay giá.</span>
+            <span className="ui-hint">
+              Chỉ gồm tên, loại và mô tả. Không ghi số lượng vật tư, giá vốn hay giá. Phần mô tả cũng được in lên ảnh thẻ.
+            </span>
             {priceWarning && (
               <div className="ui-alert ui-alert--warn">
                 Nội dung có vẻ chứa giá hoặc số tiền. Hãy xóa trước khi gửi khách.
@@ -314,15 +340,19 @@ export default function ShareTemplateDialog({ template, onClose }) {
           </div>
 
           {canNativeShare ? (
-            <details className="tpl-share-more">
-              <summary>Cách khác: sao chép, tải ảnh, mở Zalo</summary>
+            <details
+              className="tpl-share-more"
+              open={manualOpen}
+              onToggle={(event) => setManualOpen(event.currentTarget.open)}
+            >
+              <summary>Cách khác: tải ảnh thẻ, sao chép, mở Zalo</summary>
               {manual}
             </details>
           ) : (
             <div className="ui-field">
               <span className="ui-label">Gửi khách</span>
               <span className="ui-hint">
-                Trình duyệt này chưa hỗ trợ chia sẻ kèm ảnh. Sao chép nội dung, tải ảnh về rồi gửi qua Zalo.
+                Trình duyệt này chưa hỗ trợ chia sẻ kèm ảnh. Tải ảnh thẻ về, sao chép nội dung rồi gửi qua Zalo.
               </span>
               {manual}
             </div>

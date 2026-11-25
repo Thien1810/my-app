@@ -2,7 +2,7 @@ export const PRESET_SET_CATEGORIES = Object.freeze(['Gia tiên', 'Ngoài gia ti�
 
 const MAX_DESCRIPTION_LENGTH = 400
 const MAX_ITEM_NAMES = 12
-const SHARE_SIGNOFF = 'Đặng Wedding — nhắn em để được tư vấn thêm nhé.'
+export const SHARE_SIGNOFF = 'Đặng Wedding — nhắn em để được tư vấn thêm nhé.'
 
 function trimText(value) {
   return typeof value === 'string' ? value.trim() : ''
