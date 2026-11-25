@@ -39,7 +39,7 @@ export default function TemplatesPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await loadTemplatesData()
+      const data = await loadTemplatesData({ loadItems: canEditCatalog })
       setTemplates(data.templates)
       setItems(data.items)
       setImagesSupported(data.imagesSupported)
@@ -53,7 +53,7 @@ export default function TemplatesPage() {
       setLoading(false)
     }
     return null
-  }, [])
+  }, [canEditCatalog])
 
   useEffect(() => {
     loadData()

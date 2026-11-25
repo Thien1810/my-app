@@ -12,7 +12,8 @@ export const IMAGE_BUCKET = 'set-template-images'
 const IMAGE_FIELDS = 'id, url, storage_path, sort_order, is_cover'
 const ITEMS_EMBED = 'items:set_template_items(item_id, qty, item:items(id, code, name, unit, kind))'
 
-export async function loadTemplatesData() {
+// loadItems=false (nhân viên): không tải kho vật tư để giá vốn không về trình duyệt.
+export async function loadTemplatesData({ loadItems = true } = {}) {
   const selectTemplates = (withImages) =>
     supabase
       .from('set_templates')
@@ -25,7 +26,9 @@ export async function loadTemplatesData() {
 
   const [firstRes, itemsRes] = await Promise.all([
     selectTemplates(true),
-    supabase.from('items').select('*').eq('active', true).order('name'),
+    loadItems
+      ? supabase.from('items').select('*').eq('active', true).order('name')
+      : Promise.resolve({ data: [], error: null }),
   ])
 
   let tplRes = firstRes

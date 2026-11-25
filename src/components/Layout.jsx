@@ -41,7 +41,7 @@ export default function Layout() {
     { to: '/vat-tu', label: 'Vật tư', shortLabel: 'Vật tư', icon: '📦', show: true },
     { to: '/phieu-kho', label: 'Nhập kho / Phiếu kho', shortLabel: 'Phiếu kho', icon: '📝', show: !isStaff },
     { to: '/du-an', label: 'Dự án', shortLabel: 'Dự án', icon: '🎪', show: true },
-    { to: '/mau-set', label: 'Mẫu set trang trí', shortLabel: 'Mẫu set', icon: '✨', show: !isStaff },
+    { to: '/mau-set', label: 'Mẫu set trang trí', shortLabel: 'Mẫu set', icon: '✨', show: true },
     { to: '/doi-tac', label: 'Đối tác', shortLabel: 'Đối tác', icon: '🤝', show: !isStaff },
     { to: '/bao-cao', label: 'Báo cáo & Dự báo', shortLabel: 'Báo cáo', icon: '📈', show: !isStaff },
     { to: '/quan-tri-web', label: 'Quản trị Website', shortLabel: 'Website', icon: '🌐', show: !isStaff },
