@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 const GEMINI_STORAGE_KEY = 'dangwed_gemini_api_key'
 
 // Lấy header xác thực cho các API serverless /api/ai-*
-async function getAuthHeaders() {
+export async function getAuthHeaders() {
   const { data } = (await supabase?.auth.getSession()) || {}
   const token = data?.session?.access_token
   if (!token) {
@@ -13,7 +13,7 @@ async function getAuthHeaders() {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
 }
 
-function authErrorMessage(status, fallback) {
+export function authErrorMessage(status, fallback) {
   if (status === 401) return 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.'
   if (status === 403) return 'Tài khoản của anh/chị không có quyền dùng chức năng AI.'
   if (status === 413) return fallback || 'Nội dung gửi lên quá dài.'

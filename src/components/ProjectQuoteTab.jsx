@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { formatCurrency, formatNumber } from '../lib/formatters'
 import { exportToExcel } from '../lib/exportExcel'
 import { compressImageUnder1MB } from '../lib/imageCompressor'
-import { parseTemplateMeta, SET_CATEGORY_OPTIONS } from '../pages/TemplatesPage'
+import { canonicalCategory, categoryIcon, parseTemplateMeta } from '../lib/setTemplateMeta'
+import { buildCategoryOptions, categoryKey } from '../lib/setTemplates'
 import { exportQuoteToPng } from '../lib/quoteExporter'
 import ContractValueFields from './ContractValueFields'
 import { saveProjectFinance } from '../lib/financeApi'
@@ -44,9 +45,19 @@ export default function ProjectQuoteTab({
     })
   }, [templates])
 
+  // Loại gồm 3 loại cố định, loại tự thêm từ các mẫu, và loại đã có trong dòng báo giá
+  const categoryOptions = useMemo(
+    () =>
+      buildCategoryOptions([
+        ...enrichedTemplates.map((t) => ({ category: t.parsedCategory })),
+        ...quoteLines.map((l) => ({ category: l.category })),
+      ]),
+    [enrichedTemplates, quoteLines]
+  )
+
   const visibleTemplates = useMemo(() => {
     if (filterSetCat === 'all') return enrichedTemplates
-    return enrichedTemplates.filter((t) => t.parsedCategory === filterSetCat)
+    return enrichedTemplates.filter((t) => categoryKey(t.parsedCategory) === categoryKey(filterSetCat))
   }, [enrichedTemplates, filterSetCat])
 
   // Tải danh sách Set trang trí đã chọn cho báo giá dự án này
@@ -87,11 +98,14 @@ export default function ProjectQuoteTab({
       .filter(Boolean)
       .join(', ')
 
-    const defaultDesc = tpl.parsedNote
-      ? tpl.parsedNote
-      : itemNames
-        ? `Gồm: ${itemNames}`
-        : ''
+    // Ưu tiên mô tả cho khách, rồi ghi chú mẫu, rồi tên vật tư (không có số lượng)
+    const defaultDesc = (tpl.description || '').trim()
+      ? tpl.description.trim()
+      : tpl.parsedNote
+        ? tpl.parsedNote
+        : itemNames
+          ? `Gồm: ${itemNames}`
+          : ''
 
     const newLine = {
       uid: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -272,16 +286,16 @@ export default function ProjectQuoteTab({
             >
               Tất cả ({enrichedTemplates.length})
             </button>
-            {SET_CATEGORY_OPTIONS.map((opt) => (
+            {categoryOptions.map((opt) => (
               <button
-                key={opt.value}
+                key={opt}
                 type="button"
                 className={`btn btn-sm ${
-                  filterSetCat === opt.value ? 'btn-primary' : 'btn-outline'
+                  filterSetCat === opt ? 'btn-primary' : 'btn-outline'
                 }`}
-                onClick={() => setFilterSetCat(opt.value)}
+                onClick={() => setFilterSetCat(opt)}
               >
-                {opt.label}
+                {categoryIcon(opt)} {opt}
               </button>
             ))}
           </div>
@@ -347,7 +361,7 @@ export default function ProjectQuoteTab({
                         flexShrink: 0,
                       }}
                     >
-                      {tpl.parsedCategory === 'Mâm quả' ? '🎁' : '🏮'}
+                      {categoryIcon(tpl.parsedCategory)}
                     </div>
                   )}
                   <div style={{ minWidth: 0 }}>
@@ -357,7 +371,7 @@ export default function ProjectQuoteTab({
                       }`}
                       style={{ marginBottom: 4, display: 'inline-block' }}
                     >
-                      {tpl.parsedCategory === 'Mâm quả' ? '🎁 Mâm quả' : '🏮 Gia tiên'}
+                      {categoryIcon(tpl.parsedCategory)} {tpl.parsedCategory}
                     </span>
                     <div className="font-bold text-sm" style={{ wordBreak: 'break-word' }}>
                       {tpl.name}
@@ -513,17 +527,19 @@ export default function ProjectQuoteTab({
                       </td>
                       <td>
                         <select
-                          value={line.category || 'Gia tiên'}
+                          value={canonicalCategory(line.category || 'Gia tiên', categoryOptions)}
                           onChange={(e) =>
                             handleUpdateLine(line.uid, 'category', e.target.value)
                           }
                         >
-                          {SET_CATEGORY_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
+                          {categoryOptions.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {categoryIcon(opt)} {opt}
                             </option>
                           ))}
-                          <option value="Hạng mục khác">✨ Hạng mục khác</option>
+                          {!categoryOptions.some((opt) => categoryKey(opt) === categoryKey('Hạng mục khác')) && (
+                            <option value="Hạng mục khác">✨ Hạng mục khác</option>
+                          )}
                         </select>
                       </td>
                       <td>
