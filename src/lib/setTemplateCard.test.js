@@ -10,6 +10,7 @@ import {
   layoutImages,
   layoutText,
   wrapText,
+  buildContactLines,
 } from './setTemplateCard'
 import { buildShareText } from './setTemplates'
 
@@ -68,6 +69,23 @@ describe('bố cục ảnh thẻ', () => {
     expect(short.titleY).toBeGreaterThan(810)
     expect(long.height - short.height).toBe(2 * TEXT_STYLE.titleLine + 5 * TEXT_STYLE.descLine)
     expect(layoutText({ top: 0, titleLineCount: 1, descLineCount: 0, hasCategory: false }).pillY).toBeNull()
+  })
+})
+
+describe('liên hệ ở chân thẻ', () => {
+  it('bỏ dòng trống, SĐT in đậm và đứng đầu', () => {
+    expect(buildContactLines({ phone: ' 0918.80.90.96 ', address: '', website: 'dangwed.com' })).toEqual([
+      { text: 'SĐT / Zalo: 0918.80.90.96', strong: true },
+      { text: 'dangwed.com' },
+    ])
+    expect(buildContactLines(null)).toEqual([])
+  })
+
+  it('chân thẻ cao thêm theo số dòng liên hệ', () => {
+    const base = { top: 810, titleLineCount: 1, descLineCount: 1 }
+    const none = layoutText(base)
+    const four = layoutText({ ...base, contactLineCount: 4 })
+    expect(four.height - none.height).toBe(60 + 4 * TEXT_STYLE.contactLine - TEXT_STYLE.footerHeight)
   })
 })
 

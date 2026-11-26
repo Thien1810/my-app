@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { extractCardDescription, renderTemplateCard } from '../../lib/setTemplateCard'
+import { loadShareContact } from '../../lib/setTemplateContact'
 import { safeFileBase } from '../../lib/setTemplateImages'
 import { buildShareText } from '../../lib/setTemplates'
 import TemplateLightbox from './TemplateLightbox'
@@ -59,6 +60,15 @@ export default function ShareTemplateDialog({ template, onClose }) {
   )
   const [card, setCard] = useState({ status: 'building', file: null, url: '', skipped: [], error: '' })
   const [message, setMessage] = useState({ kind: '', text: '' })
+  // null = đang tải; chờ có liên hệ mới dựng thẻ để không gửi nhầm thẻ thiếu thông tin
+  const [contact, setContact] = useState(null)
+  useEffect(() => {
+    let alive = true
+    loadShareContact().then((value) => alive && setContact(value))
+    return () => {
+      alive = false
+    }
+  }, [])
   const [manualOpen, setManualOpen] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
@@ -75,6 +85,7 @@ export default function ShareTemplateDialog({ template, onClose }) {
     let alive = true
     let objectUrl = ''
     setCard((prev) => ({ ...prev, status: 'building' }))
+    if (!contact) return undefined
     const timer = setTimeout(async () => {
       try {
         const result = await renderTemplateCard({
@@ -82,6 +93,7 @@ export default function ShareTemplateDialog({ template, onClose }) {
           category: template.parsedCategory,
           description: cardDescription,
           imageUrls: selected,
+          contact,
         })
         if (!alive) return
         objectUrl = URL.createObjectURL(result.blob)
@@ -98,7 +110,7 @@ export default function ShareTemplateDialog({ template, onClose }) {
     }
     // selected được đại diện bởi selectedKey; template cố định khi mở hộp thoại
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedKey, cardDescription])
+  }, [selectedKey, cardDescription, contact])
 
   const toggle = (url) => {
     setMessage({ kind: '', text: '' })

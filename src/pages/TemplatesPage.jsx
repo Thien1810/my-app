@@ -226,7 +226,7 @@ export default function TemplatesPage() {
               className="ui-btn ui-btn--secondary ui-btn--sm"
               onClick={() => setBatchQueue(missingDescription)}
             >
-              ✨ Viết mô tả cho mẫu còn thiếu ({missingDescription.length})
+              ✨ Viết mô tả còn thiếu ({missingDescription.length})
             </button>
           )}
           {canEditCatalog && (

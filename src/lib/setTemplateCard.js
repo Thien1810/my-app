@@ -123,12 +123,14 @@ export const TEXT_STYLE = Object.freeze({
   descSize: 34,
   descLine: 50,
   footerHeight: 130,
+  contactSize: 32,
+  contactLine: 48,
   maxTitleLines: 3,
   maxDescLines: 7,
 })
 
 // Bố cục khối chữ bên dưới ảnh. top = đáy khối ảnh (0 nếu không có ảnh).
-export function layoutText({ top, titleLineCount, descLineCount, hasCategory = true }) {
+export function layoutText({ top, titleLineCount, descLineCount, hasCategory = true, contactLineCount = 0 }) {
   const s = TEXT_STYLE
   let y = top + (top > 0 ? 56 : CARD_PAD)
   const pillY = hasCategory ? y : null
@@ -138,7 +140,21 @@ export function layoutText({ top, titleLineCount, descLineCount, hasCategory = t
   const descY = descLineCount > 0 ? y + 12 : y
   y = descY + descLineCount * s.descLine
   const footerY = y + 40
-  return { pillY, titleY, descY, footerY, height: footerY + s.footerHeight }
+  // Chân thẻ cao thêm khi có nhiều dòng liên hệ (chừa 28px trên, 32px dưới)
+  const footerHeight = Math.max(s.footerHeight, 60 + contactLineCount * s.contactLine)
+  return { pillY, titleY, descY, footerY, height: footerY + footerHeight }
+}
+
+// Các dòng liên hệ in ở chân thẻ. Dòng nào trống thì bỏ.
+export function buildContactLines(contact) {
+  const phone = String(contact?.phone ?? '').trim()
+  const address = String(contact?.address ?? '').replace(/\s+/g, ' ').trim()
+  const website = String(contact?.website ?? '').trim()
+  return [
+    phone && { text: `SĐT / Zalo: ${phone}`, strong: true },
+    address && { text: `Địa chỉ: ${address}` },
+    website && { text: website },
+  ].filter(Boolean)
 }
 
 // Lấy phần mô tả từ nội dung gửi khách: bỏ đoạn tên, đoạn "Hạng mục: ...", và câu kết.
@@ -238,7 +254,7 @@ const FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif'
  * Dựng ảnh thẻ. Trả về { blob, width, height, used, skipped: [{ index, message }] }.
  * Ảnh nào lỗi thì bỏ qua và ghi vào skipped, không làm hỏng cả thẻ.
  */
-export async function renderTemplateCard({ name, category, description, imageUrls }) {
+export async function renderTemplateCard({ name, category, description, imageUrls, contact }) {
   const urls = (imageUrls || []).slice(0, MAX_CARD_IMAGES)
   const skipped = []
   const drawables = []
@@ -265,12 +281,22 @@ export async function renderTemplateCard({ name, category, description, imageUrl
   const descLines = wrapText((t) => mctx.measureText(t).width, description || '', textWidth, s.maxDescLines)
   const categoryText = normalizeCategoryName(category)
 
+  // Chữ liên hệ nằm bên trái, chừa chỗ cho logo bên phải
+  const logoHeight = 64
+  const logoWidth = watermark ? Math.round((sizeOf(watermark).w / sizeOf(watermark).h) * logoHeight) : 320
+  const contactWidth = textWidth - logoWidth - 32
+  const contactLines = buildContactLines(contact).flatMap(({ text: line, strong }) => {
+    mctx.font = `${strong ? 700 : 400} ${s.contactSize}px ${FONT}`
+    return wrapText((t) => mctx.measureText(t).width, line, contactWidth, 3).map((part) => ({ text: part, strong }))
+  })
+
   const images = layoutImages({ count: drawables.length })
   const text = layoutText({
     top: images.bottom,
     titleLineCount: titleLines.length,
     descLineCount: descLines.length,
     hasCategory: Boolean(categoryText),
+    contactLineCount: contactLines.length,
   })
 
   const canvas = document.createElement('canvas')
@@ -308,14 +334,16 @@ export async function renderTemplateCard({ name, category, description, imageUrl
   ctx.font = `400 ${s.descSize}px ${FONT}`
   descLines.forEach((line, i) => ctx.fillText(line, CARD_PAD, text.descY + i * s.descLine))
 
-  // Chân thẻ: đường kẻ mảnh + logo/watermark nhỏ góc dưới bên phải
+  // Chân thẻ: đường kẻ mảnh, liên hệ bên trái, logo/watermark nhỏ bên phải
   ctx.fillStyle = '#d1fae5'
   ctx.fillRect(CARD_PAD, text.footerY, textWidth, 3)
+  contactLines.forEach((line, i) => {
+    ctx.fillStyle = line.strong ? '#14532d' : '#334155'
+    ctx.font = `${line.strong ? 700 : 400} ${s.contactSize}px ${FONT}`
+    ctx.fillText(line.text, CARD_PAD, text.footerY + 28 + i * s.contactLine)
+  })
   if (watermark) {
-    const { w, h } = sizeOf(watermark)
-    const targetH = 64
-    const targetW = Math.round((w / h) * targetH)
-    ctx.drawImage(watermark, CARD_WIDTH - CARD_PAD - targetW, text.footerY + 28, targetW, targetH)
+    ctx.drawImage(watermark, CARD_WIDTH - CARD_PAD - logoWidth, text.footerY + 28, logoWidth, logoHeight)
   } else {
     ctx.fillStyle = '#16a34a'
     ctx.font = `700 30px ${FONT}`

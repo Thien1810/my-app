@@ -4,10 +4,14 @@
 .tpl-header { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-4); }
 .tpl-header h1 { margin: 0 0 var(--space-1); }
 .tpl-header p { margin: 0; }
+/* Desktop: tiêu đề giữ tối thiểu 320px; không đủ chỗ thì cụm nút tự xuống hàng dưới */
 @media (min-width: 769px) {
-  .tpl-header { flex-direction: row; justify-content: space-between; align-items: flex-start; }
-  .tpl-header__actions { flex: 0 0 auto; }
+  .tpl-header { flex-direction: row; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; }
+  .tpl-header > div:first-child { flex: 1 1 320px; min-width: 0; }
+  .tpl-header__actions { flex: 0 1 auto; flex-wrap: wrap; max-width: 100%; }
   .tpl-header__actions > .ui-btn { flex: 0 0 auto; }
+  /* Dùng chuột khó cuộn ngang: cho tab loại set xuống hàng */
+  .ui-tabs.tpl-tabs { flex-wrap: wrap; overflow-x: visible; }
 }
 .tpl-notices:not(:empty) { margin-bottom: var(--space-3); }
 .tpl-tabs { margin-bottom: var(--space-4); }
@@ -29,6 +33,8 @@
   background: rgba(15, 23, 42, 0.72); color: #fff; font-size: var(--fs-xs); font-weight: 600; line-height: 1.4;
 }
 .tpl-card__info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+/* Tên loại dài (anh tự đặt) được xuống dòng, không đè lên ảnh */
+.tpl-card__info .ui-badge { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; padding-block: 2px; }
 .tpl-card__name { margin: 0; font-size: var(--fs-lg); line-height: 1.3; overflow-wrap: anywhere; }
 .tpl-card__desc {
   margin: 0; font-size: var(--fs-md); line-height: 1.45; overflow-wrap: anywhere;
