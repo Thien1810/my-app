@@ -28,7 +28,8 @@
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
-  --radius-pill: 999px; /* nút bo tròn hoàn toàn */
+  --radius-btn: 10px; /* nút vuông bo góc (anh Thiện chốt 2026-11-26) */
+  --radius-pill: 999px; /* chỉ cho huy hiệu, thanh tiến độ */
 
   /* Vùng bấm */
   --tap: 44px;

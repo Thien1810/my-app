@@ -214,7 +214,7 @@ function AppRouter() {
           <Route path="/du-an" element={<ProjectsPage />} />
           <Route path="/du-an/:id" element={<ProjectDetailPage />} />
           <Route path="/mau-set" element={<TemplatesPage />} />
-          <Route path="/doi-tac" element={<RequireRole allow={NOT_STAFF}><PartnersPage /></RequireRole>} />
+          <Route path="/doi-tac" element={<PartnersPage />} />
           <Route path="/bao-cao" element={<RequireRole allow={NOT_STAFF}><ReportsPage /></RequireRole>} />
           <Route path="/quan-tri-web" element={<RequireRole allow={NOT_STAFF}><WebsiteAdminPage /></RequireRole>} />
           <Route path="/nguoi-dung" element={<UsersPage />} />

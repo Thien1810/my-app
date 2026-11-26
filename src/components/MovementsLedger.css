@@ -28,7 +28,7 @@
   border: 1px solid #d1d5db;
   background: #fff;
   color: #374151;
-  border-radius: 999px;
+  border-radius: var(--radius-btn);
   padding: 5px 12px;
   font-size: 13px;
   cursor: pointer;

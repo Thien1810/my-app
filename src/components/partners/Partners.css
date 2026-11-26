@@ -1,0 +1,423 @@
+/* Trang Đối tác. Tiền tố ptn-. Bổ sung bố cục cho UI kit (ui-*) và tokens.css. */
+
+.ptn-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ptn-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ptn-header__title {
+  margin: 0 0 var(--space-1);
+}
+
+.ptn-header__sub {
+  margin: 0;
+}
+
+.ptn-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ptn-header__actions > .ui-btn {
+  flex: 1 1 auto;
+  min-height: var(--tap-sm);
+}
+
+@media (min-width: 769px) {
+  .ptn-header {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .ptn-header__actions {
+    flex: 0 0 auto;
+  }
+
+  .ptn-header__actions > .ui-btn {
+    flex: 0 0 auto;
+  }
+}
+
+.ptn-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ptn-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+@media (min-width: 769px) {
+  .ptn-filters {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .ptn-filters__search {
+    flex: 1 1 auto;
+  }
+}
+
+.ptn-archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--fs-md);
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ptn-archived-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.ptn-archived-toggle.is-on {
+  border-color: var(--primary);
+  background: var(--primary-subtle);
+  color: var(--primary-hover);
+}
+
+.ptn-name-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  background: none;
+  border: 0;
+  padding: var(--space-1) 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.ptn-name-btn:hover {
+  color: var(--primary-hover);
+  text-decoration: underline;
+}
+
+.ptn-name-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.ptn-name-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ptn-phone-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+@media (min-width: 769px) {
+  .ptn-phone-cell {
+    align-items: flex-start;
+  }
+}
+
+.ptn-contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ui-btn.ptn-contact-btn {
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  font-size: var(--fs-md);
+}
+
+.ptn-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.ptn-row-actions > .ui-btn {
+  flex: 1 1 auto;
+  min-height: var(--tap-sm);
+  padding: 0 var(--space-3);
+}
+
+@media (min-width: 769px) {
+  .ptn-row-actions {
+    justify-content: flex-end;
+    width: auto;
+  }
+
+  .ptn-row-actions > .ui-btn {
+    flex: 0 0 auto;
+  }
+}
+
+.ptn-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.ptn-pagination__info {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.ptn-pagination__btns {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ptn-pagination__btns > .ui-btn {
+  min-height: var(--tap-sm);
+}
+
+/* ===== Hộp thoại ===== */
+.ptn-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ui-modal__footer.ptn-modal__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.ui-modal__footer.ptn-modal__footer > .ui-btn {
+  flex: 1 1 40%;
+  min-height: var(--tap-sm);
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .ui-modal__footer.ptn-modal__footer {
+    justify-content: flex-end;
+  }
+
+  .ui-modal__footer.ptn-modal__footer > .ui-btn {
+    flex: 0 0 auto;
+  }
+}
+
+@media (min-width: 769px) {
+  .ui-modal.ptn-modal--wide {
+    max-width: 680px;
+  }
+}
+
+form.ptn-modal {
+  min-height: 0;
+}
+
+.ptn-info-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (min-width: 640px) {
+  .ptn-info-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.ptn-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ptn-info-item__label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ptn-info-item__value {
+  font-size: var(--fs-md);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ptn-section-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ptn-summary-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+
+.ptn-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ptn-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.ptn-history-item__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ptn-history-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.ptn-project-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  font-weight: 700;
+  color: var(--primary-hover);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ptn-project-link:hover {
+  text-decoration: underline;
+}
+
+.ptn-dup-list {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ptn-dup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.ptn-dup-actions > .ui-btn {
+  min-height: var(--tap-sm);
+}
+
+.ui-btn.ptn-danger-btn {
+  color: var(--danger-text);
+  border-color: var(--danger-border);
+}
+
+.ui-btn.ptn-danger-btn:hover {
+  background: var(--red-light);
+}
+
+.ptn-receipt-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
+}
+
+.ptn-receipt-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.ptn-receipt-total {
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  text-align: right;
+}
+
+.ui-badge.ptn-missing-badge {
+  background: var(--amber-light);
+  color: var(--warn-text);
+}
+
+.ptn-empty-retry {
+  margin-top: var(--space-3);
+}
+
+/* Desktop: nút liên hệ và thao tác nằm một hàng */
+@media (min-width: 769px) {
+  .ptn-contact-actions,
+  .ptn-row-actions {
+    flex-wrap: nowrap;
+  }
+
+  .ptn-contact-btn,
+  .ptn-phone-cell > span {
+    white-space: nowrap;
+  }
+}
+
+/* Màn vừa: bỏ cột Ghi chú (xem trong Hồ sơ) để bảng không chật */
+@media (min-width: 769px) and (max-width: 1100px) {
+  .ptn-page .ui-table th:nth-child(4),
+  .ptn-page .ui-table td[data-label="Ghi chú"] {
+    display: none;
+  }
+}

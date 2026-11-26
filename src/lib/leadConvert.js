@@ -2,6 +2,7 @@
 import { getLeadChannel, getLeadAttribution } from './leadSource'
 import { normalizeLeadStatus } from './leadStatus'
 import { inferHubFromLocation, parseLeadAdsSource, WAREHOUSE_HUBS } from './metaAdsClient'
+import { phoneKey } from './partnerInput'
 
 const REFERRAL_HEARD = ['Bạn bè, người thân giới thiệu', 'Đã từng dùng dịch vụ Đặng Wedding']
 
@@ -65,4 +66,33 @@ export function canConvertLead({ status, linkedProject } = {}) {
   const s = normalizeLeadStatus(status)
   if (s === 'new' || s === 'consulting') return { ok: true, reason: '' }
   return { ok: false, reason: 'Chỉ khách ở trạng thái Mới hoặc Tư vấn mới được tạo dự án' }
+}
+
+// Chỉ trùng SĐT KHÁCH, kể cả hồ sơ lưu trữ; tên giống không tự quyết định việc dùng lại.
+export function findLeadCustomerMatches(lead, partners = []) {
+  const key = phoneKey(lead?.phone)
+  return key ? partners.filter((p) => p.kind === 'customer' && phoneKey(p.phone) === key) : []
+}
+
+// Không mặc định chọn khách đầu tiên. 'auto' chỉ được dùng khi chưa thấy khách trùng;
+// Bên gọi phải tìm lại khách trước khi ghi.
+export function resolveLeadCustomerChoice(matches = [], choice = '') {
+  if (choice === 'new') return { ok: true, customerChoice: 'new', customerId: null }
+  const selected = matches.find((p) => String(p.id) === String(choice))
+  if (selected) return { ok: true, customerChoice: 'existing', customerId: selected.id }
+  if (!matches.length && !choice) return { ok: true, customerChoice: 'auto', customerId: null }
+  return { ok: false, reason: 'Chọn dùng khách cũ hoặc tạo khách mới.' }
+}
+
+export function leadConversionError(error) {
+  if (['42703', '42P01', 'PGRST202', 'PGRST204', 'PGRST205', '42883'].includes(error?.code)) {
+    return 'Chưa thể chuyển lead: anh Thiện cần chạy supabase/partners_v2.sql và các SQL phụ thuộc ghi đầu file.'
+  }
+  if (error?.code === '42501') return 'Chỉ quản trị hoặc quản lý được tạo dự án từ lead.'
+  if (error?.code === 'P0001') return error.message || 'Dữ liệu đã thay đổi. Hãy tải lại khách trùng và thử lại.'
+  return 'Không thể tạo dự án. Hãy kiểm tra kết nối rồi thử lại; hệ thống sẽ kiểm tra dự án đã tạo trước đó.'
+}
+
+export function isMissingLeadLinkColumn(error) {
+  return ['42703', 'PGRST204'].includes(error?.code) && /site_lead_id/i.test(error?.message || '')
 }

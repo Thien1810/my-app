@@ -216,11 +216,11 @@ drop policy if exists "profiles_admin_delete" on public.profiles;
 create policy "profiles_admin_delete" on public.profiles for delete
   using (public.has_role(array['admin']));
 
--- Danh mục (vật tư, đối tác, mẫu set): mọi người đã duyệt được xem; Quản trị/Quản lý/Thủ kho được sửa
+-- Vật tư và mẫu set: mọi người đã duyệt được xem; Quản trị/Quản lý/Thủ kho được sửa
 do $$
 declare t text;
 begin
-  foreach t in array array['items','partners','set_templates','set_template_items'] loop
+  foreach t in array array['items','set_templates','set_template_items'] loop
     execute format('drop policy if exists "%1$s_select" on public.%1$s', t);
     execute format('drop policy if exists "%1$s_insert" on public.%1$s', t);
     execute format('drop policy if exists "%1$s_update" on public.%1$s', t);
@@ -240,6 +240,34 @@ returns boolean language sql stable security definer set search_path = public as
             exists (select 1 from public.project_members where project_id = pid and user_id = auth.uid())
          or exists (select 1 from public.projects where id = pid and lead_id = auth.uid())))
 $$;
+
+-- Đối tác: Nhân viên xem nhà cung cấp và khách của dự án được phân công.
+create or replace function public.can_see_partner_customer(partner_id bigint)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select public.has_role(array['staff']) and exists (
+    select 1 from public.projects p
+    where p.customer_id = partner_id and public.can_see_project(p.id)
+  );
+$$;
+
+revoke all on function public.can_see_partner_customer(bigint) from public, anon;
+grant execute on function public.can_see_partner_customer(bigint) to authenticated;
+
+drop policy if exists partners_select on public.partners;
+create policy partners_select on public.partners for select to authenticated
+using (public.has_role(array['admin','manager','storekeeper'])
+  or (public.has_role(array['staff']) and
+    (kind = 'supplier' or (kind = 'customer' and public.can_see_partner_customer(id)))));
+drop policy if exists partners_insert on public.partners;
+create policy partners_insert on public.partners for insert to authenticated
+with check (public.has_role(array['admin','manager','storekeeper']));
+drop policy if exists partners_update on public.partners;
+create policy partners_update on public.partners for update to authenticated
+using (public.has_role(array['admin','manager','storekeeper']))
+with check (public.has_role(array['admin','manager','storekeeper']));
+drop policy if exists partners_delete on public.partners;
+create policy partners_delete on public.partners for delete to authenticated
+using (public.has_role(array['admin','manager']));
 
 drop policy if exists "projects_select" on public.projects;
 create policy "projects_select" on public.projects for select using (public.can_see_project(id));
@@ -293,6 +321,7 @@ create policy "moves_delete" on public.stock_movements for delete using (public.
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant select on all tables in schema public to anon;
+revoke all on public.partners from anon;
 grant usage, select on all sequences in schema public to authenticated;
 alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
 alter default privileges in schema public grant usage, select on sequences to authenticated;

@@ -1,7 +1,40 @@
 import { describe, it, expect } from 'vitest'
-import { leadToProjectSource, leadToWarehouse, canConvertLead } from './leadConvert'
+import { leadToProjectSource, leadToWarehouse, canConvertLead, findLeadCustomerMatches, resolveLeadCustomerChoice, isMissingLeadLinkColumn } from './leadConvert'
 
 const src = (l) => leadToProjectSource(l).source
+
+describe('chọn khách khi chuyển lead', () => {
+  const customers = [
+    { id: 1, kind: 'customer', phone: '0918.809.096', archived_at: '2026-01-01' },
+    { id: 2, kind: 'customer', phone: '+84 918809096' },
+    { id: 3, kind: 'supplier', phone: '0918809096' },
+    { id: 4, kind: 'customer', phone: '0900000000' },
+  ]
+  it('chuẩn hóa phoneKey, giữ mọi khách trùng kể cả lưu trữ, bỏ NCC', () => {
+    expect(findLeadCustomerMatches({ phone: '+840918-809-096' }, customers)).toEqual(customers.slice(0, 2))
+  })
+  it('không gộp điện thoại rỗng hoặc không hợp lệ', () => {
+    for (const phone of [null, '', 'abc', '123', '(0918)809096']) {
+      expect(findLeadCustomerMatches({ phone }, customers)).toEqual([])
+    }
+  })
+  it('không chọn sẵn và không chấp nhận id ngoài danh sách', () => {
+    expect(resolveLeadCustomerChoice(customers, '').ok).toBe(false)
+    expect(resolveLeadCustomerChoice(customers, '99').ok).toBe(false)
+    expect(resolveLeadCustomerChoice([], '1').ok).toBe(false)
+  })
+  it('dùng khách cũ chỉ khi chọn rõ; tạo mới dù có khách trùng', () => {
+    expect(resolveLeadCustomerChoice(customers, '1')).toEqual({ ok: true, customerChoice: 'existing', customerId: 1 })
+    expect(resolveLeadCustomerChoice(customers, 'new')).toEqual({ ok: true, customerChoice: 'new', customerId: null })
+    expect(resolveLeadCustomerChoice([])).toEqual({ ok: true, customerChoice: 'auto', customerId: null })
+  })
+  it('fallback chỉ khi thiếu đúng cột site_lead_id', () => {
+    expect(isMissingLeadLinkColumn({ code: '42703', message: 'column site_lead_id does not exist' })).toBe(true)
+    expect(isMissingLeadLinkColumn({ code: 'PGRST204', message: 'site_lead_id schema cache' })).toBe(true)
+    expect(isMissingLeadLinkColumn({ code: '42501', message: 'site_lead_id permission denied' })).toBe(false)
+    expect(isMissingLeadLinkColumn({ code: '42703', message: 'lead_source missing' })).toBe(false)
+  })
+})
 
 describe('leadToProjectSource', () => {
   it('Facebook/Instagram Ads', () => {
