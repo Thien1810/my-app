@@ -72,19 +72,33 @@ export function getProjectFbData(project) {
   }
 }
 
+// Lưu bản nháp bài đăng (kèm ảnh) vào trình duyệt -> { ok, error }.
+// Lỗi thường gặp: bộ nhớ trình duyệt đầy (QuotaExceededError) do ảnh lớn.
 export function saveProjectFbData(projectId, data) {
-  if (!projectId) return
+  if (!projectId) return { ok: false, error: 'Chưa có mã dự án.' }
   try {
     localStorage.setItem(`${FB_STORAGE_PREFIX}${projectId}`, JSON.stringify(data))
-  } catch {
-    // ignore storage quota errors
+    return { ok: true, error: '' }
+  } catch (err) {
+    const quota =
+      err?.name === 'QuotaExceededError' ||
+      err?.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      err?.code === 22 ||
+      err?.code === 1014
+    return {
+      ok: false,
+      error: quota
+        ? 'Bộ nhớ trình duyệt đã đầy (thường do nhiều ảnh lớn) nên KHÔNG lưu được bản nháp trên máy này. Ảnh/bài viết sẽ mất khi tải lại trang: hãy tải ảnh về hoặc xóa bớt ảnh.'
+        : `Không lưu được bản nháp trên máy này: ${err?.message || 'lỗi không rõ'}.`,
+    }
   }
 }
 
 export function stripFbMetaFromNote(note = '') {
   const str = String(note || '')
   const sIdx = str.indexOf(FB_META_TAG)
-  const eIdx = str.indexOf('__ENDFBMETA__')
+  // Chỉ tìm thẻ đóng SAU thẻ mở: thẻ đóng lẻ phía trước từng làm chuỗi dài ra khi cắt lặp
+  const eIdx = sIdx === -1 ? -1 : str.indexOf('__ENDFBMETA__', sIdx + FB_META_TAG.length)
   if (sIdx !== -1 && eIdx !== -1) {
     return (str.slice(0, sIdx) + str.slice(eIdx + '__ENDFBMETA__'.length)).trim()
   }

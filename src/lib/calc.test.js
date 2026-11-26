@@ -65,7 +65,9 @@ describe('calcScheduleConflicts', () => {
       { project_id: 11, item_id: 2, qty: 2 },
     ]
     const result = calcScheduleConflicts(current, [current, overlap], plans, stockMap)
-    expect(result[2]).toEqual({
+    // Trước đây dùng toEqual; kết quả nay có thêm trường (available, lockedElsewhere, peakDate...)
+    // nên đổi sang toMatchObject. Số liệu kỳ vọng giữ nguyên.
+    expect(result[2]).toMatchObject({
       itemId: 2,
       totalPlanned: 5,
       totalOwned: 4,
@@ -85,6 +87,137 @@ describe('calcScheduleConflicts', () => {
     expect(result[1]).toBeUndefined()
     expect(result[2].totalPlanned).toBe(1)
     expect(result[2].hasShortage).toBe(false)
+  })
+})
+
+describe('calcScheduleConflicts — có phiếu kho theo dự án (options.movements)', () => {
+  // KHUNG2: sở hữu 4 (trong kho 3 + đang ở dự án 1)
+  const KHUNG2 = { id: 2, name: 'Khung', kind: 'reusable', in_stock: 3, at_project: 1 }
+  const KHUNG4 = { id: 2, name: 'Khung', kind: 'reusable', in_stock: 4, at_project: 0 }
+  const cur = { id: 10, name: 'Đám A', status: 'preparing', start_date: '2026-12-01', end_date: '2026-12-03' }
+  const issue = (project_id, qty, item_id = 2) => ({ project_id, item_id, type: 'issue', qty })
+  const ret = (project_id, type, qty, item_id = 2) => ({ project_id, item_id, type, qty })
+
+  it('đồ còn ở đám KHÔNG trùng lịch (đã xong, chưa thu về) bị trừ khỏi sẵn có', () => {
+    const past = { id: 20, name: 'Đám cũ', status: 'done', start_date: '2026-11-01', end_date: '2026-11-02' }
+    const r = calcScheduleConflicts(cur, [cur, past], [{ project_id: 10, item_id: 2, qty: 4 }], makeStockMap([KHUNG2]), {
+      movements: [issue(20, 1)],
+    })
+    expect(r[2]).toMatchObject({
+      totalOwned: 4,
+      lockedElsewhere: 1,
+      available: 3,
+      totalPlanned: 4,
+      shortage: 1,
+      hasShortage: true,
+      lockedProjects: [{ id: 20, name: 'Đám cũ', qty: 1 }],
+    })
+  })
+
+  it('đám đã hủy trùng lịch: bỏ kế hoạch nhưng đồ chưa thu về vẫn bị trừ', () => {
+    const cancelled = { id: 12, name: 'Đám hủy', status: 'cancelled', start_date: '2026-12-02', end_date: '2026-12-02' }
+    const r = calcScheduleConflicts(
+      cur,
+      [cur, cancelled],
+      [
+        { project_id: 10, item_id: 2, qty: 2 },
+        { project_id: 12, item_id: 2, qty: 10 },
+      ],
+      makeStockMap([KHUNG4]),
+      { movements: [issue(12, 3)] }
+    )
+    expect(r[2].lockedElsewhere).toBe(3)
+    expect(r[2].available).toBe(1)
+    expect(r[2].totalPlanned).toBe(2)
+    expect(r[2].shortage).toBe(1)
+  })
+
+  it('đã thu về đủ thì không còn bị trừ (tốt + hỏng + mất)', () => {
+    const past = { id: 20, name: 'Đám cũ', status: 'done', start_date: '2026-11-01', end_date: '2026-11-02' }
+    const r = calcScheduleConflicts(cur, [cur, past], [{ project_id: 10, item_id: 2, qty: 4 }], makeStockMap([KHUNG4]), {
+      movements: [issue(20, 3), ret(20, 'return_good', 1), ret(20, 'return_damaged', 1), ret(20, 'return_lost', 1)],
+    })
+    expect(r[2].lockedElsewhere).toBe(0)
+    expect(r[2].hasShortage).toBe(false)
+  })
+
+  it('hai đám chỉ trùng với đám hiện tại, không trùng nhau: lấy đỉnh theo ngày, không cộng chung', () => {
+    const b = { id: 11, name: 'Đám B', status: 'preparing', start_date: '2026-12-01', end_date: '2026-12-01' }
+    const c = { id: 13, name: 'Đám C', status: 'preparing', start_date: '2026-12-03', end_date: '2026-12-03' }
+    const plans = [
+      { project_id: 10, item_id: 2, qty: 2 },
+      { project_id: 11, item_id: 2, qty: 2 },
+      { project_id: 13, item_id: 2, qty: 2 },
+    ]
+    const r = calcScheduleConflicts(cur, [cur, b, c], plans, makeStockMap([KHUNG4]), { movements: [] })
+    expect(r[2].totalPlanned).toBe(4)
+    expect(r[2].hasShortage).toBe(false)
+    expect(r[2].otherProjects.map((p) => p.id).sort()).toEqual([11, 13])
+    // Không truyền movements cũng phải tính đỉnh theo ngày
+    const r2 = calcScheduleConflicts(cur, [cur, b, c], plans, makeStockMap([KHUNG4]))
+    expect(r2[2].totalPlanned).toBe(4)
+    expect(r2[2].hasShortage).toBe(false)
+  })
+
+  it('cùng ngày thì vẫn cộng dồn và báo thiếu', () => {
+    const b = { id: 11, name: 'Đám B', status: 'preparing', start_date: '2026-12-02', end_date: '2026-12-02' }
+    const c = { id: 13, name: 'Đám C', status: 'in_progress', start_date: '2026-12-02', end_date: '2026-12-04' }
+    const plans = [
+      { project_id: 10, item_id: 2, qty: 2 },
+      { project_id: 11, item_id: 2, qty: 2 },
+      { project_id: 13, item_id: 2, qty: 2 },
+    ]
+    const r = calcScheduleConflicts(cur, [cur, b, c], plans, makeStockMap([KHUNG4]), { movements: [] })
+    expect(r[2].totalPlanned).toBe(6)
+    expect(r[2].peakDate).toBe('2026-12-02')
+    expect(r[2].shortage).toBe(2)
+  })
+
+  it('phần đang giữ của mỗi dự án = max(kế hoạch, đã xuất − đã thu/mất/hỏng)', () => {
+    const b = { id: 11, name: 'Đám B', status: 'in_progress', start_date: '2026-12-02', end_date: '2026-12-02' }
+    const r = calcScheduleConflicts(
+      cur,
+      [cur, b],
+      [
+        { project_id: 10, item_id: 2, qty: 1 },
+        { project_id: 11, item_id: 2, qty: 1 },
+      ],
+      makeStockMap([KHUNG4]),
+      { movements: [issue(10, 2), issue(11, 3)] }
+    )
+    // Ngày 02/12: A giữ 2 (đã xuất 2 > kế hoạch 1) + B giữ 3 (đã xuất 3 > kế hoạch 1) = 5 > 4
+    expect(r[2].totalPlanned).toBe(5)
+    expect(r[2].otherProjects).toEqual([{ id: 11, name: 'Đám B', qty: 3 }])
+    expect(r[2].shortage).toBe(1)
+  })
+
+  it('đám đang chạy trùng một phần: đồ đã xuất chưa thu vẫn tính cả những ngày ngoài lịch của đám đó', () => {
+    const b = { id: 11, name: 'Đám B', status: 'in_progress', start_date: '2026-11-30', end_date: '2026-12-01' }
+    const r = calcScheduleConflicts(
+      cur,
+      [cur, b],
+      [
+        { project_id: 10, item_id: 2, qty: 2 },
+        { project_id: 11, item_id: 2, qty: 3 },
+      ],
+      makeStockMap([KHUNG4]),
+      { movements: [issue(11, 1)] }
+    )
+    // 01/12: 2 + max(3,1)=5; 02-03/12: 2 + 1 (chưa thu) = 3 -> đỉnh 5
+    expect(r[2].totalPlanned).toBe(5)
+    expect(r[2].peakDate).toBe('2026-12-01')
+  })
+
+  it('bỏ qua vật tư tiêu hao trong phiếu kho', () => {
+    const past = { id: 20, name: 'Đám cũ', status: 'done', start_date: '2026-11-01', end_date: '2026-11-02' }
+    const r = calcScheduleConflicts(
+      cur,
+      [cur, past],
+      [{ project_id: 10, item_id: 1, qty: 5 }],
+      makeStockMap([HOA, KHUNG4]),
+      { movements: [issue(20, 50, 1)] }
+    )
+    expect(r[1]).toBeUndefined()
   })
 })
 

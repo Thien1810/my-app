@@ -29,6 +29,8 @@ export default function ProjectQuoteTab({
   const [exportingPng, setExportingPng] = useState(false)
   const [savingContract, setSavingContract] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [pushingPlan, setPushingPlan] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [previewImg, setPreviewImg] = useState(null)
 
@@ -189,6 +191,7 @@ export default function ProjectQuoteTab({
   }
 
   const handlePushSetsToPlan = async () => {
+    if (pushingPlan) return
     const templateIds = quoteLines
       .filter((l) => l.template_id)
       .map((l) => ({ template_id: l.template_id, mult: Number(l.qty || 1) }))
@@ -196,9 +199,23 @@ export default function ProjectQuoteTab({
       alert('Chưa có Mẫu set trang trí nào trong báo giá để nạp sang Kế hoạch vật tư.')
       return
     }
-    if (onApplySetsToPlan) {
-      await onApplySetsToPlan(templateIds)
-      setSyncMsg('✓ Đã nạp toàn bộ vật tư định mức của các Set đã chọn sang tab Kế hoạch vật tư!')
+    if (!onApplySetsToPlan) return
+    setPushingPlan(true)
+    setSyncMsg('')
+    setActionError('')
+    try {
+      const res = await onApplySetsToPlan(templateIds)
+      if (res?.ok) {
+        setSyncMsg(
+          `✓ Đã nạp vật tư định mức của các Set đã chọn sang tab Kế hoạch vật tư (${res.count ?? 0} vật tư).`
+        )
+      } else if (!res?.cancelled) {
+        setActionError(res?.error || 'Không nạp được vật tư sang Kế hoạch.')
+      }
+    } catch (err) {
+      setActionError(err?.message || 'Không nạp được vật tư sang Kế hoạch.')
+    } finally {
+      setPushingPlan(false)
     }
   }
 
@@ -208,6 +225,7 @@ export default function ProjectQuoteTab({
       return
     }
     setExportingPng(true)
+    setActionError('')
     try {
       await exportQuoteToPng({
         project,
@@ -216,6 +234,10 @@ export default function ProjectQuoteTab({
         discount: safeDiscount,
         quoteNote,
       })
+    } catch (err) {
+      setActionError(
+        `Không xuất được ảnh báo giá: ${err?.message || 'lỗi không rõ'}. Thử lại, hoặc bỏ bớt ảnh lỗi/quá lớn trong các hạng mục.`
+      )
     } finally {
       setExportingPng(false)
     }
@@ -258,6 +280,11 @@ export default function ProjectQuoteTab({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {syncMsg && <div className="alert alert-success">{syncMsg}</div>}
+      {actionError && (
+        <div className="alert alert-error" style={{ whiteSpace: 'pre-line' }}>
+          {actionError}
+        </div>
+      )}
 
       {/* BƯỚC 1: CHỌN MẪU SET TRANG TRÍ TỪ HÌNH ẢNH */}
       <div className="card">
@@ -423,7 +450,7 @@ export default function ProjectQuoteTab({
               type="button"
               className="btn btn-sm btn-outline"
               onClick={handlePushSetsToPlan}
-              disabled={quoteLines.length === 0}
+              disabled={pushingPlan || quoteLines.length === 0}
               title="Đưa toàn bộ vật tư của các Set trong báo giá sang tab Kế hoạch vật tư"
             >
               📋 Nạp vật tư sang Kế hoạch

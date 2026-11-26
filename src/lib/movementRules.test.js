@@ -6,6 +6,7 @@ import {
   isBlankPurchaseLine,
   priceDeviation,
   checkIssueStock,
+  validateReturnInputs,
 } from './movementRules'
 
 const stock = { name: 'Ghế', in_stock: 5, in_repair: 2, at_project: 3, kind: 'reusable' }
@@ -165,5 +166,61 @@ describe('checkIssueStock', () => {
   it('vật tư không có trong map coi như hết; dòng rỗng bị bỏ qua', () => {
     expect(checkIssueStock([{ item_id: 9, qty: 1 }], map).ok).toBe(false)
     expect(checkIssueStock([{ item_id: '', qty: 1 }, { item_id: 1, qty: 0 }], map).ok).toBe(true)
+  })
+})
+
+describe('validateReturnInputs', () => {
+  const ghe = { item_id: 1, item: { name: 'Ghế', kind: 'reusable' }, issued: 10, return_good: 2, return_damaged: 1, return_lost: 0 }
+  const hoa = { item_id: 2, item: { name: 'Hoa', kind: 'consumable' }, issued: 5, return_good: 1, return_damaged: 0, return_lost: 0 }
+  const stats = [ghe, hoa]
+
+  it('tái sử dụng: tốt + hỏng + mất bằng đúng số còn ở dự án là hợp lệ', () => {
+    const r = validateReturnInputs(stats, { 1: { good: '5', damaged: '1', lost: '1' } })
+    expect(r.ok).toBe(true)
+    expect(r.lines).toEqual([{ item_id: 1, good: 5, damaged: 1, lost: 1 }])
+  })
+
+  it('tái sử dụng: vượt số còn ở dự án thì báo đúng dòng', () => {
+    const r = validateReturnInputs(stats, { 1: { good: 6, damaged: 1, lost: 1 } })
+    expect(r.ok).toBe(false)
+    expect(r.errors).toHaveLength(1)
+    expect(r.errors[0].item_id).toBe(1)
+    expect(r.error).toContain('Ghế')
+    expect(r.error).toContain('7')
+    expect(r.lines).toEqual([])
+  })
+
+  it('tiêu hao: SL dư không vượt đã xuất − đã thu', () => {
+    expect(validateReturnInputs(stats, { 2: { good: 4 } }).ok).toBe(true)
+    const r = validateReturnInputs(stats, { 2: { good: 4.5 } })
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('Hoa')
+  })
+
+  it('tiêu hao: không nhận hỏng/mất', () => {
+    expect(validateReturnInputs(stats, { 2: { good: 1, damaged: 1 } }).ok).toBe(false)
+  })
+
+  it('số âm hoặc không phải số thì lỗi', () => {
+    expect(validateReturnInputs(stats, { 1: { good: -1 } }).ok).toBe(false)
+    expect(validateReturnInputs(stats, { 1: { good: 'abc' } }).ok).toBe(false)
+  })
+
+  it('một dòng sai thì không trả dòng nào để ghi', () => {
+    const r = validateReturnInputs(stats, { 1: { good: 1 }, 2: { good: 99 } })
+    expect(r.ok).toBe(false)
+    expect(r.lines).toEqual([])
+  })
+
+  it('bỏ qua dòng trống; không có gì để ghi thì báo', () => {
+    const r = validateReturnInputs(stats, { 1: { good: '', damaged: '', lost: '' } })
+    expect(r.ok).toBe(false)
+    expect(r.errors).toEqual([])
+    expect(r.lines).toEqual([])
+  })
+
+  it('làm tròn 2 chữ số: 0.1 + 0.2 không báo vượt 0.3', () => {
+    const s = [{ item_id: 3, item: { name: 'Vải', kind: 'reusable' }, issued: 0.3, return_good: 0, return_damaged: 0, return_lost: 0 }]
+    expect(validateReturnInputs(s, { 3: { good: 0.1, damaged: 0.2 } }).ok).toBe(true)
   })
 })

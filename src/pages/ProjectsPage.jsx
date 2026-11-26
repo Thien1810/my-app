@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -14,10 +14,17 @@ import { exportToExcel } from '../lib/exportExcel'
 import { ProjectStatusBadge } from '../components/Badges'
 import ContractValueFields from '../components/ContractValueFields'
 import { useConfirm } from '../components/ConfirmDialog'
-import { saveProjectFinance } from '../lib/financeApi'
+import { saveProjectFinance, getProjectFinance } from '../lib/financeApi'
 import { fetchAllRows } from '../lib/fetchAll'
 import { calcProjectClosure, deleteBlockMessage } from '../lib/projectArchive'
-import { calcProjectFbReminder, stripFbMetaFromNote } from '../lib/watermarkHelper'
+import { calcProjectFbReminder } from '../lib/watermarkHelper'
+import {
+  mergeNoteKeepingFbMeta,
+  diffMembers,
+  statusChangeWarning,
+  cleanProjectNote,
+  financeEditAccess,
+} from '../lib/projectForm'
 import {
   WAREHOUSE_HUBS,
   PROJECT_LEAD_SOURCES,
@@ -53,7 +60,10 @@ export default function ProjectsPage() {
   const [financesMap, setFinancesMap] = useState(new Map())
   const [discountsMap, setDiscountsMap] = useState(new Map())
   const [financeValid, setFinanceValid] = useState(true)
+  const [financeOk, setFinanceOk] = useState(false) // true khi tải được project_finance
   const [membersMap, setMembersMap] = useState(new Map())
+  const [membersOk, setMembersOk] = useState(false) // true khi tải được project_members
+  const [loadWarning, setLoadWarning] = useState('') // lỗi tải phụ, tách khỏi error để không bị thông báo khác xóa mất
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -78,47 +88,100 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false)
   const [modalError, setModalError] = useState('')
   const [financeDirty, setFinanceDirty] = useState(false)
+  const [financeAccess, setFinanceAccess] = useState('ready') // 'ready' | 'verify' | 'locked'
+  // Đội thi công lúc mở form (mốc so sánh khi lưu); null = chưa tải được nên khóa, không ghi
+  const [memberBaseline, setMemberBaseline] = useState([])
+  const savingRef = useRef(false) // chặn bấm đúp Lưu trước khi nút kịp bị khóa
+  const modalErrorRef = useRef(null)
+  const [saveAttempt, setSaveAttempt] = useState(0)
+
+  // Cuộn tới lỗi mỗi lần bấm Lưu; canh giữa để không bị thanh nút dính đáy che trên điện thoại
+  useEffect(() => {
+    if (modalError) modalErrorRef.current?.scrollIntoView({ block: 'center' })
+  }, [modalError, saveAttempt])
 
   const loadData = async () => {
     setLoading(true)
     setError('')
+    setLoadWarning('')
+    setFinanceOk(false)
     try {
+      // fetchAllRows: phân trang vượt giới hạn 1000 dòng, luôn kèm thứ tự ổn định
       const [projRes, custRes, profRes, memRes] = await Promise.all([
-        supabase
-          .from('projects')
-          .select('*, customer:partners(id, name, phone), lead:profiles!projects_lead_id_fkey(id, full_name, email)')
-          .order('created_at', { ascending: false }),
-        supabase.from('partners').select('*').eq('kind', 'customer').order('name'),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('projects')
+            .select('*, customer:partners(id, name, phone), lead:profiles!projects_lead_id_fkey(id, full_name, email)')
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('partners')
+            .select('*')
+            .eq('kind', 'customer')
+            .order('name')
+            .order('id')
+            .range(from, to)
+        ),
         supabase.from('profiles').select('*').neq('role', 'pending').order('full_name'),
-        supabase.from('project_members').select('project_id, user_id'),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('project_members')
+            .select('project_id, user_id')
+            .order('project_id')
+            .order('user_id')
+            .range(from, to)
+        ),
       ])
+
+      // Tải phụ bị lỗi: giữ dữ liệu cũ (nếu có) và báo rõ
+      const warnings = []
+      if (custRes.error) warnings.push(`Không tải được danh sách khách hàng: ${custRes.error.message}`)
+      else setCustomers(custRes.data || [])
+      if (profRes.error) warnings.push(`Không tải được danh sách hồ sơ nhân sự: ${profRes.error.message}`)
+      else setProfiles(profRes.data || [])
+      if (memRes.error) {
+        warnings.push(`Không tải được đội thi công (tạm khóa sửa thành viên): ${memRes.error.message}`)
+        setMembersOk(false)
+      } else {
+        const mMap = new Map()
+        for (const m of memRes.data || []) {
+          if (!mMap.has(m.project_id)) mMap.set(m.project_id, [])
+          mMap.get(m.project_id).push(m.user_id)
+        }
+        setMembersMap(mMap)
+        setMembersOk(true)
+      }
+      setLoadWarning(warnings.join('. '))
 
       if (projRes.error) throw projRes.error
       setProjects(projRes.data || [])
-      setCustomers(custRes.data || [])
-      setProfiles(profRes.data || [])
-
-      const mMap = new Map()
-      for (const m of memRes.data || []) {
-        if (!mMap.has(m.project_id)) mMap.set(m.project_id, [])
-        mMap.get(m.project_id).push(m.user_id)
-      }
-      setMembersMap(mMap)
 
       if (canEditCatalog) {
         // Chỉ Admin/Manager mới đọc cột ưu đãi; Thủ kho chỉ lấy doanh thu
-        const finRes = await supabase
-          .from('project_finance')
-          .select(isManagerOrAdmin ? 'project_id, contract_value, discount' : 'project_id, contract_value')
-        if (finRes.error) throw finRes.error
-        const fMap = new Map()
-        const dMap = new Map()
-        for (const f of finRes.data || []) {
-          fMap.set(Number(f.project_id), Number(f.contract_value || 0))
-          if (isManagerOrAdmin) dMap.set(Number(f.project_id), Number(f.discount || 0))
+        const finRes = await fetchAllRows((from, to) =>
+          supabase
+            .from('project_finance')
+            .select(isManagerOrAdmin ? 'project_id, contract_value, discount' : 'project_id, contract_value')
+            .order('project_id')
+            .range(from, to)
+        )
+        if (finRes.error) {
+          warnings.push(`Không tải được giá trị hợp đồng (tạm khóa sửa tiền): ${finRes.error.message}`)
+          setLoadWarning(warnings.join('. '))
+        } else {
+          const fMap = new Map()
+          const dMap = new Map()
+          for (const f of finRes.data || []) {
+            fMap.set(Number(f.project_id), Number(f.contract_value || 0))
+            if (isManagerOrAdmin) dMap.set(Number(f.project_id), Number(f.discount || 0))
+          }
+          setFinancesMap(fMap)
+          setDiscountsMap(dMap)
+          setFinanceOk(true)
         }
-        setFinancesMap(fMap)
-        setDiscountsMap(dMap)
       }
     } catch (err) {
       setError(err.message || 'Không thể tải danh sách dự án')
@@ -186,6 +249,8 @@ export default function ProjectsPage() {
     setFinanceValid(true)
     setFinanceDirty(false)
     setModalError('')
+    setMemberBaseline(membersOk ? [] : null)
+    setFinanceAccess('ready') // dự án mới: không có số liệu cũ để bị ghi đè
     const today = todayISO()
     setForm({
       ...INITIAL_PROJECT_FORM,
@@ -208,6 +273,8 @@ export default function ProjectsPage() {
       : attr.isExplicit
       ? attr.source
       : 'unknown'
+    setMemberBaseline(membersOk ? membersMap.get(p.id) || [] : null)
+    setFinanceAccess(financeEditAccess(financeOk, financesMap.has(p.id)))
     setForm({
       code: p.code || '',
       name: p.name || '',
@@ -223,7 +290,7 @@ export default function ProjectsPage() {
       member_ids: membersMap.get(p.id) || [],
       lead_source: initialSource,
       warehouse_hub: p.warehouse_code || attr.hub || 'xuan_loc',
-      note: stripProjectAttributionFromNote(stripFbMetaFromNote(p.note || '')),
+      note: cleanProjectNote(p.note),
     })
     setModalOpen(true)
   }
@@ -247,12 +314,19 @@ export default function ProjectsPage() {
 
   const handleSaveProject = async (e) => {
     e.preventDefault()
+    if (savingRef.current) return
+    setSaveAttempt((n) => n + 1)
+    setModalError('')
     if (duplicateProject) {
-      setError(`Mã dự án "${form.code}" đã trùng với dự án "${duplicateProject.name}". Vui lòng bấm "⚡ Sinh mã" để lấy mã kế tiếp.`)
+      setModalError(`Mã dự án "${form.code}" đã trùng với dự án "${duplicateProject.name}". Vui lòng bấm "⚡ Sinh mã" để lấy mã kế tiếp.`)
+      return
+    }
+    if (!form.name.trim()) {
+      setModalError('Hãy nhập tên dự án.')
       return
     }
     if (isManagerOrAdmin && !financeValid) {
-      setError('Ưu đãi không hợp lệ (âm hoặc lớn hơn doanh số). Vui lòng sửa trước khi lưu.')
+      setModalError('Ưu đãi không hợp lệ (âm hoặc lớn hơn doanh số). Vui lòng sửa trước khi lưu.')
       return
     }
     if (
@@ -264,10 +338,16 @@ export default function ProjectsPage() {
       setModalError('Hãy chọn nguồn khách trước khi chuyển dự án khỏi trạng thái báo giá.')
       return
     }
-    setSaving(true)
-    setError('')
-    setModalError('')
+    savingRef.current = true
     try {
+      const warning = statusChangeWarning(
+        editingProject?.status || INITIAL_PROJECT_FORM.status,
+        form.status,
+        form.name.trim()
+      )
+      if (warning && !(await confirm(warning))) return
+      setSaving(true)
+
       const finalCode = form.code.trim().toUpperCase() || null
 
       if (finalCode) {
@@ -280,7 +360,9 @@ export default function ProjectsPage() {
         }
         const { data: dupRows } = await checkQuery
         if (dupRows && dupRows.length > 0) {
-          const freshRes = await supabase.from('projects').select('id, code')
+          const freshRes = await fetchAllRows((from, to) =>
+            supabase.from('projects').select('id, code').order('id').range(from, to)
+          )
           const nextAvailable = generateProjectCode(
             form.start_date,
             freshRes.data || projects,
@@ -311,11 +393,23 @@ export default function ProjectsPage() {
 
       let projectId = editingProject?.id
       if (editingProject) {
+        // Ô ghi chú trong form đã lột thẻ Facebook: đọc note mới nhất ngay trước khi ghi để gắn lại
+        const { data: latest, error: noteErr } = await supabase
+          .from('projects')
+          .select('note')
+          .eq('id', editingProject.id)
+          .single()
+        if (noteErr) {
+          throw new Error(`Chưa lưu: không đọc được ghi chú mới nhất của dự án (${noteErr.message}).`)
+        }
+        payload.note = mergeNoteKeepingFbMeta(payload.note, latest.note)
         const { error: err } = await supabase
           .from('projects')
           .update(payload)
           .eq('id', editingProject.id)
         if (err) throw err
+        // Cập nhật mốc trạng thái để lần Lưu lại không hỏi xác nhận lần nữa
+        setEditingProject((prev) => ({ ...prev, ...payload }))
       } else {
         const { data, error: err } = await supabase
           .from('projects')
@@ -331,45 +425,72 @@ export default function ProjectsPage() {
       // Lưu tài chính dự án (chỉ Admin/Manager, chỉ khi người dùng thực sự sửa ô tiền)
       // Lỗi ở đây không được chặn bước thành viên / loadData bên dưới.
       let financeErrorMsg = ''
-      if (isManagerOrAdmin && projectId && financeDirty) {
+      if (isManagerOrAdmin && projectId && financeDirty && financeAccess !== 'locked') {
         const gross = Number(form.gross_sales || 0)
         const disc = Number(form.discount || 0)
         try {
+          if (financeAccess === 'verify') {
+            // Lúc tải trang chưa thấy dòng tiền: đọc lại để không ghi đè số đã có
+            const { data: existing, error: readErr } = await getProjectFinance(projectId)
+            if (readErr) throw readErr
+            if (existing) {
+              throw new Error(
+                'trên hệ thống đã có số tiền mà form chưa tải, hãy đóng hộp thoại và tải lại trang rồi sửa'
+              )
+            }
+          }
           const { error: finErr } = await saveProjectFinance(projectId, {
             contractValue: gross - disc,
             discount: disc,
           })
           if (finErr) throw finErr
           setFinanceDirty(false)
+          setFinanceAccess('ready')
         } catch (finEx) {
           financeErrorMsg = `Dự án đã lưu nhưng chưa lưu được doanh số/ưu đãi${finEx?.message ? ` (${finEx.message})` : ''}. Bấm Lưu lần nữa để thử lại.`
         }
       }
 
-      // Cập nhật thành viên tham gia dự án
-      if (isManagerOrAdmin && projectId) {
-        await supabase.from('project_members').delete().eq('project_id', projectId)
-        if (form.member_ids.length > 0) {
-          const memberRows = form.member_ids.map((uid) => ({
-            project_id: projectId,
-            user_id: uid,
-          }))
-          const { error: memErr } = await supabase.from('project_members').insert(memberRows)
-          if (memErr) throw memErr
+      // Cập nhật thành viên: chỉ ghi phần thay đổi, thêm trước rồi mới xóa
+      let memberErrorMsg = ''
+      if (isManagerOrAdmin && projectId && memberBaseline !== null) {
+        const { toAdd, toRemove } = diffMembers(memberBaseline, form.member_ids)
+        try {
+          if (toAdd.length > 0) {
+            const { error: addErr } = await supabase.from('project_members').upsert(
+              toAdd.map((uid) => ({ project_id: projectId, user_id: uid })),
+              { onConflict: 'project_id,user_id', ignoreDuplicates: true }
+            )
+            if (addErr) throw addErr
+            // Ghi nhận ngay phần đã thêm, để nếu bước xóa lỗi thì lần Lưu sau vẫn so đúng
+            setMemberBaseline((prev) => [...prev, ...toAdd])
+          }
+          if (toRemove.length > 0) {
+            const { error: delErr } = await supabase
+              .from('project_members')
+              .delete()
+              .eq('project_id', projectId)
+              .in('user_id', toRemove)
+            if (delErr) throw delErr
+            setMemberBaseline((prev) => prev.filter((id) => !toRemove.includes(id)))
+          }
+        } catch (memEx) {
+          memberErrorMsg = `Dự án đã lưu nhưng chưa cập nhật xong đội thi công${memEx?.message ? ` (${memEx.message})` : ''}. Bấm Lưu lần nữa để thử lại.`
         }
       }
 
       await loadData()
-      if (financeErrorMsg) {
-        // loadData() xóa error ngoài modal, nên báo lỗi trong modal và giữ modal mở
-        setModalError(financeErrorMsg)
+      const partialError = [financeErrorMsg, memberErrorMsg].filter(Boolean).join(' ')
+      if (partialError) {
+        // Lưu được một phần: giữ modal mở và báo lỗi trong modal
+        setModalError(partialError)
       } else {
         setModalOpen(false)
       }
     } catch (err) {
-      setError(err.message || 'Lỗi khi lưu dự án')
       setModalError(err.message || 'Lỗi khi lưu dự án')
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -573,7 +694,7 @@ export default function ProjectsPage() {
       if (canEditCatalog) {
         base['Giá trị hợp đồng (₫)'] = financesMap.get(p.id) || 0
       }
-      base['Ghi chú'] = p.note || ''
+      base['Ghi chú'] = cleanProjectNote(p.note)
       return base
     })
     exportToExcel(rows, 'DanhSachDuAn', 'danh-sach-du-an.xlsx')
@@ -593,7 +714,7 @@ export default function ProjectsPage() {
             📥 Xuất Excel
           </button>
           {isManagerOrAdmin && (
-            <button className="btn btn-primary" onClick={openCreateModal}>
+            <button className="btn btn-primary" onClick={openCreateModal} disabled={loading}>
               + Tạo dự án mới
             </button>
           )}
@@ -601,6 +722,18 @@ export default function ProjectsPage() {
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+      {loadWarning && (
+        <div
+          className="alert alert-error"
+          role="alert"
+          style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
+        >
+          <span>{loadWarning}</span>
+          <button type="button" className="btn btn-sm btn-outline" onClick={loadData} disabled={loading}>
+            Tải lại
+          </button>
+        </div>
+      )}
       {notice && (
         <div
           className="alert alert-success"
@@ -832,11 +965,18 @@ export default function ProjectsPage() {
 
       {/* Modal tạo / sửa dự án */}
       {modalOpen && (
-        <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div className="modal-card modal-lg" onClick={(e) => e.stopPropagation()}>
+        // Không đóng bằng chạm nền để khỏi mất dữ liệu đang nhập; chỉ đóng bằng ✕ hoặc Hủy
+        <div className="modal-backdrop">
+          <div className="modal-card modal-lg">
             <div className="modal-header">
               <h3>{editingProject ? 'Cập nhật dự án' : 'Tạo dự án mới'}</h3>
-              <button className="btn-icon" onClick={() => setModalOpen(false)}>
+              <button
+                type="button"
+                className="btn-icon"
+                aria-label="Đóng"
+                disabled={saving}
+                onClick={() => setModalOpen(false)}
+              >
                 ✕
               </button>
             </div>
@@ -1000,7 +1140,14 @@ export default function ProjectsPage() {
 
               </div>
 
-              {canEditCatalog && (
+              {canEditCatalog && financeAccess === 'locked' && (
+                <div className="alert alert-error" role="alert" style={{ marginBottom: 12 }}>
+                  Không tải được giá trị hợp đồng và ưu đãi nên phần tiền bị khóa. Bấm Lưu sẽ không thay đổi
+                  số tiền. Muốn sửa: đóng hộp thoại, bấm "Tải lại" rồi mở lại.
+                </div>
+              )}
+
+              {canEditCatalog && financeAccess !== 'locked' && (
                 <div className="form-grid-2">
                   <ContractValueFields
                     key={editingProject?.id ?? 'new'}
@@ -1055,11 +1202,18 @@ export default function ProjectsPage() {
 
               <div className="form-group">
                 <label>Thành viên tham gia thi công (Nhân viên được phân công sẽ thấy dự án này)</label>
+                {memberBaseline === null && (
+                  <div className="alert alert-error" role="alert" style={{ marginBottom: 8 }}>
+                    Không tải được danh sách đội thi công nên phần này bị khóa. Bấm Lưu sẽ không thay đổi
+                    thành viên. Muốn sửa: đóng hộp thoại, bấm "Tải lại" rồi mở lại.
+                  </div>
+                )}
                 <div className="members-checkbox-grid">
                   {profiles.map((pr) => (
                     <label key={pr.id} className="checkbox-label member-chip">
                       <input
                         type="checkbox"
+                        disabled={saving || memberBaseline === null}
                         checked={form.member_ids.includes(pr.id)}
                         onChange={() => toggleMember(pr.id)}
                       />
@@ -1080,7 +1234,7 @@ export default function ProjectsPage() {
               </div>
 
               {modalError && (
-                <div className="alert alert-error" style={{ marginBottom: 12 }}>
+                <div ref={modalErrorRef} className="alert alert-error" role="alert" style={{ marginBottom: 12 }}>
                   {modalError}
                 </div>
               )}
@@ -1089,6 +1243,7 @@ export default function ProjectsPage() {
                 <button
                   type="button"
                   className="btn btn-outline"
+                  disabled={saving}
                   onClick={() => setModalOpen(false)}
                 >
                   Hủy

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/AuthContext'
 import { formatDate, todayISO } from '../lib/formatters'
 import {
   WATERMARK_COLORS,
@@ -19,6 +20,8 @@ import { generateFacebookCaptionWithAi, getSavedGeminiKey } from '../lib/aiSeoWr
 import AiLoadingBanner from './AiLoadingBanner'
 
 export default function ProjectFacebookTab({ project, templates = [], onProjectUpdated }) {
+  // RLS: chỉ admin/manager được sửa bảng projects
+  const { isManagerOrAdmin } = useAuth()
   const [status, setStatus] = useState('unposted')
   const [fbUrl, setFbUrl] = useState('')
   const [caption, setCaption] = useState('')
@@ -33,6 +36,8 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
   const [aiCaptionBusy, setAiCaptionBusy] = useState(false)
   const [aiErr, setAiErr] = useState('')
   const [msg, setMsg] = useState('')
+  const [saveErr, setSaveErr] = useState('')
+  const [storageErr, setStorageErr] = useState('')
   const [previewImg, setPreviewImg] = useState(null)
 
   useEffect(() => {
@@ -67,7 +72,9 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
       images,
       ...nextOverrides,
     }
-    saveProjectFbData(project?.id, payload)
+    const res = saveProjectFbData(project?.id, payload)
+    setStorageErr(res.ok ? '' : res.error)
+    return res
   }
 
   // Cập nhật lại Watermark trên toàn bộ ảnh đã tải lên khi đổi Màu (Trắng/Đen), Vị trí, Kích thước, Độ đậm
@@ -253,25 +260,51 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
   }
 
   const handleSaveStatusToCloud = async (newStatus = status) => {
+    if (savingMeta) return
     setSavingMeta(true)
     setMsg('')
-    try {
-      const nextPostedAt =
-        newStatus === 'posted' ? postedAt || todayISO() : postedAt
-      setStatus(newStatus)
-      setPostedAt(nextPostedAt)
-      persistLocal({ status: newStatus, postedAt: nextPostedAt })
+    setSaveErr('')
+    const nextPostedAt = newStatus === 'posted' ? postedAt || todayISO() : postedAt
+    setStatus(newStatus)
+    setPostedAt(nextPostedAt)
+    const local = persistLocal({ status: newStatus, postedAt: nextPostedAt })
 
-      const updatedNote = attachFbMetaToNote(project?.note || '', {
+    if (!isManagerOrAdmin) {
+      // Vai trò này không có quyền sửa dự án trên hệ thống: chỉ lưu trên máy.
+      setSaveErr(
+        local.ok
+          ? 'Chỉ lưu trên máy này: vai trò của bạn không có quyền cập nhật dự án nên trạng thái bài đăng CHƯA lưu lên hệ thống (người khác sẽ không thấy). Nhờ Quản lý/Quản trị đánh dấu.'
+          : 'Không lưu được: vai trò của bạn không có quyền cập nhật dự án và bộ nhớ trình duyệt cũng không lưu được.'
+      )
+      setSavingMeta(false)
+      return
+    }
+
+    try {
+      // Đọc ghi chú mới nhất ngay trước khi ghi để không đè phần ghi chú người khác vừa sửa.
+      const { data: fresh, error: readErr } = await supabase
+        .from('projects')
+        .select('note')
+        .eq('id', project.id)
+        .maybeSingle()
+      if (readErr) throw readErr
+      if (!fresh) throw new Error('Không đọc được dự án (có thể không có quyền).')
+
+      const updatedNote = attachFbMetaToNote(fresh.note || '', {
         status: newStatus,
         fbUrl,
         postedAt: nextPostedAt,
       })
 
-      await supabase
+      const { data: updated, error: updErr } = await supabase
         .from('projects')
         .update({ note: updatedNote })
         .eq('id', project.id)
+        .select('id')
+      if (updErr) throw updErr
+      if (!updated || updated.length === 0) {
+        throw new Error('Hệ thống không cho cập nhật dự án này (không có quyền).')
+      }
 
       if (onProjectUpdated) onProjectUpdated()
       setMsg(
@@ -279,8 +312,12 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           ? '🎉 Đã đánh dấu dự án ĐÃ ĐĂNG LÊN FACEBOOK (tắt cảnh báo nhắc 5 ngày)!'
           : '✓ Đã lưu thông tin bài đăng Facebook của dự án!'
       )
-    } catch {
-      setMsg('✓ Đã lưu trạng thái bài đăng Facebook trên trình duyệt!')
+    } catch (err) {
+      setSaveErr(
+        `Chưa lưu được lên hệ thống: ${err?.message || 'lỗi không rõ'}.${
+          local.ok ? ' Trạng thái mới chỉ đang lưu trên máy này.' : ''
+        }`
+      )
     } finally {
       setSavingMeta(false)
     }
@@ -308,6 +345,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           <button
             type="button"
             className="btn btn-sm btn-primary"
+            disabled={savingMeta}
             onClick={() => handleSaveStatusToCloud('posted')}
           >
             ✅ Đánh dấu Đã đăng Fanpage
@@ -316,6 +354,8 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
       )}
 
       {msg && <div className="alert alert-success">{msg}</div>}
+      {saveErr && <div className="alert alert-error">{saveErr}</div>}
+      {storageErr && <div className="alert alert-error">{storageErr}</div>}
 
       {/* PHẦN 1: TẢI ẢNH LÊN & TỰ ĐỘNG ĐÓNG DẤU WATERMARK ĐẶNG WEDDING (TRẮNG / ĐEN) */}
       <div className="card">

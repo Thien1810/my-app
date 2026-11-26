@@ -74,6 +74,85 @@ export function checkIssueStock(lines, stockMap) {
   }
 }
 
+// Kiểm tra số thu hồi nhập ở tab Thu hồi của dự án -> { ok, error, errors:[{ item_id, name, message }], lines }.
+// stats: dòng của calcProjectItemStats ({ item_id, item:{name,kind}, issued, return_good, return_damaged, return_lost }).
+// inputs: { [item_id]: { good, damaged, lost } } (chuỗi rỗng = 0).
+// Tái sử dụng: tốt + hỏng + mất <= còn ở dự án (đã xuất − đã thu tốt/hỏng/mất).
+// Tiêu hao: SL dư (good) <= đã xuất − đã thu dư; không nhận hỏng/mất.
+// Có bất kỳ dòng sai thì lines = [] (không ghi gì).
+export function validateReturnInputs(stats, inputs) {
+  const errors = []
+  const lines = []
+  const val = (v) => (v === '' || v === null || v === undefined ? 0 : num(v))
+  for (const row of stats || []) {
+    const inp = inputs?.[row.item_id]
+    if (!inp) continue
+    const name = row.item?.name || `Vật tư #${row.item_id}`
+    const good = val(inp.good)
+    const damaged = val(inp.damaged)
+    const lost = val(inp.lost)
+    if (![good, damaged, lost].every(Number.isFinite)) {
+      errors.push({ item_id: row.item_id, name, message: `- ${name}: số lượng không hợp lệ.` })
+      continue
+    }
+    if (good < 0 || damaged < 0 || lost < 0) {
+      errors.push({ item_id: row.item_id, name, message: `- ${name}: số lượng không được là số âm.` })
+      continue
+    }
+    if (good + damaged + lost === 0) continue
+    const issued = Number(row.issued) || 0
+    const rg = Number(row.return_good) || 0
+    if (row.item?.kind === 'reusable') {
+      const cap = Math.max(0, issued - rg - (Number(row.return_damaged) || 0) - (Number(row.return_lost) || 0))
+      const total = good + damaged + lost
+      if (Math.round(total * 100) > Math.round(cap * 100)) {
+        errors.push({
+          item_id: row.item_id,
+          name,
+          message: `- ${name}: tốt + hỏng + mất = ${fmt(total)}, vượt số còn ở dự án (${fmt(cap)}).`,
+        })
+        continue
+      }
+    } else {
+      if (damaged > 0 || lost > 0) {
+        errors.push({
+          item_id: row.item_id,
+          name,
+          message: `- ${name}: vật tư tiêu hao chỉ nhập SL dư trả kho, không nhập hỏng/mất.`,
+        })
+        continue
+      }
+      const cap = Math.max(0, issued - rg)
+      if (Math.round(good * 100) > Math.round(cap * 100)) {
+        errors.push({
+          item_id: row.item_id,
+          name,
+          message: `- ${name}: SL dư ${fmt(good)} vượt số đã xuất chưa trả (${fmt(cap)}).`,
+        })
+        continue
+      }
+    }
+    lines.push({ item_id: row.item_id, good, damaged, lost })
+  }
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      error: `Số thu hồi không hợp lệ, chưa ghi phiếu nào:\n${errors.map((e) => e.message).join('\n')}`,
+      errors,
+      lines: [],
+    }
+  }
+  if (lines.length === 0) {
+    return {
+      ok: false,
+      error: 'Vui lòng nhập số lượng thu hồi (Tốt / Hỏng / Mất / SL dư) cho ít nhất 1 vật tư.',
+      errors: [],
+      lines: [],
+    }
+  }
+  return { ok: true, error: '', errors: [], lines }
+}
+
 // Dòng nhập mua hoàn toàn trống (chưa chọn vật tư, chưa nhập giá, số lượng mặc định/0) thì được bỏ qua.
 export function isBlankPurchaseLine(l) {
   const q = num(l?.qty)

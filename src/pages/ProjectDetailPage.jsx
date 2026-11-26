@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -16,7 +16,7 @@ import {
   calcProjectFinancialSummary,
 } from '../lib/calc'
 import { fetchAllRows } from '../lib/fetchAll'
-import { checkIssueStock } from '../lib/movementRules'
+import { checkIssueStock, validateReturnInputs } from '../lib/movementRules'
 import { exportToExcel } from '../lib/exportExcel'
 import {
   KindBadge,
@@ -28,17 +28,42 @@ import ProjectQuoteTab from '../components/ProjectQuoteTab'
 import ProjectFacebookTab from '../components/ProjectFacebookTab'
 import ProjectAdvancesPanel from '../components/finance/ProjectAdvancesPanel'
 import { calcProjectFbReminder } from '../lib/watermarkHelper'
+import { extractProjectAttribution } from '../lib/metaAdsClient'
+import { useConfirm } from '../components/ConfirmDialog'
+
+// Cột item_stock dùng trong trang này (không kéo image_url/note để nhẹ dữ liệu)
+const ITEM_STOCK_COLUMNS = 'id, code, name, kind, unit, cost, expected_uses, active, in_stock, at_project'
+const PROJECT_MOVE_TYPES = ['issue', 'return_good', 'return_damaged', 'return_lost']
+
+// Nguồn khách hiệu lực của dự án, cùng cách ProjectsPage mở form sửa:
+// ưu tiên cột lead_source/warehouse_code; chưa có mới dùng suy luận cũ từ note.
+function effectiveLeadSource(p) {
+  if (!p) return 'unknown'
+  const hasColumnAttr = (p.lead_source && p.lead_source !== 'unknown') || !!p.warehouse_code
+  if (hasColumnAttr) return p.lead_source || 'unknown'
+  const attr = extractProjectAttribution(p)
+  return attr.isExplicit ? attr.source || 'unknown' : 'unknown'
+}
 
 export default function ProjectDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
   const projectId = Number(id)
   const { isManagerOrAdmin, canEditCatalog, isStaff } = useAuth()
+  const { confirm, confirmDialog } = useConfirm()
+  // Chặn bấm đúp: state busy chỉ có hiệu lực sau lần render kế tiếp, ref thì ngay lập tức.
+  const statusBusyRef = useRef(false)
+  const planBusyRef = useRef(false)
+  const returnBusyRef = useRef(false)
 
   const [project, setProject] = useState(null)
   const [items, setItems] = useState([])
   const [allProjects, setAllProjects] = useState([])
   const [allPlans, setAllPlans] = useState([])
+  // Phiếu kho của mọi dự án (chỉ cột cần) để biết đồ còn ở đám nào; null = không tải được
+  const [allProjectMoves, setAllProjectMoves] = useState(null)
+  const [conflictDataIncomplete, setConflictDataIncomplete] = useState(false)
+  const [busyStatus, setBusyStatus] = useState(false)
   const [projectPlanRows, setProjectPlanRows] = useState([])
   const [planLoadFailed, setPlanLoadFailed] = useState(false)
   const [movesLoadFailed, setMovesLoadFailed] = useState(false)
@@ -98,6 +123,7 @@ export default function ProjectDetailPage() {
         tplRes,
         movesRes,
         memRes,
+        allMovesRes,
       ] = await Promise.all([
         supabase
           .from('projects')
@@ -106,8 +132,21 @@ export default function ProjectDetailPage() {
           )
           .eq('id', projectId)
           .maybeSingle(),
-        supabase.from('item_stock').select('*').order('name'),
-        supabase.from('projects').select('id, code, name, start_date, end_date, status'),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('item_stock')
+            .select(ITEM_STOCK_COLUMNS)
+            .order('name')
+            .order('id')
+            .range(from, to)
+        ),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('projects')
+            .select('id, code, name, start_date, end_date, status')
+            .order('id')
+            .range(from, to)
+        ),
         fetchAllRows((from, to) =>
           supabase
             .from('project_plan')
@@ -131,6 +170,15 @@ export default function ProjectDetailPage() {
           .from('project_members')
           .select('user_id, profile:profiles(id, full_name, email)')
           .eq('project_id', projectId),
+        fetchAllRows((from, to) =>
+          supabase
+            .from('stock_movements')
+            .select('id, project_id, item_id, type, qty')
+            .not('project_id', 'is', null)
+            .in('type', PROJECT_MOVE_TYPES)
+            .order('id')
+            .range(from, to)
+        ),
       ])
 
       if (projRes.error) throw projRes.error
@@ -145,6 +193,7 @@ export default function ProjectDetailPage() {
       if (tplRes.error) warnings.push('mẫu set')
       if (movesRes.error) warnings.push('phiếu kho của dự án')
       if (memRes.error) warnings.push('thành viên dự án')
+      if (allMovesRes.error) warnings.push('phiếu kho các dự án (cảnh báo trùng lịch)')
       setPlanLoadFailed(!!myPlanRes.error)
       setMovesLoadFailed(!!movesRes.error)
       setProjectPlanRows(myPlanRes.data || [])
@@ -153,6 +202,8 @@ export default function ProjectDetailPage() {
       setTemplates(tplRes.data || [])
       setMovements(movesRes.data || [])
       setMembers((memRes.data || []).map((m) => m.profile).filter(Boolean))
+      setAllProjectMoves(allMovesRes.error ? null : allMovesRes.data || [])
+      setConflictDataIncomplete(!!(allProjRes.error || allPlansRes.error || allMovesRes.error))
 
       if (canEditCatalog) {
         const finRes = await supabase
@@ -200,8 +251,14 @@ export default function ProjectDetailPage() {
   }, [projectPlanRows, itemMap])
 
   const conflicts = useMemo(() => {
-    return calcScheduleConflicts(project, allProjects, allPlans, itemMap)
-  }, [project, allProjects, allPlans, itemMap])
+    return calcScheduleConflicts(project, allProjects, allPlans, itemMap, {
+      movements: allProjectMoves || undefined,
+    })
+  }, [project, allProjects, allPlans, itemMap, allProjectMoves])
+
+  // Nhân viên bị RLS che dữ liệu dự án khác (và số tồn của item_stock), hoặc tải thiếu dữ liệu:
+  // không được khẳng định "Đủ đồ".
+  const conflictLimited = isStaff || conflictDataIncomplete
 
   const itemStats = useMemo(() => {
     return calcProjectItemStats(movements, itemMap)
@@ -227,18 +284,70 @@ export default function ProjectDetailPage() {
 
   // Cập nhật nhanh trạng thái dự án (Admin/Manager)
   const handleStatusChange = async (newStatus) => {
+    if (!project || statusBusyRef.current || newStatus === project.status) return
     setError('')
     setSuccess('')
+    // Cùng yêu cầu như form sửa ở ProjectsPage
+    if (
+      newStatus !== 'quote' &&
+      newStatus !== 'cancelled' &&
+      effectiveLeadSource(project) === 'unknown'
+    ) {
+      setError(
+        'Hãy chọn nguồn khách trước khi chuyển dự án khỏi trạng thái báo giá (mở "Sửa" dự án ở trang Danh sách dự án).'
+      )
+      return
+    }
+
+    const fromLabel = PROJECT_STATUS_LABELS[project.status] || project.status
+    const toLabel = PROJECT_STATUS_LABELS[newStatus] || newStatus
+    const lines = [`Chuyển dự án "${project.name}" từ "${fromLabel}" sang "${toLabel}"?`]
+    const closing = newStatus === 'cancelled' || newStatus === 'done'
+    if (newStatus === 'cancelled') {
+      lines.push('Dự án hủy: doanh thu tính 0 trong P&L, chi phí đã phát sinh vẫn tính vào tháng hủy.')
+    }
+    if (closing) {
+      if (movesLoadFailed) {
+        lines.push('⚠️ Không tải được phiếu kho của dự án nên không kiểm tra được đồ chưa thu hồi.')
+      } else {
+        const pending = itemStats.filter((r) => r.item.kind === 'reusable' && r.outstanding > 0)
+        if (pending.length > 0) {
+          const list = pending
+            .slice(0, 8)
+            .map((r) => `- ${r.item.name}: ${formatNumber(r.outstanding)} ${r.item.unit || ''}`.trim())
+          if (pending.length > 8) list.push(`- ... và ${pending.length - 8} vật tư khác`)
+          lines.push(
+            `⚠️ Còn ${pending.length} đồ tái sử dụng CHƯA thu hồi (vẫn được phép chuyển, nhưng nên thu hồi hoặc ghi hỏng/mất):\n${list.join('\n')}`
+          )
+        }
+      }
+    }
+    statusBusyRef.current = true
+    setBusyStatus(true)
     try {
-      const { error: err } = await supabase
+      const ok = await confirm({
+        title: `Chuyển sang ${toLabel}`,
+        message: lines.join('\n\n'),
+        confirmLabel: 'Chuyển trạng thái',
+        danger: closing,
+      })
+      if (!ok) return
+      const { data: updated, error: err } = await supabase
         .from('projects')
         .update({ status: newStatus })
         .eq('id', projectId)
+        .select('id')
       if (err) throw err
-      setSuccess(`Đã chuyển trạng thái dự án sang "${PROJECT_STATUS_LABELS[newStatus]}"`)
+      if (!updated || updated.length === 0) {
+        throw new Error('Hệ thống không cho cập nhật dự án này (không có quyền).')
+      }
+      setSuccess(`Đã chuyển trạng thái dự án sang "${toLabel}"`)
       await loadAll()
     } catch (err) {
       setError(err.message || 'Không thể đổi trạng thái dự án')
+    } finally {
+      statusBusyRef.current = false
+      setBusyStatus(false)
     }
   }
 
@@ -317,46 +426,83 @@ export default function ProjectDetailPage() {
     }
   }
 
-  const handleApplyQuoteSetsToPlan = async (templateEntries = []) => {
+  // Cộng thêm SL vật tư của các mẫu set vào kế hoạch (KHÔNG thay thế).
+  // entries: [{ template_id, mult }]. Nếu kế hoạch đã có vật tư trùng thì hỏi xác nhận trước.
+  // Trả { ok, count } | { ok:false, cancelled:true } | { ok:false, error }.
+  const addTemplatesToPlan = async (entries) => {
+    if (planBusyRef.current) return { ok: false, cancelled: true }
+    if (planLoadFailed) {
+      return {
+        ok: false,
+        error: 'Không tải được kế hoạch vật tư hiện tại nên không thể cộng thêm (tránh ghi sai số). Hãy tải lại trang.',
+      }
+    }
+    const addMap = new Map()
+    for (const entry of entries) {
+      const tpl = templates.find((t) => Number(t.id) === Number(entry.template_id))
+      if (!tpl?.items) continue
+      const mult = Number(entry.mult)
+      const m = Number.isFinite(mult) && mult > 0 ? mult : 1
+      for (const ti of tpl.items) {
+        const itemId = Number(ti.item_id)
+        const addQty = Number(ti.qty || 0) * m
+        if (addQty > 0) addMap.set(itemId, (addMap.get(itemId) || 0) + addQty)
+      }
+    }
+    if (addMap.size === 0) {
+      return { ok: false, error: 'Các mẫu set đã chọn chưa có vật tư nào để nạp sang kế hoạch.' }
+    }
+    const existingMap = new Map()
+    for (const p of projectPlan) existingMap.set(Number(p.item_id), Number(p.qty))
+
+    planBusyRef.current = true
     setBusyPlan(true)
-    setError('')
     try {
-      const existingMap = new Map()
-      for (const p of projectPlan) {
-        existingMap.set(Number(p.item_id), Number(p.qty))
+      const dup = [...addMap.keys()].filter((id) => existingMap.has(id))
+      if (dup.length > 0) {
+        const list = dup.slice(0, 8).map((id) => {
+          const it = itemMap.get(id)
+          const unit = it?.unit || ''
+          return `- ${it?.name || `Vật tư #${id}`}: ${formatNumber(existingMap.get(id))} + ${formatNumber(addMap.get(id))} = ${formatNumber(existingMap.get(id) + addMap.get(id))} ${unit}`.trim()
+        })
+        if (dup.length > 8) list.push(`- ... và ${dup.length - 8} vật tư khác`)
+        const ok = await confirm({
+          title: 'Cộng thêm vào kế hoạch',
+          message: `Kế hoạch đã có ${dup.length} vật tư trùng với mẫu set. Số lượng sẽ được CỘNG THÊM vào số đang có (không thay thế):\n${list.join('\n')}\n\nTiếp tục?`,
+          confirmLabel: 'Cộng thêm',
+        })
+        if (!ok) return { ok: false, cancelled: true }
       }
-      for (const entry of templateEntries) {
-        const tpl = templates.find((t) => Number(t.id) === Number(entry.template_id))
-        if (!tpl?.items) continue
-        const mult = Number(entry.mult || 1)
-        for (const ti of tpl.items) {
-          const itemId = Number(ti.item_id)
-          const addQty = Number(ti.qty || 0) * mult
-          if (addQty > 0) {
-            existingMap.set(itemId, (existingMap.get(itemId) || 0) + addQty)
-          }
-        }
-      }
-      const rows = Array.from(existingMap.entries()).map(([item_id, qty]) => ({
-        project_id: Number(projectId),
-        item_id,
-        qty,
-      }))
-      if (rows.length > 0) {
-        const { error: err } = await supabase
-          .from('project_plan')
-          .upsert(rows, { onConflict: 'project_id,item_id' })
-        if (err) throw err
-      }
+      const rows = [...addMap.entries()]
+        .map(([item_id, add]) => ({
+          project_id: Number(projectId),
+          item_id,
+          qty: (existingMap.get(item_id) || 0) + add,
+        }))
+        .sort((a, b) => a.item_id - b.item_id)
+      const { error: err } = await supabase
+        .from('project_plan')
+        .upsert(rows, { onConflict: 'project_id,item_id' })
+      if (err) return { ok: false, error: err.message || 'Lỗi khi ghi kế hoạch vật tư.' }
       await loadAll()
+      return { ok: true, count: rows.length }
     } catch (err) {
-      setError(err.message || 'Lỗi khi nạp vật tư từ báo giá sang kế hoạch')
+      return { ok: false, error: err?.message || 'Lỗi khi ghi kế hoạch vật tư.' }
     } finally {
+      planBusyRef.current = false
       setBusyPlan(false)
     }
   }
 
+  // Gọi từ tab Báo giá: tab tự hiện kết quả (thành công/lỗi) theo giá trị trả về.
+  const handleApplyQuoteSetsToPlan = async (templateEntries = []) => {
+    return addTemplatesToPlan(templateEntries)
+  }
+
   const handleApplyTemplate = async () => {
+    if (planBusyRef.current) return
+    setError('')
+    setSuccess('')
     if (!selectedTemplateId) {
       setError('Vui lòng chọn một mẫu set trang trí để áp dụng.')
       return
@@ -366,34 +512,12 @@ export default function ProjectDetailPage() {
       setError('Mẫu set này chưa có vật tư nào.')
       return
     }
-
-    setBusyPlan(true)
-    setError('')
-    setSuccess('')
-    try {
-      const existingMap = new Map()
-      for (const p of projectPlan) {
-        existingMap.set(Number(p.item_id), Number(p.qty))
-      }
-
-      const upserts = tpl.items.map((ti) => ({
-        project_id: projectId,
-        item_id: Number(ti.item_id),
-        qty: (existingMap.get(Number(ti.item_id)) || 0) + Number(ti.qty),
-      }))
-
-      const { error: err } = await supabase
-        .from('project_plan')
-        .upsert(upserts, { onConflict: 'project_id,item_id' })
-      if (err) throw err
-
-      setSuccess(`Đã áp dụng mẫu set "${tpl.name}" (${upserts.length} vật tư) vào kế hoạch!`)
+    const res = await addTemplatesToPlan([{ template_id: tpl.id, mult: 1 }])
+    if (res.ok) {
+      setSuccess(`Đã áp dụng mẫu set "${tpl.name}" (${res.count} vật tư) vào kế hoạch!`)
       setSelectedTemplateId('')
-      await loadAll()
-    } catch (err) {
-      setError(err.message || 'Lỗi khi áp dụng mẫu set')
-    } finally {
-      setBusyPlan(false)
+    } else if (!res.cancelled) {
+      setError(res.error || 'Lỗi khi áp dụng mẫu set')
     }
   }
 
@@ -504,6 +628,8 @@ export default function ProjectDetailPage() {
         setError(check.error)
         return
       }
+      // Sắp theo item_id như xuất theo kế hoạch: khóa dòng vật tư ở DB cùng thứ tự, tránh deadlock
+      rows.sort((a, b) => a.item_id - b.item_id)
       const { error: err } = await supabase.from('stock_movements').insert(rows)
       if (err) throw err
       setSuccess(`Đã lập phiếu xuất ${rows.length} dòng vật tư cho dự án!`)
@@ -528,18 +654,35 @@ export default function ProjectDetailPage() {
     }))
   }
 
-  const handleFillAllGood = () => {
-    const next = {}
-    for (const row of itemStats) {
-      if (row.item.kind === 'reusable' && row.outstanding > 0) {
-        next[row.item_id] = {
-          good: row.outstanding,
-          damaged: 0,
-          lost: 0,
-        }
-      }
+  const handleFillAllGood = async () => {
+    const targets = itemStats.filter((row) => row.item.kind === 'reusable' && row.outstanding > 0)
+    if (targets.length === 0) return
+    const isTyped = (inp) =>
+      !!inp && ['good', 'damaged', 'lost'].some((f) => inp[f] !== '' && inp[f] != null)
+    const typed = targets.filter((row) => isTyped(returnInputs[row.item_id]))
+    let overwrite = false
+    if (typed.length > 0) {
+      overwrite = await confirm({
+        title: 'Ghi đè số đã nhập?',
+        message: `Đã có số nhập tay cho ${typed.length} vật tư (${typed
+          .slice(0, 5)
+          .map((r) => r.item.name)
+          .join(', ')}${typed.length > 5 ? ', ...' : ''}).
+
+Ghi đè = điền lại toàn bộ là "Tốt 100%".
+Giữ số đã nhập = chỉ điền các dòng còn trống.`,
+        confirmLabel: 'Ghi đè',
+        cancelLabel: 'Giữ số đã nhập',
+      })
     }
-    setReturnInputs(next)
+    setReturnInputs((prev) => {
+      const next = { ...prev }
+      for (const row of targets) {
+        if (!overwrite && isTyped(prev[row.item_id])) continue
+        next[row.item_id] = { good: row.outstanding, damaged: 0, lost: 0 }
+      }
+      return next
+    })
   }
 
   const handleSubmitReturns = async (e) => {
@@ -547,58 +690,55 @@ export default function ProjectDetailPage() {
     setError('')
     setSuccess('')
 
+    // ref chặn được bấm đúp ngay cả khi state chưa kịp cập nhật
+    if (returnBusyRef.current) return
+    if (movesLoadFailed) {
+      setError('Không tải được phiếu kho của dự án nên không biết còn bao nhiêu đồ ở dự án. Hãy tải lại trang trước khi thu hồi.')
+      return
+    }
+    const check = validateReturnInputs(itemStats, returnInputs)
+    if (!check.ok) {
+      setError(check.error)
+      return
+    }
+    const statById = new Map(itemStats.map((r) => [Number(r.item_id), r]))
     const rowsToInsert = []
-    for (const row of itemStats) {
-      const inp = returnInputs[row.item_id]
-      if (!inp) continue
-      const good = Number(inp.good || 0)
-      const damaged = Number(inp.damaged || 0)
-      const lost = Number(inp.lost || 0)
-
-      if (good < 0 || damaged < 0 || lost < 0) {
-        setError(`Số lượng thu hồi không được là số âm (vật tư: ${row.item.name}).`)
-        return
+    for (const line of check.lines) {
+      const row = statById.get(Number(line.item_id))
+      const base = {
+        moved_at: returnDate || todayISO(),
+        item_id: row.item_id,
+        project_id: projectId,
       }
-
-      if (good > 0) {
+      if (line.good > 0) {
         rowsToInsert.push({
-          moved_at: returnDate || todayISO(),
+          ...base,
           type: 'return_good',
-          item_id: row.item_id,
-          project_id: projectId,
-          qty: good,
+          qty: line.good,
           note:
             returnNote.trim() ||
             (row.item.kind === 'consumable' ? 'Thu hồi vật tư tiêu hao dư' : 'Thu hồi đồ tốt'),
         })
       }
-      if (damaged > 0) {
+      if (line.damaged > 0) {
         rowsToInsert.push({
-          moved_at: returnDate || todayISO(),
+          ...base,
           type: 'return_damaged',
-          item_id: row.item_id,
-          project_id: projectId,
-          qty: damaged,
+          qty: line.damaged,
           note: returnNote.trim() || 'Thu hồi đồ bị hỏng (chờ sửa)',
         })
       }
-      if (lost > 0) {
+      if (line.lost > 0) {
         rowsToInsert.push({
-          moved_at: returnDate || todayISO(),
+          ...base,
           type: 'return_lost',
-          item_id: row.item_id,
-          project_id: projectId,
-          qty: lost,
+          qty: line.lost,
           note: returnNote.trim() || 'Báo mất vật tư tại dự án',
         })
       }
     }
 
-    if (rowsToInsert.length === 0) {
-      setError('Vui lòng nhập số lượng thu hồi (Tốt / Hỏng / Mất / SL dư) cho ít nhất 1 vật tư.')
-      return
-    }
-
+    returnBusyRef.current = true
     setBusyReturn(true)
     try {
       rowsToInsert.sort((a, b) => a.item_id - b.item_id)
@@ -611,6 +751,7 @@ export default function ProjectDetailPage() {
     } catch (err) {
       setError(err.message || 'Lỗi khi ghi nhận thu hồi vật tư')
     } finally {
+      returnBusyRef.current = false
       setBusyReturn(false)
     }
   }
@@ -618,7 +759,22 @@ export default function ProjectDetailPage() {
   // --- TAB 4: CHI PHÍ KHÁC ---
   const handleAddCost = async (e) => {
     e.preventDefault()
-    if (!costKind.trim() || !costAmount || Number(costAmount) <= 0) return
+    if (busyCost) return
+    if (!costKind.trim()) {
+      setSuccess('')
+      setError('Vui lòng nhập khoản mục chi phí.')
+      return
+    }
+    const amount = Number(costAmount)
+    if (!costAmount || !Number.isFinite(amount) || amount <= 0) {
+      setSuccess('')
+      setError(
+        amount < 0
+          ? 'Số tiền chi phí không được là số âm.'
+          : 'Vui lòng nhập số tiền chi phí lớn hơn 0.'
+      )
+      return
+    }
     setBusyCost(true)
     setError('')
     setSuccess('')
@@ -708,6 +864,7 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="page-container">
+      {confirmDialog}
       {/* Header dự án */}
       <div className="page-header">
         <div>
@@ -765,6 +922,7 @@ export default function ProjectDetailPage() {
             <select
               value={project.status}
               onChange={(e) => handleStatusChange(e.target.value)}
+              disabled={busyStatus}
               className="status-select"
             >
               {Object.entries(PROJECT_STATUS_LABELS).map(([k, label]) => (
@@ -904,8 +1062,19 @@ export default function ProjectDetailPage() {
               <p className="text-xs text-muted">
                 Hệ thống tự động kiểm tra các dự án có ngày thi công/tháo dỡ giao với dự án này (
                 {formatDate(project.start_date)} → {formatDate(project.end_date)}) để cảnh báo nếu
-                tổng đồ tái sử dụng vượt quá tổng sở hữu (Trong kho + Đang ở dự án).
+                đồ tái sử dụng cần trong NGÀY cao điểm vượt số sẵn có (Tổng sở hữu − đồ còn nằm ở
+                các đám khác chưa thu về). Mỗi đám tính phần lớn hơn giữa kế hoạch và số đã xuất
+                chưa thu.
               </p>
+              {conflictLimited && (
+                <p className="text-xs text-amber" style={{ marginTop: 4 }}>
+                  ⚠️ Không đủ dữ liệu để khẳng định đủ đồ:{' '}
+                  {isStaff
+                    ? 'tài khoản nhân viên chỉ xem được các dự án mình tham gia nên không thấy lịch và tồn của các đám khác.'
+                    : 'chưa tải được đủ dự án/kế hoạch/phiếu kho của các đám khác.'}{' '}
+                  Hãy hỏi Thủ kho/Quản lý trước khi chốt đồ.
+                </p>
+              )}
             </div>
           </div>
 
@@ -1054,8 +1223,13 @@ export default function ProjectDetailPage() {
                               <strong>
                                 🚨 Thiếu {formatNumber(conf.shortage)} {item.unit}!
                               </strong>{' '}
-                              (Tổng đặt trùng lịch: {formatNumber(conf.totalPlanned)} / Sở hữu:{' '}
-                              {formatNumber(conf.totalOwned)})
+                              (Cần ngày cao điểm
+                              {conf.peakDate ? ` ${formatDate(conf.peakDate)}` : ''}:{' '}
+                              {formatNumber(conf.totalPlanned)} / Sẵn có: {formatNumber(conf.available)}
+                              {conf.lockedElsewhere > 0
+                                ? ` = sở hữu ${formatNumber(conf.totalOwned)} − ${formatNumber(conf.lockedElsewhere)} còn ở đám khác`
+                                : ''}
+                              )
                               {conf.otherProjects.length > 0 && (
                                 <div className="text-xs">
                                   Trùng với:{' '}
@@ -1064,11 +1238,31 @@ export default function ProjectDetailPage() {
                                     .join(', ')}
                                 </div>
                               )}
+                              {conf.lockedProjects?.length > 0 && (
+                                <div className="text-xs">
+                                  Chưa thu về từ:{' '}
+                                  {conf.lockedProjects
+                                    .map((op) => `${op.name} (${formatNumber(op.qty)})`)
+                                    .join(', ')}
+                                </div>
+                              )}
                             </div>
+                          ) : conflictLimited ? (
+                            <span className="text-xs text-amber">
+                              Không đủ dữ liệu để kiểm tra (giữ chỗ:{' '}
+                              {formatNumber(conf?.totalPlanned || p.qty)} / sẵn có thấy được:{' '}
+                              {formatNumber(conf?.available ?? totalOwned)})
+                            </span>
                           ) : (
                             <span className="text-green text-xs font-bold">
-                              ✓ Đủ đồ (Tổng giữ chỗ: {formatNumber(conf?.totalPlanned || p.qty)} /{' '}
-                              {formatNumber(totalOwned)})
+                              ✓ Đủ đồ (Cần ngày cao điểm: {formatNumber(conf?.totalPlanned || p.qty)} /
+                              Sẵn có: {formatNumber(conf?.available ?? totalOwned)})
+                              {conf?.lockedElsewhere > 0 && (
+                                <span className="text-muted" style={{ fontWeight: 400 }}>
+                                  {' '}
+                                  ({formatNumber(conf.lockedElsewhere)} còn ở đám khác)
+                                </span>
+                              )}
                             </span>
                           )}
                         </td>
