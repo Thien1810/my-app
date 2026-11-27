@@ -255,7 +255,10 @@ export default function MovementsPage() {
     setSearchParams(next, { replace: true })
   }, [itemParam, loading, activeItems, searchParams, setSearchParams])
 
-  const insertOnce = async (rows) => {
+  const insertOnce = async (inputRows) => {
+    // Sắp theo item_id (sort ổn định: các dòng cùng vật tư giữ thứ tự gốc) để trigger DB khóa
+    // dòng vật tư cùng thứ tự với RPC/các phiếu khác, tránh deadlock khi nhiều người ghi cùng lúc.
+    const rows = [...inputRows].sort((a, b) => Number(a.item_id) - Number(b.item_id))
     let res = await supabase.from('stock_movements').insert(rows).select('id')
     if (res.error) {
       const retry = await supabase.from('stock_movements').insert(rows)

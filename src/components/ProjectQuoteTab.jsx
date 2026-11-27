@@ -1,5 +1,24 @@
-import { useState, useEffect, useMemo } from 'react'
-import { formatCurrency, formatNumber } from '../lib/formatters'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { formatCurrency } from '../lib/formatters'
+import { useAuth } from '../lib/AuthContext'
+import { useConfirm } from './ConfirmDialog'
+import {
+  QUOTE_MAX_BYTES,
+  buildQuoteDraft,
+  deserializeQuote,
+  draftDecision,
+  parseQuoteDraft,
+  quoteDraftKey,
+  formatSavedTime,
+  initialQuoteSource,
+  parseLocalQuote,
+  quoteDataBytes,
+  quoteStorageKey,
+  resolveLineImage,
+  serializeQuote,
+  templateImageMap,
+} from '../lib/projectQuote'
+import { insertProjectQuote, loadProjectQuote, updateProjectQuote } from '../lib/projectQuotesApi'
 import { exportToExcel } from '../lib/exportExcel'
 import { compressImageUnder1MB } from '../lib/imageCompressor'
 import { canonicalCategory, categoryIcon, parseTemplateMeta } from '../lib/setTemplateMeta'
@@ -18,7 +37,9 @@ export default function ProjectQuoteTab({
   onSyncFinance,
   onApplySetsToPlan,
 }) {
-  const storageKey = `dw_quote_project_${project?.id}`
+  const storageKey = quoteStorageKey(project?.id)
+  const { isAdmin } = useAuth()
+  const { confirm, confirmDialog } = useConfirm()
 
   const [quoteLines, setQuoteLines] = useState([])
   // Bản nháp khi sửa: doanh số (giá gói) và ưu đãi; doanh thu = doanh số - ưu đãi
@@ -62,34 +83,336 @@ export default function ProjectQuoteTab({
     return enrichedTemplates.filter((t) => categoryKey(t.parsedCategory) === categoryKey(filterSetCat))
   }, [enrichedTemplates, filterSetCat])
 
-  // Tải danh sách Set trang trí đã chọn cho báo giá dự án này
+  // ----- LƯU BÁO GIÁ -----
+  // Nguồn chính: bảng project_quotes trên Supabase (supabase/projects_phase2.sql).
+  // Chưa chạy SQL (thiếu bảng): dùng localStorage như cũ ('local') và báo nhẹ cho admin.
+  // Hai máy sửa cùng lúc: ghi có điều kiện updated_at, lệch thì báo xung đột, không ghi đè ngầm.
+  const imageMap = useMemo(() => templateImageMap(templates), [templates])
+  const imageMapRef = useRef(imageMap)
   useEffect(() => {
-    if (!project?.id) return
-    try {
-      const saved = localStorage.getItem(storageKey)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        setQuoteLines(Array.isArray(parsed.lines) ? parsed.lines : [])
-        setQuoteNote(parsed.quoteNote || '')
-      }
-    } catch {
-      // ignore
-    }
-  }, [project?.id, storageKey])
+    imageMapRef.current = imageMap
+  }, [imageMap])
 
-  const persistQuote = (nextLines, nextNote) => {
+  const [store, setStore] = useState('loading') // 'loading' | 'db' | 'local' | 'error'
+  const [loadError, setLoadError] = useState('')
+  const [localOffer, setLocalOffer] = useState(null) // { updatedAt } khi DB trống mà máy này có bản cũ
+  const [saveState, setSaveState] = useState({ status: 'idle', at: null, message: '' })
+  const [conflict, setConflict] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  const storeRef = useRef('loading')
+  const projectIdRef = useRef(project?.id)
+  const baseRef = useRef(null) // updated_at của bản trên DB; null = DB chưa có báo giá
+  const latestRef = useRef({ lines: [], quoteNote: '' })
+  const timerRef = useRef(null)
+  const savingRef = useRef(false)
+  const pendingRef = useRef(false)
+  const conflictRef = useRef(false)
+  const clearLocalAfterSaveRef = useRef(false)
+  const editSeqRef = useRef(0) // tăng mỗi lần sửa, để biết bản vừa lưu có phải bản mới nhất không
+  // Bản nháp cũ dựa trên bản DB đã bị máy khác thay: chờ người dùng chọn, không tự áp dụng.
+  const [draftOffer, setDraftOffer] = useState(null)
+  const draftOfferRef = useRef(null)
+
+  const writeDraft = (pid = projectIdRef.current) => {
     try {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          lines: nextLines,
-          quoteNote: nextNote,
-          updatedAt: new Date().toISOString(),
-        })
-      )
+      localStorage.setItem(quoteDraftKey(pid), JSON.stringify(buildQuoteDraft(latestRef.current, baseRef.current)))
+    } catch {
+      // localStorage đầy / bị chặn: vẫn lưu DB bình thường, chỉ mất lớp dự phòng
+    }
+  }
+  const clearDraft = (pid = projectIdRef.current) => {
+    try {
+      localStorage.removeItem(quoteDraftKey(pid))
     } catch {
       // ignore
     }
+  }
+  const setDraftOfferBoth = (v) => {
+    draftOfferRef.current = v
+    setDraftOffer(v)
+  }
+
+  const applyQuote = (q) => {
+    latestRef.current = { lines: q.lines, quoteNote: q.quoteNote }
+    setQuoteLines(q.lines)
+    setQuoteNote(q.quoteNote)
+  }
+
+  const readLocal = (key) => {
+    try {
+      return parseLocalQuote(localStorage.getItem(key))
+    } catch {
+      return null
+    }
+  }
+
+  const flushSave = useCallback(async () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    if (storeRef.current !== 'db' || conflictRef.current) return
+    if (savingRef.current) {
+      pendingRef.current = true
+      return
+    }
+    const pid = projectIdRef.current
+    const seqAtStart = editSeqRef.current
+    const data = serializeQuote(latestRef.current, imageMapRef.current)
+    const bytes = quoteDataBytes(data)
+    if (bytes > QUOTE_MAX_BYTES) {
+      setSaveState({
+        status: 'error',
+        at: null,
+        message: `Báo giá quá lớn (${Math.round(bytes / 1024)} KB, tối đa ${QUOTE_MAX_BYTES / 1024} KB) nên CHƯA lưu. Hãy bỏ bớt ảnh tự tải lên.`,
+      })
+      return
+    }
+    savingRef.current = true
+    setSaveState((s) => ({ ...s, status: 'saving', message: '' }))
+    const res = baseRef.current
+      ? await updateProjectQuote(pid, data, baseRef.current)
+      : await insertProjectQuote(pid, data)
+    savingRef.current = false
+    if (projectIdRef.current !== pid) return
+    if (res.conflict) {
+      conflictRef.current = true
+      setConflict(true)
+      setSaveState({ status: 'conflict', at: null, message: '' })
+      return
+    }
+    if (res.error) {
+      setSaveState({
+        status: 'error',
+        at: null,
+        message: `Chưa lưu được báo giá lên hệ thống: ${res.error.message || 'lỗi không rõ'}. Sửa tiếp hoặc bấm "Lưu lại" để thử lại.`,
+      })
+      return
+    }
+    baseRef.current = res.row?.updated_at || baseRef.current
+    // Nháp chỉ xóa khi bản vừa lưu là bản mới nhất; còn sửa mới thì ghi lại nháp theo mốc DB mới.
+    if (!draftOfferRef.current) {
+      if (editSeqRef.current === seqAtStart) clearDraft(pid)
+      else writeDraft(pid)
+    }
+    setSaveState({
+      status: editSeqRef.current === seqAtStart ? 'saved' : 'dirty',
+      at: res.row?.updated_at || new Date().toISOString(),
+      message: '',
+    })
+    if (clearLocalAfterSaveRef.current) {
+      clearLocalAfterSaveRef.current = false
+      try {
+        localStorage.removeItem(quoteStorageKey(pid))
+      } catch {
+        // ignore
+      }
+      setLocalOffer(null)
+    }
+    if (pendingRef.current) {
+      pendingRef.current = false
+      flushSave()
+    }
+  }, [])
+
+  // Tải báo giá khi mở tab / đổi dự án / bấm tải lại.
+  useEffect(() => {
+    if (!project?.id) return undefined
+    let cancelled = false
+    const pid = project.id
+    projectIdRef.current = pid
+    storeRef.current = 'loading'
+    setStore('loading')
+    setLoadError('')
+    setLocalOffer(null)
+    setConflict(false)
+    conflictRef.current = false
+    pendingRef.current = false
+    clearLocalAfterSaveRef.current = false
+    baseRef.current = null
+    setDraftOfferBoth(null)
+    setSaveState({ status: 'idle', at: null, message: '' })
+    const local = readLocal(quoteStorageKey(pid))
+    let draft = null
+    try {
+      draft = parseQuoteDraft(localStorage.getItem(quoteDraftKey(pid)))
+    } catch {
+      draft = null
+    }
+
+    loadProjectQuote(pid).then((res) => {
+      if (cancelled) return
+      if (res.missingSchema) {
+        applyQuote(deserializeQuote(local || {}, imageMapRef.current))
+        storeRef.current = 'local'
+        setStore('local')
+        return
+      }
+      if (res.error) {
+        setLoadError(res.error.message || 'lỗi không rõ')
+        storeRef.current = 'error'
+        setStore('error')
+        return
+      }
+      const source = initialQuoteSource({ dbRow: res.row, local })
+      baseRef.current = res.row?.updated_at || null
+      storeRef.current = 'db'
+      setStore('db')
+      const decision = draftDecision({ draft, dbRow: res.row })
+      if (decision === 'restore') {
+        // Nháp chưa lưu dựa đúng bản DB hiện tại (rời tab khi lỗi/xung đột, F5 khi đang chờ lưu):
+        // khôi phục và lưu tiếp; không đè được bản mới hơn vì vẫn ghi có điều kiện updated_at.
+        applyQuote(deserializeQuote(draft, imageMapRef.current))
+        clearLocalAfterSaveRef.current = !res.row && !!local
+        setSaveState({ status: 'dirty', at: null, message: 'Đã khôi phục bản nháp chưa lưu trên máy này.' })
+        timerRef.current = setTimeout(() => flushSave(), 800)
+        return
+      }
+      if (decision === 'stale') setDraftOfferBoth(draft)
+      if (source === 'db') {
+        applyQuote(deserializeQuote(res.row.data, imageMapRef.current))
+        setSaveState({ status: 'saved', at: res.row.updated_at, message: '' })
+      } else if (source === 'offer_local') {
+        applyQuote(deserializeQuote(local, imageMapRef.current))
+        setLocalOffer({ updatedAt: local.updatedAt })
+        clearLocalAfterSaveRef.current = true
+      } else {
+        applyQuote({ lines: [], quoteNote: '' })
+      }
+    })
+
+    return () => {
+      cancelled = true
+      // Rời dự án / tab khi còn thay đổi chưa lưu: lưu ngay (không chờ hết thời gian chờ).
+      if (timerRef.current) flushSave()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, reloadKey, flushSave])
+
+  // Thay cho persistQuote cũ: mỗi lần sửa thì ghi (DB: gom thay đổi 0,8 giây rồi lưu).
+  const persistQuote = (nextLines, nextNote) => {
+    latestRef.current = { lines: nextLines, quoteNote: nextNote }
+    if (storeRef.current === 'local') {
+      try {
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({ lines: nextLines, quoteNote: nextNote, updatedAt: new Date().toISOString() })
+        )
+      } catch {
+        // ignore
+      }
+      return
+    }
+    if (storeRef.current !== 'db') return
+    editSeqRef.current += 1
+    // Ghi nháp NGAY (không chờ 0,8 giây): F5 / rời tab / lỗi mạng / xung đột vẫn còn bản đang sửa.
+    // Đang có nháp cũ chờ người dùng chọn thì không ghi đè nháp đó.
+    if (!draftOfferRef.current) writeDraft()
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => flushSave(), 800)
+    if (!conflictRef.current) setSaveState((s) => ({ ...s, status: 'dirty', message: '' }))
+  }
+
+  // Cảnh báo khi đóng/tải lại trang lúc còn thay đổi chưa lưu lên hệ thống.
+  const hasUnsaved =
+    store === 'db' && (conflict || ['dirty', 'saving', 'error'].includes(saveState.status))
+  useEffect(() => {
+    if (!hasUnsaved) return undefined
+    const onBeforeUnload = (e) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [hasUnsaved])
+
+  const handleUseDraft = async () => {
+    const d = draftOfferRef.current
+    if (!d) return
+    const ok = await confirm({
+      title: 'Dùng bản nháp',
+      message: `Thay nội dung đang thấy bằng bản nháp trên máy này${d.savedAt ? ` (sửa lúc ${formatSavedTime(d.savedAt)})` : ''} và LƯU ĐÈ lên bản hiện có trên hệ thống (bản đó do máy khác lưu sau bản nháp)?`,
+      confirmLabel: 'Dùng bản nháp và lưu',
+      danger: true,
+    })
+    if (!ok) return
+    setDraftOfferBoth(null)
+    applyQuote(deserializeQuote(d, imageMapRef.current))
+    editSeqRef.current += 1
+    writeDraft()
+    flushSave()
+  }
+
+  const handleDiscardDraft = async () => {
+    const ok = await confirm({
+      title: 'Bỏ bản nháp',
+      message: 'Xóa bản nháp chưa lưu trên máy này? Giữ nguyên bản đang có trên hệ thống.',
+      confirmLabel: 'Bỏ bản nháp',
+      danger: true,
+    })
+    if (!ok) return
+    clearDraft()
+    setDraftOfferBoth(null)
+  }
+
+  const handleReloadLatest = async () => {
+    const ok = await confirm({
+      title: 'Tải bản mới nhất',
+      message: 'Tải lại báo giá đang có trên hệ thống? Các thay đổi chưa lưu trên máy này sẽ bị bỏ.',
+      confirmLabel: 'Tải bản mới nhất',
+    })
+    if (!ok) return
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    clearDraft() // người dùng đã chọn bỏ thay đổi trên máy này
+    setReloadKey((k) => k + 1)
+  }
+
+  const handleOverwrite = async () => {
+    const ok = await confirm({
+      title: 'Ghi đè báo giá',
+      message: 'Ghi bản đang thấy trên máy này đè lên bản người khác vừa lưu? Bản của họ sẽ mất.',
+      confirmLabel: 'Ghi đè',
+      danger: true,
+    })
+    if (!ok) return
+    const res = await loadProjectQuote(projectIdRef.current)
+    if (res.error) {
+      setSaveState({ status: 'error', at: null, message: `Không đọc được bản mới nhất: ${res.error.message || 'lỗi không rõ'}` })
+      return
+    }
+    baseRef.current = res.row?.updated_at || null
+    conflictRef.current = false
+    setConflict(false)
+    writeDraft() // nháp dựa theo mốc DB mới, để lỡ F5 thì vẫn khôi phục được
+    flushSave()
+  }
+
+  const handleDiscardLocal = async () => {
+    const ok = await confirm({
+      title: 'Bỏ bản trên máy này',
+      message: 'Xóa báo giá đang lưu riêng trên máy này (chưa có trên hệ thống)? Không hoàn tác được.',
+      confirmLabel: 'Bỏ bản này',
+      danger: true,
+    })
+    if (!ok) return
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    try {
+      localStorage.removeItem(storageKey)
+    } catch {
+      // ignore
+    }
+    clearDraft()
+    clearLocalAfterSaveRef.current = false
+    setLocalOffer(null)
+    applyQuote({ lines: [], quoteNote: '' })
+    setSaveState({ status: 'idle', at: null, message: '' })
   }
 
   // Đưa Mẫu set vào báo giá: chỉ lấy Hình ảnh + Tên set + Phân loại + Tên các vật tư (KHÔNG lấy số lượng vật tư & KHÔNG lấy giá vốn)
@@ -114,7 +437,9 @@ export default function ProjectQuoteTab({
       template_id: tpl.id,
       name: tpl.name,
       category: tpl.parsedCategory || 'Gia tiên',
-      image_url: tpl.parsedImageUrl || '',
+      // Ảnh mẫu chỉ lưu tham chiếu template_id, lấy ảnh từ mẫu khi hiển thị/xuất
+      image_source: tpl.parsedImageUrl ? 'template' : 'none',
+      image_url: '',
       qty: 1,
       note: defaultDesc,
     }
@@ -129,6 +454,7 @@ export default function ProjectQuoteTab({
       template_id: null,
       name: '',
       category: 'Gia tiên',
+      image_source: 'none',
       image_url: '',
       qty: 1,
       note: '',
@@ -138,11 +464,12 @@ export default function ProjectQuoteTab({
     persistQuote(next, quoteNote)
   }
 
-  const handleUpdateLine = (uid, field, value) => {
-    const next = quoteLines.map((l) => (l.uid === uid ? { ...l, [field]: value } : l))
+  const handleUpdateLineFields = (uid, patch) => {
+    const next = latestRef.current.lines.map((l) => (l.uid === uid ? { ...l, ...patch } : l))
     setQuoteLines(next)
-    persistQuote(next, quoteNote)
+    persistQuote(next, latestRef.current.quoteNote)
   }
+  const handleUpdateLine = (uid, field, value) => handleUpdateLineFields(uid, { [field]: value })
 
   const handleRemoveLine = (uid) => {
     const next = quoteLines.filter((l) => l.uid !== uid)
@@ -154,7 +481,8 @@ export default function ProjectQuoteTab({
     if (!file) return
     try {
       const compressed = await compressImageUnder1MB(file)
-      handleUpdateLine(uid, 'image_url', compressed.dataUrl)
+      // Ảnh tự tải lên (đã nén < 1 MB) mới được lưu thẳng vào báo giá
+      handleUpdateLineFields(uid, { image_source: 'custom', image_url: compressed.dataUrl })
     } catch (err) {
       alert(err.message || 'Lỗi khi nén ảnh')
     }
@@ -229,7 +557,7 @@ export default function ProjectQuoteTab({
     try {
       await exportQuoteToPng({
         project,
-        quoteLines,
+        quoteLines: quoteLines.map((l) => ({ ...l, image_url: resolveLineImage(l, imageMap) })),
         contractValue: finalTotal,
         discount: safeDiscount,
         quoteNote,
@@ -277,8 +605,93 @@ export default function ProjectQuoteTab({
     )
   }
 
+  if (store === 'loading' || store === 'error') {
+    return (
+      <div className="card">
+        {store === 'loading' ? (
+          <div className="loading-state">Đang tải báo giá...</div>
+        ) : (
+          <div className="alert alert-error" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span>Không tải được báo giá từ hệ thống: {loadError}</span>
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => setReloadKey((k) => k + 1)}>
+              Tải lại
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {confirmDialog}
+      {store === 'local' && isAdmin && (
+        <div className="text-xs text-amber">
+          ⚠️ Chưa chạy supabase/projects_phase2.sql: báo giá đang chỉ lưu trên trình duyệt của máy này (như cũ).
+        </div>
+      )}
+      {store === 'db' && localOffer && (
+        <div className="alert alert-warning" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ flex: '1 1 260px' }}>
+            Báo giá này đang lưu riêng trên máy này
+            {localOffer.updatedAt ? ` (sửa lúc ${formatSavedTime(localOffer.updatedAt)})` : ''}, CHƯA có trên hệ thống.
+            Đưa lên để máy khác cũng thấy. Sửa bất kỳ dòng nào cũng sẽ tự lưu lên hệ thống.
+          </span>
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => flushSave()}>
+            Đưa lên hệ thống
+          </button>
+          <button type="button" className="btn btn-sm btn-outline" onClick={handleDiscardLocal}>
+            Bỏ bản trên máy này
+          </button>
+        </div>
+      )}
+      {store === 'db' && draftOffer && (
+        <div className="alert alert-warning" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ flex: '1 1 260px' }}>
+            Máy này còn một bản nháp CHƯA lưu
+            {draftOffer.savedAt ? ` (sửa lúc ${formatSavedTime(draftOffer.savedAt)})` : ''}, nhưng trên hệ thống đã có
+            bản mới hơn do máy khác lưu. Đang hiện bản trên hệ thống; bản nháp chưa được áp dụng.
+          </span>
+          <button type="button" className="btn btn-sm btn-outline" onClick={handleUseDraft}>
+            Dùng bản nháp (lưu đè)
+          </button>
+          <button type="button" className="btn btn-sm btn-outline" onClick={handleDiscardDraft}>
+            Bỏ bản nháp
+          </button>
+        </div>
+      )}
+      {store === 'db' && conflict && (
+        <div className="alert alert-error" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ flex: '1 1 260px' }}>
+            Báo giá vừa được lưu từ máy khác. Thay đổi trên máy này CHƯA được lưu lên hệ thống (không ghi đè ngầm),
+            nhưng vẫn giữ làm bản nháp trên máy này.
+          </span>
+          <button type="button" className="btn btn-sm btn-primary" onClick={handleReloadLatest}>
+            Tải bản mới nhất
+          </button>
+          <button type="button" className="btn btn-sm btn-outline" onClick={handleOverwrite}>
+            Ghi đè bằng bản của tôi
+          </button>
+        </div>
+      )}
+      {store === 'db' && !conflict && saveState.status !== 'idle' && (
+        <div
+          className={`text-xs ${saveState.status === 'error' ? '' : 'text-muted'}`}
+          style={saveState.status === 'error' ? { color: '#dc2626' } : undefined}
+        >
+          {saveState.status === 'saving' && 'Đang lưu báo giá lên hệ thống...'}
+          {saveState.status === 'dirty' && (saveState.message || 'Có thay đổi, sẽ tự lưu...')}
+          {saveState.status === 'saved' && `✓ Đã lưu trên hệ thống${saveState.at ? ` lúc ${formatSavedTime(saveState.at)}` : ''}`}
+          {saveState.status === 'error' && (
+            <>
+              {saveState.message}{' '}
+              <button type="button" className="btn btn-sm btn-outline" onClick={() => flushSave()}>
+                Lưu lại
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {syncMsg && <div className="alert alert-success">{syncMsg}</div>}
       {actionError && (
         <div className="alert alert-error" style={{ whiteSpace: 'pre-line' }}>
@@ -492,7 +905,9 @@ export default function ProjectQuoteTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {quoteLines.map((line) => (
+                  {quoteLines.map((line) => {
+                    const lineImage = resolveLineImage(line, imageMap)
+                    return (
                     <tr key={line.uid}>
                       <td>
                         <div
@@ -503,12 +918,12 @@ export default function ProjectQuoteTab({
                             alignItems: 'center',
                           }}
                         >
-                          {line.image_url ? (
+                          {lineImage ? (
                             <img
-                              src={line.image_url}
+                              src={lineImage}
                               alt={line.name}
                               onClick={() =>
-                                setPreviewImg({ url: line.image_url, name: line.name })
+                                setPreviewImg({ url: lineImage, name: line.name })
                               }
                               style={{
                                 width: 72,
@@ -600,7 +1015,8 @@ export default function ProjectQuoteTab({
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

@@ -30,6 +30,26 @@ import ProjectAdvancesPanel from '../components/finance/ProjectAdvancesPanel'
 import { calcProjectFbReminder } from '../lib/watermarkHelper'
 import { extractProjectAttribution } from '../lib/metaAdsClient'
 import { useConfirm } from '../components/ConfirmDialog'
+import {
+  issueBlockReason,
+  outstandingReusable,
+  statusChangeBlockReason,
+  calcIssueByPlanLines,
+  buildTemplateAddMap,
+  planDuplicates,
+  mergePlanRows,
+} from '../lib/projectRules'
+import {
+  loadStatusGuardData,
+  rpcApplyTemplatesToPlan,
+  rpcIssueProjectByPlan,
+} from '../lib/projectRulesApi'
+
+// Báo nhẹ cho admin khi chưa chạy supabase/projects_phase2.sql (app dùng luồng cũ).
+const PHASE2_MISSING_NOTE =
+  'Chưa chạy supabase/projects_phase2.sql trên Supabase: thao tác vừa rồi dùng cách cũ (ghi từ trình duyệt, chưa khóa chống ghi trùng giữa hai máy).'
+const PHASE2_ISSUE_MISSING_NOTE =
+  'Chưa chạy supabase/projects_phase2.sql trên Supabase: "Xuất theo kế hoạch" đang dùng cách dự phòng (đọc lại số mới nhất rồi ghi từ trình duyệt). Hai máy bấm cùng lúc VẪN CÓ THỂ xuất trùng; hãy chạy file SQL để khóa ở DB.'
 
 // Cột item_stock dùng trong trang này (không kéo image_url/note để nhẹ dữ liệu)
 const ITEM_STOCK_COLUMNS = 'id, code, name, kind, unit, cost, expected_uses, active, in_stock, at_project'
@@ -49,12 +69,14 @@ export default function ProjectDetailPage() {
   const { id } = useParams()
   const [searchParams] = useSearchParams()
   const projectId = Number(id)
-  const { isManagerOrAdmin, canEditCatalog, isStaff } = useAuth()
-  const { confirm, confirmDialog } = useConfirm()
+  const { isManagerOrAdmin, canEditCatalog, isStaff, isAdmin } = useAuth()
+  const { confirm, choose, confirmDialog } = useConfirm()
+  const [phase2Note, setPhase2Note] = useState('')
   // Chặn bấm đúp: state busy chỉ có hiệu lực sau lần render kế tiếp, ref thì ngay lập tức.
   const statusBusyRef = useRef(false)
   const planBusyRef = useRef(false)
   const returnBusyRef = useRef(false)
+  const issueBusyRef = useRef(false)
 
   const [project, setProject] = useState(null)
   const [items, setItems] = useState([])
@@ -306,25 +328,22 @@ export default function ProjectDetailPage() {
     if (newStatus === 'cancelled') {
       lines.push('Dự án hủy: doanh thu tính 0 trong P&L, chi phí đã phát sinh vẫn tính vào tháng hủy.')
     }
-    if (closing) {
-      if (movesLoadFailed) {
-        lines.push('⚠️ Không tải được phiếu kho của dự án nên không kiểm tra được đồ chưa thu hồi.')
-      } else {
-        const pending = itemStats.filter((r) => r.item.kind === 'reusable' && r.outstanding > 0)
-        if (pending.length > 0) {
-          const list = pending
-            .slice(0, 8)
-            .map((r) => `- ${r.item.name}: ${formatNumber(r.outstanding)} ${r.item.unit || ''}`.trim())
-          if (pending.length > 8) list.push(`- ... và ${pending.length - 8} vật tư khác`)
-          lines.push(
-            `⚠️ Còn ${pending.length} đồ tái sử dụng CHƯA thu hồi (vẫn được phép chuyển, nhưng nên thu hồi hoặc ghi hỏng/mất):\n${list.join('\n')}`
-          )
-        }
-      }
-    }
     statusBusyRef.current = true
     setBusyStatus(true)
     try {
+      // Chặn trước ở giao diện (DB cũng chặn bằng trigger khi đã chạy projects_phase2.sql):
+      // sang Hoàn thành/Đã hủy khi còn đồ tái sử dụng; rời Đã hủy khi có Mất cọc / tháng hủy đã khóa.
+      const guard = await loadStatusGuardData(project, newStatus)
+      const block = statusChangeBlockReason({
+        prevStatus: project.status,
+        nextStatus: newStatus,
+        projectName: project.name,
+        ...guard,
+      })
+      if (block) {
+        setError(block)
+        return
+      }
       const ok = await confirm({
         title: `Chuyển sang ${toLabel}`,
         message: lines.join('\n\n'),
@@ -426,29 +445,20 @@ export default function ProjectDetailPage() {
     }
   }
 
-  // Cộng thêm SL vật tư của các mẫu set vào kế hoạch (KHÔNG thay thế).
-  // entries: [{ template_id, mult }]. Nếu kế hoạch đã có vật tư trùng thì hỏi xác nhận trước.
-  // Trả { ok, count } | { ok:false, cancelled:true } | { ok:false, error }.
+  // Nạp SL vật tư của các mẫu set vào kế hoạch. entries: [{ template_id, mult }].
+  // Kế hoạch đã có vật tư trùng thì hỏi MỖI LẦN: Cộng thêm / Thay thế (chỉ thay số các vật tư có
+  // trong mẫu, không xóa vật tư khác) / Hủy. Ghi nguyên tử bằng RPC apply_templates_to_plan;
+  // chưa chạy SQL thì ghi upsert từ trình duyệt như cũ.
+  // Trả { ok, count, mode } | { ok:false, cancelled:true } | { ok:false, error }.
   const addTemplatesToPlan = async (entries) => {
     if (planBusyRef.current) return { ok: false, cancelled: true }
     if (planLoadFailed) {
       return {
         ok: false,
-        error: 'Không tải được kế hoạch vật tư hiện tại nên không thể cộng thêm (tránh ghi sai số). Hãy tải lại trang.',
+        error: 'Không tải được kế hoạch vật tư hiện tại nên không thể nạp mẫu (tránh ghi sai số). Hãy tải lại trang.',
       }
     }
-    const addMap = new Map()
-    for (const entry of entries) {
-      const tpl = templates.find((t) => Number(t.id) === Number(entry.template_id))
-      if (!tpl?.items) continue
-      const mult = Number(entry.mult)
-      const m = Number.isFinite(mult) && mult > 0 ? mult : 1
-      for (const ti of tpl.items) {
-        const itemId = Number(ti.item_id)
-        const addQty = Number(ti.qty || 0) * m
-        if (addQty > 0) addMap.set(itemId, (addMap.get(itemId) || 0) + addQty)
-      }
-    }
+    const addMap = buildTemplateAddMap(templates, entries)
     if (addMap.size === 0) {
       return { ok: false, error: 'Các mẫu set đã chọn chưa có vật tư nào để nạp sang kế hoạch.' }
     }
@@ -458,34 +468,45 @@ export default function ProjectDetailPage() {
     planBusyRef.current = true
     setBusyPlan(true)
     try {
-      const dup = [...addMap.keys()].filter((id) => existingMap.has(id))
+      let mode = 'add'
+      const dup = planDuplicates(addMap, existingMap)
       if (dup.length > 0) {
-        const list = dup.slice(0, 8).map((id) => {
-          const it = itemMap.get(id)
+        const list = dup.slice(0, 8).map((d) => {
+          const it = itemMap.get(d.item_id)
           const unit = it?.unit || ''
-          return `- ${it?.name || `Vật tư #${id}`}: ${formatNumber(existingMap.get(id))} + ${formatNumber(addMap.get(id))} = ${formatNumber(existingMap.get(id) + addMap.get(id))} ${unit}`.trim()
+          return `- ${it?.name || `Vật tư #${d.item_id}`}: đang có ${formatNumber(d.current)}, mẫu ${formatNumber(d.add)} → Cộng thêm = ${formatNumber(d.current + d.add)}, Thay thế = ${formatNumber(d.add)} ${unit}`.trim()
         })
         if (dup.length > 8) list.push(`- ... và ${dup.length - 8} vật tư khác`)
-        const ok = await confirm({
-          title: 'Cộng thêm vào kế hoạch',
-          message: `Kế hoạch đã có ${dup.length} vật tư trùng với mẫu set. Số lượng sẽ được CỘNG THÊM vào số đang có (không thay thế):\n${list.join('\n')}\n\nTiếp tục?`,
-          confirmLabel: 'Cộng thêm',
+        const picked = await choose({
+          title: 'Kế hoạch đã có vật tư trùng',
+          message: `Kế hoạch đã có ${dup.length} vật tư trùng với mẫu set:\n${list.join('\n')}\n\n• Cộng thêm: cộng số của mẫu vào số đang có.\n• Thay thế: các vật tư có trong mẫu lấy đúng số của mẫu; vật tư khác trong kế hoạch giữ nguyên.`,
+          choices: [
+            { value: 'replace', label: 'Thay thế' },
+            { value: 'add', label: 'Cộng thêm' },
+          ],
+          cancelLabel: 'Hủy',
         })
-        if (!ok) return { ok: false, cancelled: true }
+        if (!picked) return { ok: false, cancelled: true }
+        mode = picked
       }
-      const rows = [...addMap.entries()]
-        .map(([item_id, add]) => ({
-          project_id: Number(projectId),
-          item_id,
-          qty: (existingMap.get(item_id) || 0) + add,
-        }))
-        .sort((a, b) => a.item_id - b.item_id)
-      const { error: err } = await supabase
-        .from('project_plan')
-        .upsert(rows, { onConflict: 'project_id,item_id' })
-      if (err) return { ok: false, error: err.message || 'Lỗi khi ghi kế hoạch vật tư.' }
+
+      let count = addMap.size
+      const rpc = await rpcApplyTemplatesToPlan(projectId, entries, mode)
+      if (rpc.missingSchema) {
+        if (isAdmin) setPhase2Note(PHASE2_MISSING_NOTE)
+        const rows = mergePlanRows({ projectId, addMap, existingMap, mode })
+        const { error: err } = await supabase
+          .from('project_plan')
+          .upsert(rows, { onConflict: 'project_id,item_id' })
+        if (err) return { ok: false, error: err.message || 'Lỗi khi ghi kế hoạch vật tư.' }
+        count = rows.length
+      } else if (rpc.error) {
+        return { ok: false, error: rpc.error.message || 'Lỗi khi ghi kế hoạch vật tư.' }
+      } else {
+        count = Number(rpc.data?.count ?? count)
+      }
       await loadAll()
-      return { ok: true, count: rows.length }
+      return { ok: true, count, mode }
     } catch (err) {
       return { ok: false, error: err?.message || 'Lỗi khi ghi kế hoạch vật tư.' }
     } finally {
@@ -514,7 +535,9 @@ export default function ProjectDetailPage() {
     }
     const res = await addTemplatesToPlan([{ template_id: tpl.id, mult: 1 }])
     if (res.ok) {
-      setSuccess(`Đã áp dụng mẫu set "${tpl.name}" (${res.count} vật tư) vào kế hoạch!`)
+      setSuccess(
+        `Đã ${res.mode === 'replace' ? 'thay số lượng theo' : 'áp dụng'} mẫu set "${tpl.name}" (${res.count} vật tư) vào kế hoạch!`
+      )
       setSelectedTemplateId('')
     } else if (!res.cancelled) {
       setError(res.error || 'Lỗi khi áp dụng mẫu set')
@@ -537,66 +560,112 @@ export default function ProjectDetailPage() {
   }
 
   const handleIssueByPlan = async () => {
-    if (planLoadFailed) {
-      setError('Không tải được kế hoạch vật tư của dự án nên không thể xuất theo kế hoạch. Hãy tải lại trang.')
-      return
-    }
-    if (movesLoadFailed) {
-      setError('Không tải được phiếu kho của dự án nên không biết đã xuất những gì, không thể xuất theo kế hoạch (tránh xuất trùng). Hãy tải lại trang.')
-      return
-    }
-    if (projectPlan.length === 0) {
-      setError('Kế hoạch vật tư đang trống. Hãy lập kế hoạch trước hoặc xuất thủ công.')
-      return
-    }
-
-    const toIssue = []
-    for (const p of projectPlan) {
-      const alreadyIssued = issuedByItemMap.get(Number(p.item_id)) || 0
-      const remaining = Number(p.qty) - alreadyIssued
-      if (remaining > 0) {
-        toIssue.push({
-          moved_at: issueDate || todayISO(),
-          type: 'issue',
-          item_id: Number(p.item_id),
-          project_id: projectId,
-          qty: remaining,
-          note: issueNote.trim() || 'Xuất theo kế hoạch dự án',
-        })
-      }
-    }
-
-    if (toIssue.length === 0) {
-      setError('Tất cả vật tư trong kế hoạch đã được xuất đủ số lượng.')
-      return
-    }
-
-    setBusyIssue(true)
+    // ref giữ suốt cả lượt (RPC + luồng dự phòng): chặn bấm đúp ngay cả khi state chưa kịp cập nhật
+    if (issueBusyRef.current) return
     setError('')
     setSuccess('')
+    const blockMsg = issueBlockReason(project, { canChangeStatus: isManagerOrAdmin })
+    if (blockMsg) {
+      setError(blockMsg)
+      return
+    }
+    issueBusyRef.current = true
+    setBusyIssue(true)
     try {
-      const { map, error: stockErr } = await fetchFreshStock(toIssue.map((r) => r.item_id))
-      if (stockErr) throw stockErr
-      const check = checkIssueStock(toIssue, map)
-      if (!check.ok) {
-        setError(check.error)
+      // RPC issue_project_by_plan: tính phần còn thiếu và ghi trong một giao dịch có khóa ở DB.
+      const rpc = await rpcIssueProjectByPlan(projectId, issueDate || todayISO(), issueNote.trim())
+      if (!rpc.missingSchema) {
+        if (rpc.error) {
+          setError(rpc.error.message || 'Lỗi khi xuất theo kế hoạch')
+          return
+        }
+        const n = Number(rpc.data?.count || 0)
+        if (n === 0) {
+          setError('Tất cả vật tư trong kế hoạch đã được xuất đủ số lượng.')
+        } else {
+          setSuccess(`Đã xuất kho tự động ${n} dòng vật tư theo kế hoạch!`)
+        }
+        await loadAll()
         return
       }
-      // Sắp theo item_id: khóa dòng vật tư ở DB luôn theo cùng thứ tự, tránh deadlock khi 2 người xuất cùng lúc
-      toIssue.sort((a, b) => a.item_id - b.item_id)
-      const { error: err } = await supabase.from('stock_movements').insert(toIssue)
-      if (err) throw err
-      setSuccess(`Đã xuất kho tự động ${toIssue.length} dòng vật tư theo kế hoạch!`)
-      await loadAll()
+      if (isAdmin) setPhase2Note(PHASE2_ISSUE_MISSING_NOTE)
+      await issueByPlanLegacy()
     } catch (err) {
       setError(err.message || 'Lỗi khi xuất theo kế hoạch')
     } finally {
+      issueBusyRef.current = false
       setBusyIssue(false)
     }
   }
 
+  // Luồng dự phòng (chưa chạy SQL): đọc LẠI kế hoạch + phiếu kho mới nhất từ DB ngay trước khi tính
+  // "còn thiếu" và ghi (không dùng số đã tải lúc mở trang). Vẫn không khóa giữa hai máy.
+  const issueByPlanLegacy = async () => {
+    const [planRes, movesRes] = await Promise.all([
+      supabase.from('project_plan').select('item_id, qty').eq('project_id', projectId).order('item_id'),
+      fetchAllRows((from, to) =>
+        supabase
+          .from('stock_movements')
+          .select('id, item_id, type, qty')
+          .eq('project_id', projectId)
+          .in('type', PROJECT_MOVE_TYPES)
+          .order('id')
+          .range(from, to)
+      ),
+    ])
+    if (planRes.error) {
+      setError(`Không tải được kế hoạch vật tư mới nhất nên chưa xuất (tránh xuất sai): ${planRes.error.message}`)
+      return
+    }
+    if (movesRes.error) {
+      setError(`Không tải được phiếu kho mới nhất của dự án nên chưa xuất (tránh xuất trùng): ${movesRes.error.message}`)
+      return
+    }
+    const freshPlan = planRes.data || []
+    if (freshPlan.length === 0) {
+      setError('Kế hoạch vật tư đang trống. Hãy lập kế hoạch trước hoặc xuất thủ công.')
+      return
+    }
+
+    // Còn thiếu = kế hoạch − đang ở dự án (đồ tái sử dụng) / − đã xuất (tiêu hao), cùng quy tắc RPC.
+    const toIssue = calcIssueByPlanLines(freshPlan, movesRes.data || [], itemMap).map((l) => ({
+      moved_at: issueDate || todayISO(),
+      type: 'issue',
+      item_id: l.item_id,
+      project_id: projectId,
+      qty: l.qty,
+      note: issueNote.trim() || 'Xuất theo kế hoạch dự án',
+    }))
+    if (toIssue.length === 0) {
+      setError('Tất cả vật tư trong kế hoạch đã được xuất đủ số lượng.')
+      await loadAll()
+      return
+    }
+
+    const { map, error: stockErr } = await fetchFreshStock(toIssue.map((r) => r.item_id))
+    if (stockErr) throw stockErr
+    const check = checkIssueStock(toIssue, map)
+    if (!check.ok) {
+      setError(check.error)
+      return
+    }
+    // Sắp theo item_id: khóa dòng vật tư ở DB luôn theo cùng thứ tự, tránh deadlock khi 2 người xuất cùng lúc
+    toIssue.sort((a, b) => a.item_id - b.item_id)
+    const { error: err } = await supabase.from('stock_movements').insert(toIssue)
+    if (err) throw err
+    setSuccess(`Đã xuất kho tự động ${toIssue.length} dòng vật tư theo kế hoạch!`)
+    await loadAll()
+  }
+
   const handleManualIssue = async (e) => {
     e.preventDefault()
+    if (issueBusyRef.current) return
+    const blockMsg = issueBlockReason(project, { canChangeStatus: isManagerOrAdmin })
+    if (blockMsg) {
+      setSuccess('')
+      setError(blockMsg)
+      return
+    }
     if (issueLines.some((l) => Number(l.qty) < 0)) {
       setSuccess('')
       setError('Số lượng xuất không được là số âm. Vui lòng kiểm tra lại các dòng vật tư.')
@@ -608,6 +677,7 @@ export default function ProjectDetailPage() {
       return
     }
 
+    issueBusyRef.current = true
     setBusyIssue(true)
     setError('')
     setSuccess('')
@@ -639,6 +709,7 @@ export default function ProjectDetailPage() {
     } catch (err) {
       setError(err.message || 'Lỗi khi xuất vật tư cho dự án')
     } finally {
+      issueBusyRef.current = false
       setBusyIssue(false)
     }
   }
@@ -861,6 +932,9 @@ Giữ số đã nhập = chỉ điền các dòng còn trống.`,
   ).length
 
   const fbReminder = calcProjectFbReminder(project)
+  const issueBlock = issueBlockReason(project, { canChangeStatus: isManagerOrAdmin })
+  // Đồ tái sử dụng còn ở dự án (theo dữ liệu đã tải) để khóa sẵn lựa chọn Hoàn thành/Đã hủy.
+  const pendingReusableCount = movesLoadFailed ? 0 : outstandingReusable(movements, itemMap).length
 
   return (
     <div className="page-container">
@@ -925,11 +999,16 @@ Giữ số đã nhập = chỉ điền các dòng còn trống.`,
               disabled={busyStatus}
               className="status-select"
             >
-              {Object.entries(PROJECT_STATUS_LABELS).map(([k, label]) => (
-                <option key={k} value={k}>
-                  Trạng thái: {label}
-                </option>
-              ))}
+              {Object.entries(PROJECT_STATUS_LABELS).map(([k, label]) => {
+                const lockedClose =
+                  (k === 'done' || k === 'cancelled') && k !== project.status && pendingReusableCount > 0
+                return (
+                  <option key={k} value={k} disabled={lockedClose}>
+                    Trạng thái: {label}
+                    {lockedClose ? ` (còn ${pendingReusableCount} đồ chưa thu hồi)` : ''}
+                  </option>
+                )
+              })}
             </select>
           )}
           <Link to="/du-an" className="btn btn-outline">
@@ -945,6 +1024,13 @@ Giữ số đã nhập = chỉ điền các dòng còn trống.`,
       )}
       {error && <div className="alert alert-error" style={{ whiteSpace: 'pre-line' }}>{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
+      {isAdmin && phase2Note && <div className="text-xs text-amber" style={{ marginBottom: 12 }}>⚠️ {phase2Note}</div>}
+      {isManagerOrAdmin && pendingReusableCount > 0 && (
+        <div className="text-xs text-muted" style={{ marginBottom: 12 }}>
+          Còn {pendingReusableCount} đồ tái sử dụng chưa thu hồi: chỉ chuyển sang Hoàn thành / Đã hủy được sau khi ghi
+          thu hồi (tốt/hỏng/mất) ở tab Thu hồi vật tư.
+        </div>
+      )}
 
       {/* Thanh Tabs */}
       <div className="tabs-bar" style={{ marginBottom: 20 }}>
@@ -1303,12 +1389,19 @@ Giữ số đã nhập = chỉ điền các dòng còn trống.`,
                 type="button"
                 className="btn btn-primary"
                 onClick={handleIssueByPlan}
-                disabled={busyIssue}
+                disabled={busyIssue || !!issueBlock}
+                title={issueBlock || undefined}
               >
                 ⚡ Xuất theo kế hoạch (1-Click)
               </button>
             )}
           </div>
+
+          {issueBlock && (
+            <div className="alert alert-error" style={{ marginTop: 12 }}>
+              🔒 {issueBlock}
+            </div>
+          )}
 
           {canEditCatalog && (
             <form onSubmit={handleManualIssue} className="sub-card" style={{ marginTop: 12 }}>
@@ -1416,7 +1509,7 @@ Giữ số đã nhập = chỉ điền các dòng còn trống.`,
                 >
                   + Thêm dòng
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={busyIssue}>
+                <button type="submit" className="btn btn-primary" disabled={busyIssue || !!issueBlock}>
                   {busyIssue ? 'Đang xử lý...' : 'Lưu phiếu xuất dự án'}
                 </button>
               </div>

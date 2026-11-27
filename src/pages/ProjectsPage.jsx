@@ -18,6 +18,8 @@ import { saveProjectFinance, getProjectFinance } from '../lib/financeApi'
 import { fetchAllRows } from '../lib/fetchAll'
 import { calcProjectClosure, deleteBlockMessage } from '../lib/projectArchive'
 import { calcProjectFbReminder } from '../lib/watermarkHelper'
+import { statusChangeBlockReason } from '../lib/projectRules'
+import { loadStatusGuardData } from '../lib/projectRulesApi'
 import {
   mergeNoteKeepingFbMeta,
   diffMembers,
@@ -340,6 +342,20 @@ export default function ProjectsPage() {
     }
     savingRef.current = true
     try {
+      // Chặn trước đổi trạng thái (DB cũng chặn khi đã chạy projects_phase2.sql)
+      if (editingProject && editingProject.status !== form.status) {
+        const guard = await loadStatusGuardData(editingProject, form.status)
+        const block = statusChangeBlockReason({
+          prevStatus: editingProject.status,
+          nextStatus: form.status,
+          projectName: form.name.trim(),
+          ...guard,
+        })
+        if (block) {
+          setModalError(block)
+          return
+        }
+      }
       const warning = statusChangeWarning(
         editingProject?.status || INITIAL_PROJECT_FORM.status,
         form.status,
@@ -1054,6 +1070,19 @@ export default function ProjectsPage() {
                       </option>
                     ))}
                   </select>
+                  {editingProject &&
+                    editingProject.status !== form.status &&
+                    (form.status === 'done' || form.status === 'cancelled') && (
+                      <div className="text-xs text-muted" style={{ marginTop: 4 }}>
+                        Khi lưu, hệ thống kiểm tra: còn đồ tái sử dụng chưa thu hồi (hoặc chưa ghi hỏng/mất) thì
+                        không chuyển được.
+                      </div>
+                    )}
+                  {editingProject?.status === 'cancelled' && form.status !== 'cancelled' && (
+                    <div className="text-xs text-muted" style={{ marginTop: 4 }}>
+                      Mở lại dự án hủy bị chặn nếu đã ghi Mất cọc hoặc tháng hủy đã khóa sổ.
+                    </div>
+                  )}
                 </div>
               </div>
 
