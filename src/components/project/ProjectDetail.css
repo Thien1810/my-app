@@ -1,0 +1,101 @@
+/* Chỉ phần bố cục riêng của trang chi tiết dự án; nút, ô nhập, tab, bảng dùng ui-* (styles/ui.css).
+   File này nạp TRƯỚC App.css và ui.css nên mọi quy tắc đều gắn .project-detail để thắng thứ tự nạp. */
+.project-detail .page-header h1 { overflow-wrap: anywhere; }
+
+.project-detail .project-tabs { margin-bottom: var(--space-4); }
+.project-detail .project-tabs .ui-tab {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); text-decoration: none;
+  padding: 0 var(--space-3);
+}
+
+.project-detail .project-feedback { margin: var(--space-2) 0; white-space: pre-line; overflow-wrap: anywhere; }
+
+/* Tổng quan */
+.project-detail .project-overview-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: var(--space-4); align-items: start;
+}
+.project-detail .project-overview-grid h3 { margin-bottom: var(--space-3); font-size: var(--fs-lg); }
+.project-detail .project-details { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; }
+.project-detail .project-details dt { font-size: var(--fs-sm); color: var(--text-muted); }
+.project-detail .project-details dd { margin: 0; overflow-wrap: anywhere; }
+.project-detail .project-note { white-space: pre-line; }
+.project-detail .project-status-field { margin-bottom: var(--space-3); }
+
+/* Kế hoạch: hàng thêm vật tư (ItemPicker + số lượng + nút) */
+.project-detail .project-add-row {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); margin-top: var(--space-2);
+}
+.project-detail .project-qty-cell { display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+.project-detail .project-qty-row { display: inline-flex; align-items: center; gap: var(--space-2); }
+.project-detail .project-qty-row .ui-input { width: 100px; min-width: 0; text-align: right; }
+
+/* ItemPicker trong bảng-thành-thẻ: không cắt danh sách xổ xuống */
+.project-detail .project-issue-table .ui-table tr { overflow: visible; }
+.project-detail .project-issue-table .ui-table td { overflow-wrap: normal; }
+
+.project-detail .project-issue-add { margin-top: var(--space-3); }
+/* Chỉ còn một dòng thì không có nút bỏ dòng: ẩn ô trống trên thẻ */
+@media (max-width: 768px) {
+  .project-detail .project-issue-table .ui-table td.ui-table__actions:empty { display: none; }
+}
+
+.project-detail .project-presets {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3);
+}
+.project-detail .project-presets .ui-btn { padding: 0 var(--space-3); font-size: var(--fs-sm); }
+
+/* Thanh nút lưu: điện thoại dính đáy (trên menu dưới), thông báo nằm ngay trên nút */
+.project-detail .project-actions-bar { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+.project-detail .project-actions-bar > .ui-btn { flex: 0 0 auto; }
+
+@media (min-width: 769px) {
+  .project-detail .project-add-row { grid-template-columns: minmax(0, 1fr) 110px auto; align-items: start; }
+  .project-detail .project-actions-bar {
+    align-items: flex-end; padding: 0; margin-top: var(--space-4); background: transparent; border: 0;
+  }
+  .project-detail .project-actions-bar .project-feedback { align-self: stretch; }
+  /* Bảng nhiều cột: giữ cột tên đủ rộng, ô nhập và nút trong bảng gọn lại */
+  .project-detail .data-table.ui-table th,
+  .project-detail .data-table.ui-table td { padding: 10px 8px; }
+  .project-detail .data-table.ui-table th { white-space: normal; }
+  .project-detail .data-table.ui-table td.ui-table__primary { min-width: 160px; }
+  .project-detail .data-table.ui-table td .ui-btn { padding: 0 var(--space-3); font-size: var(--fs-md); }
+  .project-detail .project-qty-row .ui-input { width: 84px; }
+  .project-detail .project-return-table td .ui-input { min-width: 76px; }
+}
+
+@media (max-width: 768px) {
+  .project-detail .btn,
+  .project-detail .btn-sm,
+  .project-detail .ip-input { min-height: var(--tap); }
+  .project-detail .ip-clear { width: var(--tap); height: var(--tap); right: 0; }
+  .project-detail .ip-field .ip-input { padding-right: 48px; }
+  .project-detail input[type='range'] { min-height: var(--tap); }
+  .project-detail .table-link { display: inline-flex; align-items: center; min-height: var(--tap); }
+
+  .project-detail .ui-table td > .ui-select,
+  .project-detail .ui-table td > .ui-input { flex: 1 1 auto; min-width: 0; }
+  /* Ô nội dung dài: nhãn trên, nội dung dưới */
+  .project-detail .ui-table td.project-cell-stack { flex-direction: column; align-items: stretch; text-align: left; }
+  .project-detail .ui-table td.project-cell-stack::before { flex: 0 0 auto; }
+
+  .project-detail form.ui-has-sticky-bar { padding-bottom: 96px; }
+  .project-detail form.ui-has-sticky-bar:has(.project-actions-bar .project-feedback) { padding-bottom: 260px; }
+  .project-detail .project-actions-bar .project-feedback { margin: 0; max-height: 28vh; overflow-y: auto; }
+
+  /* Thu hồi: tên đồ -> còn ở dự án -> 3 ô nhập cùng một hàng -> số liệu phụ */
+  .project-detail .project-return-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .project-detail .project-return-table td { grid-column: 1 / -1; order: 2; }
+  .project-detail .project-return-table td.ui-table__primary { order: -1; }
+  .project-detail .project-return-table td.project-return-outstanding { order: 0; }
+  .project-detail .project-return-table td.project-return-input {
+    grid-column: auto; order: 1; flex-direction: column; justify-content: flex-start; align-items: stretch;
+    gap: var(--space-1); padding: var(--space-2); text-align: left;
+  }
+  .project-detail .project-return-table td.project-return-input::before { flex: 0 0 auto; }
+  .project-detail .project-return-table td.project-return-input .ui-input { width: 100%; min-width: 0; }
+  /* Đồ tiêu hao chỉ có một ô "Dư trả kho" */
+  .project-detail .project-return-table td.project-return-input--only { grid-column: 1 / -1; }
+  .project-detail .project-return-table td.project-return-na { display: none; }
+}

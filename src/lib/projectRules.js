@@ -23,7 +23,7 @@ export function isMissingSchemaError(error) {
 export function issueBlockReason(project, { canChangeStatus = false } = {}) {
   if (!project) return 'Chưa tải được dự án.'
   const how = canChangeStatus
-    ? 'Hãy đổi trạng thái ở ô "Trạng thái" phía trên.'
+    ? 'Hãy đổi trạng thái ở ô "Trạng thái" trong tab Tổng quan.'
     : 'Hãy nhờ Quản lý/Quản trị đổi trạng thái dự án.'
   if (!ISSUE_ALLOWED_STATUSES.includes(project.status)) {
     return `Dự án đang ở trạng thái "${label(project.status)}". Chỉ xuất kho khi dự án ở "${label('preparing')}" hoặc "${label('in_progress')}". ${how} (Thu hồi vật tư vẫn làm được ở mọi trạng thái.)`
@@ -70,7 +70,7 @@ export function statusChangeBlockReason({
     if (outstanding.length > 0) {
       const list = outstanding.slice(0, 8).map((r) => `- ${r.name}: ${fmt(r.qty)} ${r.unit}`.trim())
       if (outstanding.length > 8) list.push(`- ... và ${outstanding.length - 8} vật tư khác`)
-      return `Chưa thể chuyển dự án${name} sang "${label(nextStatus)}": còn ${outstanding.length} đồ tái sử dụng chưa thu hồi hoặc chưa ghi hỏng/mất:\n${list.join('\n')}\nHãy ghi thu hồi (tốt/hỏng/mất) ở tab "Thu hồi vật tư" trước.`
+      return `Chưa thể chuyển dự án${name} sang "${label(nextStatus)}": còn ${outstanding.length} đồ tái sử dụng chưa thu hồi hoặc chưa ghi hỏng/mất:\n${list.join('\n')}\nHãy ghi thu hồi (tốt/hỏng/mất) trong "Vật tư > Thu hồi" trước.`
     }
   }
   if (prevStatus === 'cancelled' && nextStatus !== 'cancelled') {

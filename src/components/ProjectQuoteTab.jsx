@@ -25,6 +25,7 @@ import { canonicalCategory, categoryIcon, parseTemplateMeta } from '../lib/setTe
 import { buildCategoryOptions, categoryKey } from '../lib/setTemplates'
 import { exportQuoteToPng } from '../lib/quoteExporter'
 import ContractValueFields from './ContractValueFields'
+import ProjectFeedback from './project/ProjectFeedback'
 import { saveProjectFinance } from '../lib/financeApi'
 
 export default function ProjectQuoteTab({
@@ -36,6 +37,7 @@ export default function ProjectQuoteTab({
   onSyncContractValue,
   onSyncFinance,
   onApplySetsToPlan,
+  planFeedback,
 }) {
   const storageKey = quoteStorageKey(project?.id)
   const { isAdmin } = useAuth()
@@ -50,6 +52,7 @@ export default function ProjectQuoteTab({
   const [exportingPng, setExportingPng] = useState(false)
   const [savingContract, setSavingContract] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [financeMsg, setFinanceMsg] = useState('')
   const [actionError, setActionError] = useState('')
   const [pushingPlan, setPushingPlan] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -492,11 +495,19 @@ export default function ProjectQuoteTab({
   const finalTotal = Number(contractValue || 0)
   const safeDiscount = Math.max(0, Number(discount || 0))
   const packagePrice = finalTotal + safeDiscount
+  // Số trên hệ thống đổi (làm mới nền) thì ô tiền khởi tạo lại: bỏ bản đang sửa cũ để không lưu nhầm.
+  const financeKey = `${finalTotal}-${safeDiscount}`
+  const [draftFinanceKey, setDraftFinanceKey] = useState(financeKey)
+  if (draftFinanceKey !== financeKey) {
+    setDraftFinanceKey(financeKey)
+    setDraftFinance(null)
+    setFinanceValid(true)
+  }
 
   const handleSaveFinance = async () => {
     if (!isManagerOrAdmin || !draftFinance || !financeValid) return
     setSavingContract(true)
-    setSyncMsg('')
+    setFinanceMsg('')
     setSaveError('')
     try {
       const revenue = draftFinance.grossSales - draftFinance.discount
@@ -510,7 +521,7 @@ export default function ProjectQuoteTab({
       setDraftFinance(null)
       if (onSyncFinance) onSyncFinance({ contractValue: cv, discount: d })
       if (onSyncContractValue) onSyncContractValue(cv)
-      setSyncMsg(`✓ Đã lưu giá trị hợp đồng (doanh thu): ${formatCurrency(cv)}`)
+      setFinanceMsg(`✓ Đã lưu giá trị hợp đồng (doanh thu): ${formatCurrency(cv)}`)
     } catch (err) {
       setSaveError(err?.message || 'Không thể lưu giá trị hợp đồng và ưu đãi.')
     } finally {
@@ -535,7 +546,7 @@ export default function ProjectQuoteTab({
       const res = await onApplySetsToPlan(templateIds)
       if (res?.ok) {
         setSyncMsg(
-          `✓ Đã nạp vật tư định mức của các Set đã chọn sang tab Kế hoạch vật tư (${res.count ?? 0} vật tư).`
+          `✓ Đã nạp vật tư định mức của các Set đã chọn sang Vật tư > Kế hoạch (${res.count ?? 0} vật tư).`
         )
       } else if (!res?.cancelled) {
         setActionError(res?.error || 'Không nạp được vật tư sang Kế hoạch.')
@@ -607,13 +618,13 @@ export default function ProjectQuoteTab({
 
   if (store === 'loading' || store === 'error') {
     return (
-      <div className="card">
+      <div className="card ui-card">
         {store === 'loading' ? (
           <div className="loading-state">Đang tải báo giá...</div>
         ) : (
           <div className="alert alert-error" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <span>Không tải được báo giá từ hệ thống: {loadError}</span>
-            <button type="button" className="btn btn-sm btn-outline" onClick={() => setReloadKey((k) => k + 1)}>
+            <button type="button" className="ui-btn ui-btn--secondary" onClick={() => setReloadKey((k) => k + 1)}>
               Tải lại
             </button>
           </div>
@@ -637,10 +648,10 @@ export default function ProjectQuoteTab({
             {localOffer.updatedAt ? ` (sửa lúc ${formatSavedTime(localOffer.updatedAt)})` : ''}, CHƯA có trên hệ thống.
             Đưa lên để máy khác cũng thấy. Sửa bất kỳ dòng nào cũng sẽ tự lưu lên hệ thống.
           </span>
-          <button type="button" className="btn btn-sm btn-primary" onClick={() => flushSave()}>
+          <button type="button" className="ui-btn ui-btn--primary" onClick={() => flushSave()}>
             Đưa lên hệ thống
           </button>
-          <button type="button" className="btn btn-sm btn-outline" onClick={handleDiscardLocal}>
+          <button type="button" className="ui-btn ui-btn--secondary" onClick={handleDiscardLocal}>
             Bỏ bản trên máy này
           </button>
         </div>
@@ -652,10 +663,10 @@ export default function ProjectQuoteTab({
             {draftOffer.savedAt ? ` (sửa lúc ${formatSavedTime(draftOffer.savedAt)})` : ''}, nhưng trên hệ thống đã có
             bản mới hơn do máy khác lưu. Đang hiện bản trên hệ thống; bản nháp chưa được áp dụng.
           </span>
-          <button type="button" className="btn btn-sm btn-outline" onClick={handleUseDraft}>
+          <button type="button" className="ui-btn ui-btn--secondary" onClick={handleUseDraft}>
             Dùng bản nháp (lưu đè)
           </button>
-          <button type="button" className="btn btn-sm btn-outline" onClick={handleDiscardDraft}>
+          <button type="button" className="ui-btn ui-btn--secondary" onClick={handleDiscardDraft}>
             Bỏ bản nháp
           </button>
         </div>
@@ -666,41 +677,16 @@ export default function ProjectQuoteTab({
             Báo giá vừa được lưu từ máy khác. Thay đổi trên máy này CHƯA được lưu lên hệ thống (không ghi đè ngầm),
             nhưng vẫn giữ làm bản nháp trên máy này.
           </span>
-          <button type="button" className="btn btn-sm btn-primary" onClick={handleReloadLatest}>
+          <button type="button" className="ui-btn ui-btn--primary" onClick={handleReloadLatest}>
             Tải bản mới nhất
           </button>
-          <button type="button" className="btn btn-sm btn-outline" onClick={handleOverwrite}>
+          <button type="button" className="ui-btn ui-btn--secondary" onClick={handleOverwrite}>
             Ghi đè bằng bản của tôi
           </button>
         </div>
       )}
-      {store === 'db' && !conflict && saveState.status !== 'idle' && (
-        <div
-          className={`text-xs ${saveState.status === 'error' ? '' : 'text-muted'}`}
-          style={saveState.status === 'error' ? { color: '#dc2626' } : undefined}
-        >
-          {saveState.status === 'saving' && 'Đang lưu báo giá lên hệ thống...'}
-          {saveState.status === 'dirty' && (saveState.message || 'Có thay đổi, sẽ tự lưu...')}
-          {saveState.status === 'saved' && `✓ Đã lưu trên hệ thống${saveState.at ? ` lúc ${formatSavedTime(saveState.at)}` : ''}`}
-          {saveState.status === 'error' && (
-            <>
-              {saveState.message}{' '}
-              <button type="button" className="btn btn-sm btn-outline" onClick={() => flushSave()}>
-                Lưu lại
-              </button>
-            </>
-          )}
-        </div>
-      )}
-      {syncMsg && <div className="alert alert-success">{syncMsg}</div>}
-      {actionError && (
-        <div className="alert alert-error" style={{ whiteSpace: 'pre-line' }}>
-          {actionError}
-        </div>
-      )}
-
       {/* BƯỚC 1: CHỌN MẪU SET TRANG TRÍ TỪ HÌNH ẢNH */}
-      <div className="card">
+      <div className="card ui-card">
         <div
           className="card-header"
           style={{
@@ -721,7 +707,7 @@ export default function ProjectQuoteTab({
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
               type="button"
-              className={`btn btn-sm ${filterSetCat === 'all' ? 'btn-primary' : 'btn-outline'}`}
+              className={`ui-btn ui-btn--${filterSetCat === 'all' ? 'primary' : 'secondary'}`}
               onClick={() => setFilterSetCat('all')}
             >
               Tất cả ({enrichedTemplates.length})
@@ -730,9 +716,7 @@ export default function ProjectQuoteTab({
               <button
                 key={opt}
                 type="button"
-                className={`btn btn-sm ${
-                  filterSetCat === opt ? 'btn-primary' : 'btn-outline'
-                }`}
+                className={`ui-btn ui-btn--${filterSetCat === opt ? 'primary' : 'secondary'}`}
                 onClick={() => setFilterSetCat(opt)}
               >
                 {categoryIcon(opt)} {opt}
@@ -820,7 +804,7 @@ export default function ProjectQuoteTab({
                 </div>
                 <button
                   type="button"
-                  className="btn btn-sm btn-primary btn-block"
+                  className="ui-btn ui-btn--primary ui-btn--block"
                   onClick={() => handleAddTemplateToQuote(tpl)}
                 >
                   + Đưa mẫu này vào Báo giá
@@ -832,7 +816,7 @@ export default function ProjectQuoteTab({
       </div>
 
       {/* BƯỚC 2: BẢNG PHƯƠNG ÁN TRANG TRÍ & GIÁ TRỊ HỢP ĐỒNG */}
-      <div className="card">
+      <div className="card ui-card">
         <div
           className="card-header"
           style={{
@@ -854,23 +838,23 @@ export default function ProjectQuoteTab({
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
-              className="btn btn-sm btn-outline"
+              className="ui-btn ui-btn--secondary"
               onClick={handleAddCustomLine}
             >
               + Thêm hạng mục khác
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-outline"
+              className="ui-btn ui-btn--secondary"
               onClick={handlePushSetsToPlan}
               disabled={pushingPlan || quoteLines.length === 0}
-              title="Đưa toàn bộ vật tư của các Set trong báo giá sang tab Kế hoạch vật tư"
+              title="Đưa toàn bộ vật tư của các Set trong báo giá sang Vật tư > Kế hoạch"
             >
               📋 Nạp vật tư sang Kế hoạch
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-outline"
+              className="ui-btn ui-btn--secondary"
               onClick={handleExportExcel}
               disabled={quoteLines.length === 0}
             >
@@ -878,7 +862,7 @@ export default function ProjectQuoteTab({
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-primary"
+              className="ui-btn ui-btn--primary"
               onClick={handleExportPng}
               disabled={exportingPng || quoteLines.length === 0}
             >
@@ -886,6 +870,14 @@ export default function ProjectQuoteTab({
             </button>
           </div>
         </div>
+
+        {syncMsg && <div className="alert alert-success" role="status">{syncMsg}</div>}
+        {actionError && (
+          <div className="alert alert-error" role="alert" style={{ whiteSpace: 'pre-line' }}>
+            {actionError}
+          </div>
+        )}
+        <ProjectFeedback feedback={planFeedback} />
 
         {quoteLines.length === 0 ? (
           <div className="empty-state">
@@ -895,7 +887,7 @@ export default function ProjectQuoteTab({
         ) : (
           <>
             <div className="table-responsive">
-              <table className="data-table">
+              <table className="data-table ui-table">
                 <thead>
                   <tr>
                     <th style={{ width: 100 }}>Hình ảnh mẫu</th>
@@ -909,7 +901,7 @@ export default function ProjectQuoteTab({
                     const lineImage = resolveLineImage(line, imageMap)
                     return (
                     <tr key={line.uid}>
-                      <td>
+                      <td data-label="Hình ảnh mẫu">
                         <div
                           style={{
                             display: 'flex',
@@ -952,8 +944,7 @@ export default function ProjectQuoteTab({
                             </div>
                           )}
                           <label
-                            className="btn-link"
-                            style={{ fontSize: '0.72rem', cursor: 'pointer', padding: 0 }}
+                            className="ui-btn ui-btn--ghost"
                           >
                             Đổi ảnh
                             <input
@@ -967,8 +958,8 @@ export default function ProjectQuoteTab({
                           </label>
                         </div>
                       </td>
-                      <td>
-                        <select
+                      <td data-label="Phân loại">
+                        <select className="ui-select"
                           value={canonicalCategory(line.category || 'Gia tiên', categoryOptions)}
                           onChange={(e) =>
                             handleUpdateLine(line.uid, 'category', e.target.value)
@@ -984,9 +975,10 @@ export default function ProjectQuoteTab({
                           )}
                         </select>
                       </td>
-                      <td>
-                        <input
+                      <td className="ui-table__primary" data-label="Tên mẫu set">
+                        <input className="ui-input"
                           type="text"
+                          aria-label="Tên gói set trang trí"
                           placeholder="Tên gói set trang trí..."
                           value={line.name}
                           onChange={(e) =>
@@ -994,24 +986,26 @@ export default function ProjectQuoteTab({
                           }
                           style={{ fontWeight: 600, marginBottom: 6 }}
                         />
-                        <input
+                        <input className="ui-input"
                           type="text"
                           placeholder="Các vật tư trong gói / Ghi chú (chỉ hiện tên vật tư, không hiện số lượng)..."
                           value={line.note || ''}
                           onChange={(e) =>
                             handleUpdateLine(line.uid, 'note', e.target.value)
                           }
-                          style={{ fontSize: '0.82rem', color: '#475569' }}
+                          aria-label="Mô tả cho khách"
+                          style={{ color: '#475569' }}
                         />
                       </td>
-                      <td className="text-right">
+                      <td className="ui-table__actions text-right">
                         <button
                           type="button"
-                          className="btn btn-sm btn-outline"
+                          aria-label={`Bỏ hạng mục ${line.name || ''}`.trim()}
+                          className="ui-btn ui-btn--secondary"
                           style={{ color: '#dc2626', borderColor: '#fecaca' }}
                           onClick={() => handleRemoveLine(line.uid)}
                         >
-                          ✕
+                          ✕ Bỏ
                         </button>
                       </td>
                     </tr>
@@ -1023,7 +1017,7 @@ export default function ProjectQuoteTab({
 
             {/* Khung Giá trị hợp đồng hiển thị trên Báo giá */}
             <div
-              className="sub-card"
+              className="sub-card ui-card"
               style={{
                 marginTop: 16,
                 display: 'grid',
@@ -1034,7 +1028,7 @@ export default function ProjectQuoteTab({
             >
               <div className="form-group" style={{ margin: 0 }}>
                 <label>Ghi chú cuối Phiếu Báo Giá</label>
-                <input
+                <input className="ui-input"
                   type="text"
                   placeholder="VD: Giá trọn gói đã bao gồm lắp đặt & tháo dỡ..."
                   value={quoteNote}
@@ -1061,21 +1055,25 @@ export default function ProjectQuoteTab({
                       discount={safeDiscount}
                       canEdit
                       canSeeDiscount
-                      onChange={(v) => setDraftFinance(v)}
+                      onChange={(v) => {
+                        setFinanceMsg('')
+                        setDraftFinance(v)
+                      }}
                       onValidChange={(ok) => setFinanceValid(ok)}
                     />
                   </div>
                   <button
                     type="button"
-                    className="btn btn-outline btn-sm"
+                    className="ui-btn ui-btn--secondary"
                     style={{ whiteSpace: 'nowrap', marginTop: 8 }}
                     disabled={savingContract || !financeValid || !draftFinance}
                     onClick={handleSaveFinance}
                   >
                     {savingContract ? 'Đang lưu...' : 'Lưu giá HĐ & ưu đãi'}
                   </button>
+                  {financeMsg && <div className="alert alert-success" role="status">{financeMsg}</div>}
                   {saveError && (
-                    <div style={{ color: '#dc2626', fontSize: '0.85em', marginTop: 4 }}>
+                    <div role="alert" style={{ color: '#dc2626', fontSize: '0.85em', marginTop: 4 }}>
                       {saveError}
                     </div>
                   )}
@@ -1101,6 +1099,30 @@ export default function ProjectQuoteTab({
               </div>
             </div>
           </>
+        )}
+
+        {store === 'db' && conflict && (
+          <div className="alert alert-error" role="alert" style={{ marginTop: 12 }}>
+            CHƯA lưu: báo giá vừa được lưu từ máy khác. Chọn cách xử lý ở đầu tab Báo giá.
+          </div>
+        )}
+        {store === 'db' && !conflict && saveState.status !== 'idle' && (
+          <div
+            className={`text-xs ${saveState.status === 'error' ? '' : 'text-muted'}`}
+            style={saveState.status === 'error' ? { color: '#dc2626' } : undefined}
+          >
+            {saveState.status === 'saving' && 'Đang lưu báo giá lên hệ thống...'}
+            {saveState.status === 'dirty' && (saveState.message || 'Có thay đổi, sẽ tự lưu...')}
+            {saveState.status === 'saved' && `✓ Đã lưu trên hệ thống${saveState.at ? ` lúc ${formatSavedTime(saveState.at)}` : ''}`}
+            {saveState.status === 'error' && (
+              <>
+                {saveState.message}{' '}
+                <button type="button" className="ui-btn ui-btn--secondary" onClick={() => flushSave()}>
+                  Lưu lại
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
 

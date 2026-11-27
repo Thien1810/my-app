@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { formatDate, todayISO } from '../lib/formatters'
@@ -39,8 +39,16 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
   const [saveErr, setSaveErr] = useState('')
   const [storageErr, setStorageErr] = useState('')
   const [previewImg, setPreviewImg] = useState(null)
+  // Thông báo hiện cạnh chỗ vừa thao tác: 'top' (dải nhắc) | 'images' | 'post'
+  const [msgArea, setMsgArea] = useState('post')
 
+  // Chỉ nạp lại khi đổi dự án: làm mới nền không được ghi đè ảnh/bài đang soạn.
+  const projectRef = useRef(project)
   useEffect(() => {
+    projectRef.current = project
+  })
+  useEffect(() => {
+    const project = projectRef.current
     if (!project?.id) return
     const data = getProjectFbData(project)
     setStatus(data.status || 'unposted')
@@ -52,7 +60,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
     setWatermarkScale(data.watermarkScale ?? 0.28)
     setWatermarkOpacity(data.watermarkOpacity ?? 0.92)
     setImages(Array.isArray(data.images) ? data.images : [])
-  }, [project])
+  }, [project?.id])
 
   const reminder = calcProjectFbReminder({
     ...project,
@@ -74,6 +82,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
     }
     const res = saveProjectFbData(project?.id, payload)
     setStorageErr(res.ok ? '' : res.error)
+    if (!res.ok) setMsgArea('images' in nextOverrides ? 'images' : 'post')
     return res
   }
 
@@ -150,6 +159,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
     const files = Array.from(e.target.files || [])
     if (files.length === 0) return
     setProcessingImg(true)
+    setMsgArea('images')
     setMsg('')
     try {
       const added = []
@@ -226,6 +236,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
   const handleAiGenerateFacebookCaption = async () => {
     setAiCaptionBusy(true)
     setAiErr('')
+    setMsgArea('post')
     setMsg('')
     try {
       const setNames = templates.slice(0, 3).map((t) => t.name).join(', ')
@@ -251,6 +262,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
   }
 
   const handleCopyCaption = async () => {
+    setMsgArea('post')
     try {
       await navigator.clipboard.writeText(caption)
       setMsg('✓ Đã copy nội dung bài viết Facebook vào bộ nhớ tạm! Bạn có thể dán thẳng lên Fanpage.')
@@ -259,9 +271,10 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
     }
   }
 
-  const handleSaveStatusToCloud = async (newStatus = status) => {
+  const handleSaveStatusToCloud = async (newStatus = status, area = 'post') => {
     if (savingMeta) return
     setSavingMeta(true)
+    setMsgArea(area)
     setMsg('')
     setSaveErr('')
     const nextPostedAt = newStatus === 'posted' ? postedAt || todayISO() : postedAt
@@ -323,6 +336,14 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
     }
   }
 
+  const feedbackBlock = (msg || saveErr || storageErr) && (
+    <div>
+      {msg && <div className="alert alert-success" role="status">{msg}</div>}
+      {saveErr && <div className="alert alert-error" role="alert">{saveErr}</div>}
+      {storageErr && <div className="alert alert-error" role="alert">{storageErr}</div>}
+    </div>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       {/* Cảnh báo nhắc đăng bài nếu quá 5 ngày */}
@@ -344,21 +365,19 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           </div>
           <button
             type="button"
-            className="btn btn-sm btn-primary"
+            className="ui-btn ui-btn--primary"
             disabled={savingMeta}
-            onClick={() => handleSaveStatusToCloud('posted')}
+            onClick={() => handleSaveStatusToCloud('posted', 'top')}
           >
             ✅ Đánh dấu Đã đăng Fanpage
           </button>
         </div>
       )}
 
-      {msg && <div className="alert alert-success">{msg}</div>}
-      {saveErr && <div className="alert alert-error">{saveErr}</div>}
-      {storageErr && <div className="alert alert-error">{storageErr}</div>}
+      {msgArea === 'top' && feedbackBlock}
 
       {/* PHẦN 1: TẢI ẢNH LÊN & TỰ ĐỘNG ĐÓNG DẤU WATERMARK ĐẶNG WEDDING (TRẮNG / ĐEN) */}
-      <div className="card">
+      <div className="card ui-card">
         <div
           className="card-header"
           style={{
@@ -379,7 +398,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           {images.length > 0 && (
             <button
               type="button"
-              className="btn btn-primary"
+              className="ui-btn ui-btn--primary"
               onClick={handleDownloadAll}
             >
               📥 Tải tất cả {images.length} ảnh có Watermark
@@ -463,7 +482,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
 
         {/* Tùy chọn vị trí, kích thước Watermark & Nút tải ảnh */}
         <div
-          className="sub-card"
+          className="sub-card ui-card"
           style={{
             marginBottom: 16,
             display: 'grid',
@@ -474,7 +493,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
         >
           <div className="form-group" style={{ margin: 0 }}>
             <label>Vị trí đặt Watermark</label>
-            <select
+            <select className="ui-select"
               value={watermarkPos}
               onChange={(e) => {
                 const val = e.target.value
@@ -492,7 +511,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
 
           <div className="form-group" style={{ margin: 0 }}>
             <label>Kích thước Watermark</label>
-            <select
+            <select className="ui-select"
               value={watermarkScale}
               onChange={(e) => {
                 const val = Number(e.target.value)
@@ -526,7 +545,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
 
           <div>
             <label
-              className="btn btn-primary btn-block"
+              className="ui-btn ui-btn--primary ui-btn--block"
               style={{ cursor: 'pointer', margin: 0, textAlign: 'center' }}
             >
               {processingImg
@@ -543,6 +562,8 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
             </label>
           </div>
         </div>
+
+        {msgArea === 'images' && feedbackBlock}
 
         {/* Danh sách ảnh đã gắn Watermark */}
         {images.length === 0 ? (
@@ -621,7 +642,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
                 >
                   <button
                     type="button"
-                    className="btn btn-sm btn-outline"
+                    className="ui-btn ui-btn--secondary"
                     title="Đổi màu Watermark Trắng / Đen cho riêng tấm ảnh này"
                     onClick={() => handleToggleSingleImageColor(img.id)}
                   >
@@ -629,7 +650,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
                   </button>
                   <button
                     type="button"
-                    className="btn btn-sm btn-primary"
+                    className="ui-btn ui-btn--primary"
                     style={{ flex: 1 }}
                     onClick={() => handleDownloadSingle(img, idx)}
                   >
@@ -637,7 +658,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
                   </button>
                   <button
                     type="button"
-                    className="btn btn-sm btn-outline"
+                    className="ui-btn ui-btn--secondary"
                     style={{ color: '#dc2626', borderColor: '#fecaca' }}
                     onClick={() => handleRemoveImage(img.id)}
                   >
@@ -651,7 +672,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
       </div>
 
       {/* PHẦN 2: SOẠN NỘI DUNG BÀI ĐĂNG FACEBOOK & ĐÁNH DẤU ĐÃ ĐĂNG */}
-      <div className="card">
+      <div className="card ui-card">
         <div
           className="card-header"
           style={{
@@ -673,7 +694,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
               type="button"
-              className="btn btn-sm btn-primary"
+              className="ui-btn ui-btn--primary"
               disabled={aiCaptionBusy}
               onClick={handleAiGenerateFacebookCaption}
             >
@@ -681,28 +702,28 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-outline"
+              className="ui-btn ui-btn--secondary"
               onClick={() => handleGenerateCaption('luxury')}
             >
               ✨ Mẫu 1: Sang trọng
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-outline"
+              className="ui-btn ui-btn--secondary"
               onClick={() => handleGenerateCaption('warm')}
             >
               💞 Mẫu 2: Ấm cúng
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-outline"
+              className="ui-btn ui-btn--secondary"
               onClick={() => handleGenerateCaption('short')}
             >
               ⚡ Mẫu 3: Ngắn gọn
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-primary"
+              className="ui-btn ui-btn--primary"
               onClick={handleCopyCaption}
             >
               📋 Copy bài viết
@@ -721,7 +742,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
             label="AI Studio đang viết bài đăng Fanpage Facebook cho dự án này..."
             estimatedSeconds={8}
           />
-          <textarea
+          <textarea className="ui-textarea"
             rows={10}
             value={caption}
             onChange={(e) => {
@@ -734,7 +755,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
         </div>
 
         <div
-          className="sub-card"
+          className="sub-card ui-card"
           style={{
             marginTop: 12,
             display: 'grid',
@@ -745,7 +766,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
         >
           <div className="form-group" style={{ margin: 0 }}>
             <label>Trạng thái đăng bài Facebook</label>
-            <select
+            <select className="ui-select"
               value={status}
               onChange={(e) => {
                 setStatus(e.target.value)
@@ -762,7 +783,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
 
           <div className="form-group" style={{ margin: 0 }}>
             <label>Link bài viết đã đăng trên Fanpage (tùy chọn)</label>
-            <input
+            <input className="ui-input"
               type="url"
               placeholder="https://www.facebook.com/..."
               value={fbUrl}
@@ -773,10 +794,10 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
             />
           </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
-              className="btn btn-outline"
+              className="ui-btn ui-btn--secondary"
               style={{ flex: 1 }}
               disabled={savingMeta}
               onClick={() => handleSaveStatusToCloud(status)}
@@ -785,7 +806,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
             </button>
             <button
               type="button"
-              className="btn btn-primary"
+              className="ui-btn ui-btn--primary"
               style={{ flex: 1 }}
               disabled={savingMeta}
               onClick={() => handleSaveStatusToCloud('posted')}
@@ -794,6 +815,7 @@ export default function ProjectFacebookTab({ project, templates = [], onProjectU
             </button>
           </div>
         </div>
+        {msgArea === 'post' && feedbackBlock}
       </div>
 
       {/* Lightbox xem ảnh phóng to */}

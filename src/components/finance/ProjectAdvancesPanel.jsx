@@ -29,26 +29,26 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
   const [locks, setLocks] = useState([])
   const [locksError, setLocksError] = useState('')
   const [loadError, setLoadError] = useState('')
-  const [loaded, setLoaded] = useState(false)
+  const [loadedKey, setLoadedKey] = useState(null) // lượt tải gần nhất đã xong
   const [reloadKey, setReloadKey] = useState(0)
   const [form, setForm] = useState({ receivedDate: todayStr(), kind: 'advance', amount: 0, note: '' })
   const [error, setError] = useState('')
+  const [rowError, setRowError] = useState('') // lỗi khi xóa, hiện ngay trên danh sách
   const [submitting, setSubmitting] = useState(false)
   const { confirm, confirmDialog } = useConfirm()
 
+  // Tải lại sau khi ghi: giữ danh sách đang hiện (không giật trang), khóa nút tới khi có số mới.
   useEffect(() => {
     let cancelled = false
-    setLoaded(false)
-    setLoadError('')
-    setRows([])
     listProjectAdvances(projectId).then(({ data, error: err }) => {
       if (cancelled) return
       if (err) {
         setLoadError(err.message || 'Lỗi không xác định')
       } else {
+        setLoadError('')
         setRows(data || [])
-        setLoaded(true)
       }
+      setLoadedKey(`${projectId}:${reloadKey}`)
     })
     return () => {
       cancelled = true
@@ -86,11 +86,14 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
 
   const cv = Number(contractValue) || 0
   const sum = summarizeAdvances(rows, cv)
+  const loaded = !!loadedKey?.startsWith(`${projectId}:`)
+  const fresh = loadedKey === `${projectId}:${reloadKey}`
   const ok = loaded && !loadError
 
   const submit = async (e) => {
     e.preventDefault()
-    if (!canWrite || submitting || !ok) return
+    if (!canWrite || submitting || !ok || !fresh) return
+    setRowError('')
     const msg = validateAdvanceInput({
       kind: form.kind,
       amount: form.amount,
@@ -122,15 +125,17 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
   }
 
   const remove = async (id) => {
-    if (!canWrite || submitting) return
+    if (!canWrite || submitting || !fresh) return
+    setRowError('')
+    setError('')
     const target = rows.find((r) => String(r.id) === String(id))
     if (target?.kind === 'forfeit' && isMonthLockedLocal(locks, String(target.received_date || '').slice(0, 7))) {
-      setError(lockedMsg(target.received_date))
+      setRowError(lockedMsg(target.received_date))
       return
     }
     const delMsg = canDeleteAdvance({ rows, id })
     if (delMsg) {
-      setError(delMsg)
+      setRowError(delMsg)
       return
     }
     const okDel = await confirm({
@@ -141,11 +146,10 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
     })
     if (!okDel) return
     setSubmitting(true)
-    setError('')
     try {
       const { error: err } = await deleteProjectAdvance(id)
       if (err) {
-        setError(err.message || 'Không xóa được khoản này.')
+        setRowError(err.message || 'Không xóa được khoản này.')
         return
       }
       reload()
@@ -160,14 +164,14 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
   const outLabel = overpaid ? 'Thu dư' : paidFull ? 'Đã thu đủ' : 'Còn phải thu'
 
   return (
-    <div className="card" style={{ padding: 20, marginTop: 20 }}>
+    <div className="card ui-card">
       <h3 style={{ marginBottom: 4 }}>💵 Tạm ứng / cọc của khách</h3>
       <p className="text-muted" style={{ fontSize: 13.5, marginBottom: 14 }}>
         Tiền cọc/tạm ứng không phải doanh thu. Đã thu = Khách đưa − Hoàn lại; Mất cọc không tính vào đã thu.
       </p>
 
       {loadError && (
-        <div className="alert alert-danger" style={{ marginBottom: 12 }}>
+        <div className="alert alert-error" style={{ marginBottom: 12 }}>
           Không tải được tạm ứng: {loadError}
         </div>
       )}
@@ -214,11 +218,11 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
       )}
 
       {canWrite && (
-        <form onSubmit={submit} className="sub-card" style={{ marginBottom: 16, padding: 14 }}>
+        <form onSubmit={submit} className="sub-card ui-card" style={{ marginBottom: 16, padding: 14 }}>
           <div className="form-grid-4">
             <div className="form-group">
               <label>Ngày *</label>
-              <input
+              <input className="ui-input"
                 type="date"
                 disabled={submitting}
                 value={form.receivedDate}
@@ -227,7 +231,7 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
             </div>
             <div className="form-group">
               <label>Loại *</label>
-              <select disabled={submitting} value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+              <select className="ui-select" disabled={submitting} value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
                 {ADVANCE_KINDS.map((k) => (
                   <option key={k} value={k} disabled={k === 'forfeit' && !isCancelled}>
                     {ADVANCE_KIND_LABELS[k]}
@@ -239,6 +243,7 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
             <div className="form-group">
               <label>Số tiền (₫) *</label>
               <CurrencyInput
+                className="ui-input"
                 disabled={submitting}
                 placeholder="VD: 3.000.000"
                 value={form.amount || ''}
@@ -247,30 +252,31 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
             </div>
             <div className="form-group">
               <label>Ghi chú</label>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <input className="ui-input"
                   type="text"
+                  aria-label="Ghi chú"
                   disabled={submitting}
                   value={form.note}
                   onChange={(e) => setForm({ ...form, note: e.target.value })}
                 />
-                <button type="submit" disabled={submitting || !ok} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
+                <button type="submit" disabled={submitting || !ok || !fresh} className="ui-btn ui-btn--primary ui-btn--block">
                   {submitting ? 'Đang lưu...' : '+ Thêm'}
                 </button>
               </div>
             </div>
           </div>
-          {error && <div className="text-xs" style={{ color: '#dc2626', marginTop: 6 }}>{error}</div>}
+          {error && <div className="alert alert-error project-feedback" role="alert">{error}</div>}
         </form>
       )}
-      {!canWrite && error && <div className="text-xs" style={{ color: '#dc2626', marginBottom: 8 }}>{error}</div>}
+      {rowError && <div className="alert alert-error project-feedback" role="alert">{rowError}</div>}
 
       {ok &&
         (rows.length === 0 ? (
           <div className="empty-state" style={{ padding: 20 }}>Chưa có khoản tạm ứng nào.</div>
         ) : (
           <div className="table-responsive">
-            <table className="data-table">
+            <table className="data-table ui-table">
               <thead>
                 <tr>
                   <th>Ngày</th>
@@ -283,13 +289,13 @@ export default function ProjectAdvancesPanel({ projectId, contractValue = 0, can
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
-                    <td>{r.received_date}</td>
-                    <td>{ADVANCE_KIND_LABELS[r.kind] || r.kind}</td>
-                    <td className="text-right font-bold">{formatCurrency(Math.abs(Number(r.amount) || 0))}</td>
-                    <td>{r.note || ''}</td>
+                    <td data-label="Ngày">{r.received_date}</td>
+                    <td className="ui-table__primary" data-label="Loại">{ADVANCE_KIND_LABELS[r.kind] || r.kind}</td>
+                    <td className="text-right font-bold" data-label="Số tiền">{formatCurrency(Math.abs(Number(r.amount) || 0))}</td>
+                    <td className="project-cell-stack" data-label="Ghi chú">{r.note || '—'}</td>
                     {canWrite && (
-                      <td className="text-right">
-                        <button type="button" disabled={submitting} className="btn btn-outline btn-sm" onClick={() => remove(r.id)}>
+                      <td className="ui-table__actions text-right">
+                        <button type="button" disabled={submitting || !fresh} className="ui-btn ui-btn--secondary" onClick={() => remove(r.id)}>
                           Xóa
                         </button>
                       </td>

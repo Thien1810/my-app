@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import {
@@ -70,6 +70,9 @@ export default function ProjectsPage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const { confirm, confirmDialog } = useConfirm()
+  const navigate = useNavigate()
+  // Id dự án vừa tạo trong lần mở form này: lưu xong trọn vẹn thì mở trang dự án đó
+  const createdIdRef = useRef(null)
 
   // Bộ lọc
   const [search, setSearch] = useState('')
@@ -247,6 +250,7 @@ export default function ProjectsPage() {
   )
 
   const openCreateModal = () => {
+    createdIdRef.current = null
     setEditingProject(null)
     setFinanceValid(true)
     setFinanceDirty(false)
@@ -263,6 +267,7 @@ export default function ProjectsPage() {
   }
 
   const openEditModal = (p) => {
+    createdIdRef.current = null
     setEditingProject(p)
     setFinanceValid(true)
     setFinanceDirty(false)
@@ -434,6 +439,7 @@ export default function ProjectsPage() {
           .single()
         if (err) throw err
         projectId = data.id
+        createdIdRef.current = data.id
         // Từ giờ các lần Lưu tiếp theo là CẬP NHẬT dự án vừa tạo (tránh tạo trùng)
         setEditingProject({ ...payload, id: data.id })
       }
@@ -495,8 +501,12 @@ export default function ProjectsPage() {
         }
       }
 
-      await loadData()
       const partialError = [financeErrorMsg, memberErrorMsg].filter(Boolean).join(' ')
+      if (!partialError && createdIdRef.current === projectId) {
+        navigate(`/du-an/${projectId}`)
+        return
+      }
+      await loadData()
       if (partialError) {
         // Lưu được một phần: giữ modal mở và báo lỗi trong modal
         setModalError(partialError)

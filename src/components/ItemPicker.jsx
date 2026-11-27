@@ -7,6 +7,7 @@ const ItemPicker = forwardRef(function ItemPicker({
   value,
   onChange,
   placeholder = 'Gõ tên hoặc mã vật tư...',
+  ariaLabel,
   disabled = false,
   invalid = false,
   stockField = 'in_stock',
@@ -103,6 +104,7 @@ const ItemPicker = forwardRef(function ItemPicker({
           ref={inputRef}
           className="ip-input"
           role="combobox"
+          aria-label={ariaLabel}
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"

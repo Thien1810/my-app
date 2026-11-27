@@ -38,7 +38,7 @@ function ConfirmModal({ title, message, confirmLabel, cancelLabel, danger, choic
               type="button"
               ref={cancelRef}
               className="btn btn-outline"
-              style={{ minHeight: 40 }}
+              style={{ minHeight: 44 }}
               onClick={() => onResult(false)}
             >
               {cancelLabel}
@@ -48,7 +48,7 @@ function ConfirmModal({ title, message, confirmLabel, cancelLabel, danger, choic
                 key={String(b.value)}
                 type="button"
                 className={i === buttons.length - 1 ? 'btn btn-primary' : 'btn btn-outline'}
-                style={{ minHeight: 40, ...(b.danger ? { background: '#dc2626', borderColor: '#dc2626', color: '#fff' } : {}) }}
+                style={{ minHeight: 44, ...(b.danger ? { background: '#dc2626', borderColor: '#dc2626', color: '#fff' } : {}) }}
                 onClick={() => onResult(b.value)}
               >
                 {b.label}
